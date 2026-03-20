@@ -25,6 +25,8 @@ type CommandPermStore interface {
 	SetCommandEnabled(ctx context.Context, pluginID, commandName string, enabled bool) error
 	SetPolicyExpression(ctx context.Context, pluginID, commandName, expression string) error
 	GetPolicyExpression(ctx context.Context, pluginID, commandName string) (string, error)
+	DeleteCommandSettings(ctx context.Context, pluginID string, commandNames []string) error
+	DeleteAllPluginCommandSettings(ctx context.Context, pluginID string) error
 }
 
 // PgCommandPermStore реализует CommandPermStore на PostgreSQL.
@@ -106,6 +108,31 @@ func (s *PgCommandPermStore) GetPolicyExpression(ctx context.Context, pluginID, 
 		return "", nil
 	}
 	return *expr, nil
+}
+
+func (s *PgCommandPermStore) DeleteCommandSettings(ctx context.Context, pluginID string, commandNames []string) error {
+	if len(commandNames) == 0 {
+		return nil
+	}
+	_, err := s.pool.Exec(ctx, `
+		DELETE FROM plugin_command_settings
+		WHERE plugin_id = $1 AND command_name = ANY($2)
+	`, pluginID, commandNames)
+	if err != nil {
+		return fmt.Errorf("delete command settings for %q: %w", pluginID, err)
+	}
+	return nil
+}
+
+func (s *PgCommandPermStore) DeleteAllPluginCommandSettings(ctx context.Context, pluginID string) error {
+	_, err := s.pool.Exec(ctx, `
+		DELETE FROM plugin_command_settings
+		WHERE plugin_id = $1
+	`, pluginID)
+	if err != nil {
+		return fmt.Errorf("delete all command settings for %q: %w", pluginID, err)
+	}
+	return nil
 }
 
 var _ CommandPermStore = (*PgCommandPermStore)(nil)

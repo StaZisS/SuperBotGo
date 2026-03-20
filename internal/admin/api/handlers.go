@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
@@ -25,9 +26,10 @@ const maxUploadSize = 50 << 20 // 50MB
 // maxRequestBodySize limits non-upload JSON request bodies (1 MB).
 const maxRequestBodySize = 1 << 20
 
-// StateManagerRegistrar registers command definitions at runtime.
+// StateManagerRegistrar registers and unregisters command definitions at runtime.
 type StateManagerRegistrar interface {
 	RegisterCommand(def *state.CommandDefinition)
+	UnregisterCommand(name string)
 }
 
 // AdminHandler provides HTTP handlers for the Wasm plugin admin API.
@@ -39,11 +41,13 @@ type AdminHandler struct {
 	rt       *wasmrt.Runtime
 	hostAPI  *hostapi.HostAPI
 	stateMgr StateManagerRegistrar
+	cmdStore CommandPermStore // nil when PostgreSQL is unavailable
 	apiKey   string
 }
 
 // NewAdminHandler creates a new AdminHandler.
 // If apiKey is non-empty, all routes require Bearer token authentication.
+// cmdStore may be nil when PostgreSQL is unavailable.
 func NewAdminHandler(
 	store PluginStore,
 	blobs BlobStore,
@@ -52,6 +56,7 @@ func NewAdminHandler(
 	rt *wasmrt.Runtime,
 	hostAPI *hostapi.HostAPI,
 	stateMgr StateManagerRegistrar,
+	cmdStore CommandPermStore,
 	apiKey string,
 ) *AdminHandler {
 	if apiKey == "" {
@@ -65,6 +70,7 @@ func NewAdminHandler(
 		rt:       rt,
 		hostAPI:  hostAPI,
 		stateMgr: stateMgr,
+		cmdStore: cmdStore,
 		apiKey:   apiKey,
 	}
 }
@@ -328,6 +334,15 @@ func (h *AdminHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Collect old command names before reload.
+	var oldCommands map[string]struct{}
+	if oldPlugin, ok := h.manager.All()[pluginID]; ok {
+		oldCommands = make(map[string]struct{}, len(oldPlugin.Commands()))
+		for _, def := range oldPlugin.Commands() {
+			oldCommands[def.Name] = struct{}{}
+		}
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
 		writeError(w, http.StatusBadRequest, "file too large or invalid form")
@@ -359,7 +374,6 @@ func (h *AdminHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.loader.ReloadPluginFromBytes(r.Context(), pluginID, wasmBytes, record.ConfigJSON); err != nil {
-
 		_ = h.blobs.Delete(r.Context(), newKey)
 		slog.Error("admin: failed to reload plugin", "id", pluginID, "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to reload plugin")
@@ -377,10 +391,62 @@ func (h *AdminHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	h.manager.Remove(pluginID)
 	if wp, ok := h.loader.GetPlugin(pluginID); ok {
 		h.manager.Register(wp)
-		h.registerPluginCommands(wp)
+		h.syncCommandsOnUpdate(r.Context(), pluginID, oldCommands, wp)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+// syncCommandsOnUpdate compares old and new command sets after a plugin
+// .wasm update, cleaning up orphaned command settings and unregistering
+// removed commands from the state manager.
+func (h *AdminHandler) syncCommandsOnUpdate(ctx context.Context, pluginID string, oldCommands map[string]struct{}, newPlugin plugin.Plugin) {
+	newCommands := make(map[string]struct{}, len(newPlugin.Commands()))
+	for _, def := range newPlugin.Commands() {
+		newCommands[def.Name] = struct{}{}
+	}
+
+	// Register new commands in the state manager.
+	h.registerPluginCommands(newPlugin)
+
+	// Find removed commands (present in old but absent in new).
+	var removed []string
+	for name := range oldCommands {
+		if _, ok := newCommands[name]; !ok {
+			removed = append(removed, name)
+		}
+	}
+
+	// Find added commands (present in new but absent in old).
+	var added []string
+	for name := range newCommands {
+		if _, ok := oldCommands[name]; !ok {
+			added = append(added, name)
+		}
+	}
+
+	// Unregister removed commands from the state manager.
+	if h.stateMgr != nil {
+		for _, name := range removed {
+			h.stateMgr.UnregisterCommand(name)
+		}
+	}
+
+	// Delete orphaned command settings from the database.
+	if h.cmdStore != nil && len(removed) > 0 {
+		if err := h.cmdStore.DeleteCommandSettings(ctx, pluginID, removed); err != nil {
+			slog.Error("admin: failed to delete orphaned command settings",
+				"plugin", pluginID, "commands", removed, "error", err)
+		} else {
+			slog.Info("admin: cleaned up command settings for removed commands",
+				"plugin", pluginID, "removed", removed)
+		}
+	}
+
+	if len(added) > 0 {
+		slog.Info("admin: new commands detected (no access settings configured yet)",
+			"plugin", pluginID, "added", added)
+	}
 }
 
 // handleDisable disables a plugin without deleting it.
@@ -470,6 +536,15 @@ func (h *AdminHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Unregister commands from the state manager before removing.
+	if h.stateMgr != nil {
+		if p, ok := h.manager.All()[pluginID]; ok {
+			for _, def := range p.Commands() {
+				h.stateMgr.UnregisterCommand(def.Name)
+			}
+		}
+	}
+
 	if record.Enabled {
 		if err := h.loader.UnloadPlugin(r.Context(), pluginID); err != nil {
 			slog.Warn("admin: error unloading plugin during delete", "id", pluginID, "error", err)
@@ -480,6 +555,14 @@ func (h *AdminHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	if record.WasmKey != "" {
 		if err := h.blobs.Delete(r.Context(), record.WasmKey); err != nil {
 			slog.Warn("admin: failed to delete wasm blob", "key", record.WasmKey, "error", err)
+		}
+	}
+
+	// Clean up all command settings for this plugin.
+	if h.cmdStore != nil {
+		if err := h.cmdStore.DeleteAllPluginCommandSettings(r.Context(), pluginID); err != nil {
+			slog.Error("admin: failed to delete command settings on plugin delete",
+				"plugin", pluginID, "error", err)
 		}
 	}
 

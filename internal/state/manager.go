@@ -37,6 +37,14 @@ func (m *Manager) RegisterCommand(def *CommandDefinition) {
 	m.handlers[def.Name] = NewDslStateHandler(def)
 }
 
+// UnregisterCommand removes a command definition and its handler.
+func (m *Manager) UnregisterCommand(name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.commands, name)
+	delete(m.handlers, name)
+}
+
 // RegisterHandler registers a custom StateHandler under the given name.
 func (m *Manager) RegisterHandler(name string, handler StateHandler) {
 	m.mu.Lock()
