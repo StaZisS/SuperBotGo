@@ -42,6 +42,7 @@ function newGroup(schema: RuleSchema, logic: Logic = 'AND'): RuleGroup {
 function renderTemplate(template: string, values: Record<string, string>): string {
   let result = template
   for (const [key, val] of Object.entries(values)) {
+    if (val === '') return ''
     result = result.split(`{${key}}`).join(val)
   }
   if (/\{[a-zA-Z]+\}/.test(result)) return ''
@@ -68,6 +69,102 @@ function buildExpression(root: RuleGroup, schema: RuleSchema): string {
   if (parts.length === 1) return parts[0]
   const sep = root.logic === 'AND' ? ' && ' : ' || '
   return parts.join(sep)
+}
+
+// ── Парсинг выражения обратно в конструктор ──
+
+function splitTopLevel(expr: string, op: string): string[] {
+  let depth = 0
+  const parts: string[] = []
+  let current = ''
+  for (let i = 0; i < expr.length; i++) {
+    if (expr[i] === '(') depth++
+    else if (expr[i] === ')') depth--
+    else if (depth === 0 && expr.substring(i, i + op.length) === op) {
+      parts.push(current.trim())
+      current = ''
+      i += op.length - 1
+      continue
+    }
+    current += expr[i]
+  }
+  parts.push(current.trim())
+  return parts
+}
+
+function stripOuterParens(expr: string): string {
+  if (!expr.startsWith('(') || !expr.endsWith(')')) return expr
+  let depth = 0
+  for (let i = 0; i < expr.length - 1; i++) {
+    if (expr[i] === '(') depth++
+    else if (expr[i] === ')') depth--
+    if (depth === 0) return expr
+  }
+  return expr.slice(1, -1)
+}
+
+function tryParseCondition(expr: string): Condition | null {
+  const s = expr.trim()
+
+  // user.{field} {operator} "{value}"
+  const attr = s.match(/^user\.(\w+)\s*(==|!=)\s*"([^"]*)"$/)
+  if (attr) {
+    return { kind: 'condition', id: newId(), typeId: 'attribute', values: { field: attr[1], operator: attr[2], value: attr[3] } }
+  }
+
+  // check("{relation}", "{objectType}", "{objectId}")
+  const graph = s.match(/^check\("([^"]*)",\s*"([^"]*)",\s*"([^"]*)"\)$/)
+  if (graph) {
+    return { kind: 'condition', id: newId(), typeId: 'graph', values: { relation: graph[1], objectType: graph[2], objectId: graph[3] } }
+  }
+
+  // has_role("{roleName}")
+  const role = s.match(/^has_role\("([^"]*)"\)$/)
+  if (role) {
+    return { kind: 'condition', id: newId(), typeId: 'role', values: { roleName: role[1] } }
+  }
+
+  return null
+}
+
+function parseExpr(expr: string): RuleItem | null {
+  const trimmed = stripOuterParens(expr.trim())
+  if (!trimmed) return null
+
+  // Попробовать разделить по || (низший приоритет)
+  const orParts = splitTopLevel(trimmed, ' || ')
+  if (orParts.length > 1) {
+    const items: RuleItem[] = []
+    for (const part of orParts) {
+      const item = parseExpr(part)
+      if (!item) return null
+      items.push(item)
+    }
+    return { kind: 'group', id: newId(), logic: 'OR', items }
+  }
+
+  // Попробовать разделить по &&
+  const andParts = splitTopLevel(trimmed, ' && ')
+  if (andParts.length > 1) {
+    const items: RuleItem[] = []
+    for (const part of andParts) {
+      const item = parseExpr(part)
+      if (!item) return null
+      items.push(item)
+    }
+    return { kind: 'group', id: newId(), logic: 'AND', items }
+  }
+
+  // Одиночное условие
+  return tryParseCondition(trimmed)
+}
+
+function parseExpression(expr: string): RuleGroup | null {
+  if (!expr.trim()) return null
+  const item = parseExpr(expr.trim())
+  if (!item) return null
+  if (item.kind === 'group') return item
+  return { kind: 'group', id: newId(), logic: 'AND', items: [item] }
 }
 
 // ── Хелпер для options ──
@@ -130,8 +227,11 @@ export default function RuleBuilder({
   useEffect(() => {
     if (!rawMode && schema && root) {
       const expr = buildExpression(root, schema)
-      setRawExpr(expr)
-      onChange(expr)
+      // Не затираем существующее выражение пустым результатом от незаполненного конструктора
+      if (expr || !rawExpr) {
+        setRawExpr(expr)
+        onChange(expr)
+      }
     }
   }, [root, rawMode, schema]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -142,9 +242,16 @@ export default function RuleBuilder({
   const switchToBuilder = useCallback(() => {
     setRawMode(false)
     if (schema && !root) {
+      if (rawExpr) {
+        const parsed = parseExpression(rawExpr)
+        if (parsed) {
+          setRoot(parsed)
+          return
+        }
+      }
       setRoot(newGroup(schema, 'AND'))
     }
-  }, [schema, root])
+  }, [schema, root, rawExpr])
 
   const updateRoot = useCallback((updater: (prev: RuleGroup) => RuleGroup) => {
     setRoot((prev) => prev ? updater(prev) : prev)
