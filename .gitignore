@@ -1,0 +1,38 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bot
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment & secrets
+.env
+config.yaml
+
+# Wasm modules (runtime artifacts)
+wasm_modules/
+
+# Wasm plugin build output
+plugins/**/*.wasm
+
+# Frontend build output
+web/admin/dist/
+web/admin/node_modules/
+
+# Go
+vendor/
+
+# OS
+.DS_Store
+Thumbs.db
+.agents/
+promt.md
+skills-lock.json

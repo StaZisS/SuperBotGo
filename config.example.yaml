@@ -1,0 +1,30 @@
+# SuperBotGo Configuration
+# Copy this file to config.yaml and fill in your values.
+# All values can be overridden via environment variables with BOT_ prefix:
+#   BOT_DATABASE_HOST=db  BOT_TELEGRAM_TOKEN=123:ABC  etc.
+
+default_locale: en
+
+database:
+  host: localhost
+  port: 5432
+  user: superbot
+  password: superbot_secret
+  dbname: superbot
+  sslmode: prefer
+
+redis:
+  addr: localhost:6379
+  password: ""
+  db: 0
+
+telegram:
+  token: "YOUR_TELEGRAM_BOT_TOKEN"
+
+discord:
+  token: "YOUR_DISCORD_BOT_TOKEN"
+
+admin:
+  port: 8080
+  modules_dir: ./wasm_modules
+  api_key: "YOUR_ADMIN_API_KEY"  # required for admin API authentication
