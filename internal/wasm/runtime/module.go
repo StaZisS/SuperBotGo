@@ -166,3 +166,14 @@ func (cm *CompiledModule) CallHandleCommand(ctx context.Context, reqJSON []byte,
 	}
 	return data, nil
 }
+
+// CallStepCallback runs the "step_callback" action with the given request JSON.
+// This is used to invoke plugin-defined callback functions for validation,
+// dynamic options, pagination, and condition evaluation.
+func (cm *CompiledModule) CallStepCallback(ctx context.Context, reqJSON []byte, configJSON []byte) ([]byte, error) {
+	data, err := cm.RunActionWithConfig(ctx, "step_callback", reqJSON, configJSON)
+	if err != nil {
+		return nil, fmt.Errorf("call step_callback: %w", err)
+	}
+	return data, nil
+}

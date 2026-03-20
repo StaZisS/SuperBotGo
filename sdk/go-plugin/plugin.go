@@ -38,21 +38,26 @@ type Plugin struct {
 }
 
 // Command describes a single slash-command the plugin provides.
+//
+// Use either Steps (simple, flat list) or Nodes (full node tree with branching,
+// pagination, dynamic options, conditions). If Nodes is set, Steps is ignored.
 type Command struct {
 	Name        string
 	Description string
 	MinRole     string // optional: minimum role required
-	Steps       []Step
+	Steps       []Step // simple mode (flat list of steps)
+	Nodes       []Node // advanced mode (node tree)
 	Handler     func(ctx *CommandContext) error
 }
 
 // Step describes one parameter-collection step in a multi-step command.
+// This is the legacy flat format. For advanced features (branching, pagination,
+// dynamic options, conditions) use [Command.Nodes] with [NewStep] instead.
 type Step struct {
-	Param      string            // parameter key
-	Prompt     string            // text shown to the user; supports {param}, {config.key}, {var.key} placeholders
-	Options    []Option          // if non-empty, render as buttons/choices
-	Validation string            // optional regex the value must match
-	Vars       map[string]string // custom variables available as {var.key} in this and later steps
+	Param      string   // parameter key
+	Prompt     string   // text shown to the user
+	Options    []Option // if non-empty, render as buttons/choices
+	Validation string   // optional regex the value must match
 }
 
 // Option is a single choice in a step with predefined values.

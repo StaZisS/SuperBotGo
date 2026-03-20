@@ -121,7 +121,7 @@ export default function PluginDetail() {
                 {plugin.wasm_hash}
               </div>
             </div>
-          )}да
+          )}
           {plugin.installed_at && (
             <div>
               <span className="text-gray-500 block text-xs uppercase tracking-wide">Установлен</span>

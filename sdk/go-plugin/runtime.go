@@ -22,6 +22,8 @@ func Run(p Plugin) {
 		handleConfigure(p)
 	case "handle_command":
 		handleCommand(p)
+	case "step_callback":
+		handleStepCallback(p)
 	default:
 		writeResponse(responseJSON{Error: "unknown action: " + action})
 	}
@@ -50,21 +52,31 @@ func handleMeta(p Plugin) {
 			Description: cmd.Description,
 			MinRole:     cmd.MinRole,
 		}
-		for _, s := range cmd.Steps {
-			sd := stepDef{
-				Param:      s.Param,
-				Prompt:     s.Prompt,
-				Validation: s.Validation,
-				Vars:       s.Vars,
+
+		if len(cmd.Nodes) > 0 {
+			// New node-based command flow.
+			reg := make(callbackMap)
+			for _, node := range cmd.Nodes {
+				cd.Nodes = append(cd.Nodes, node.toNodeDef(cmd.Name, reg))
 			}
-			for _, o := range s.Options {
-				sd.Options = append(sd.Options, optionDef{
-					Label: o.Label,
-					Value: o.Value,
-				})
+		} else {
+			// Legacy step-based command flow.
+			for _, s := range cmd.Steps {
+				sd := stepDef{
+					Param:      s.Param,
+					Prompt:     s.Prompt,
+					Validation: s.Validation,
+				}
+				for _, o := range s.Options {
+					sd.Options = append(sd.Options, optionDef{
+						Label: o.Label,
+						Value: o.Value,
+					})
+				}
+				cd.Steps = append(cd.Steps, sd)
 			}
-			cd.Steps = append(cd.Steps, sd)
 		}
+
 		meta.Commands = append(meta.Commands, cd)
 	}
 
@@ -156,10 +168,85 @@ func handleCommand(p Plugin) {
 }
 
 // ---------------------------------------------------------------------------
+// action: step_callback
+// ---------------------------------------------------------------------------
+
+func handleStepCallback(p Plugin) {
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		writeCallbackResponse(stepCallbackResponse{Error: "failed to read stdin: " + err.Error()})
+		return
+	}
+
+	var req stepCallbackRequest
+	if err := json.Unmarshal(data, &req); err != nil {
+		writeCallbackResponse(stepCallbackResponse{Error: "failed to parse callback request: " + err.Error()})
+		return
+	}
+
+	// Rebuild the callback registry from the plugin definition.
+	// The traversal is deterministic, so callback names match those from meta.
+	reg := make(callbackMap)
+	for _, cmd := range p.Commands {
+		for _, node := range cmd.Nodes {
+			node.toNodeDef(cmd.Name, reg)
+		}
+	}
+
+	cb, ok := reg[req.Callback]
+	if !ok {
+		writeCallbackResponse(stepCallbackResponse{Error: "unknown callback: " + req.Callback})
+		return
+	}
+
+	// Load plugin config from PLUGIN_CONFIG env var.
+	var cfg map[string]interface{}
+	if raw := os.Getenv("PLUGIN_CONFIG"); raw != "" {
+		_ = json.Unmarshal([]byte(raw), &cfg)
+	}
+
+	ctx := &CallbackContext{
+		UserID: req.UserID,
+		Locale: req.Locale,
+		Params: req.Params,
+		Page:   req.Page,
+		Input:  req.Input,
+		config: cfg,
+	}
+
+	switch fn := cb.(type) {
+	case func(ctx *CallbackContext) bool:
+		result := fn(ctx)
+		writeCallbackResponse(stepCallbackResponse{Result: &result})
+	case func(ctx *CallbackContext) []Option:
+		options := fn(ctx)
+		defs := make([]optionDef, len(options))
+		for i, o := range options {
+			defs[i] = optionDef{Label: o.Label, Value: o.Value}
+		}
+		writeCallbackResponse(stepCallbackResponse{Options: defs})
+	case func(ctx *CallbackContext) OptionsPage:
+		page := fn(ctx)
+		defs := make([]optionDef, len(page.Options))
+		for i, o := range page.Options {
+			defs[i] = optionDef{Label: o.Label, Value: o.Value}
+		}
+		writeCallbackResponse(stepCallbackResponse{Options: defs, HasMore: page.HasMore})
+	default:
+		writeCallbackResponse(stepCallbackResponse{Error: "unsupported callback type"})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
 
 func writeResponse(v responseJSON) {
+	data, _ := json.Marshal(v)
+	os.Stdout.Write(data)
+}
+
+func writeCallbackResponse(v stepCallbackResponse) {
 	data, _ := json.Marshal(v)
 	os.Stdout.Write(data)
 }

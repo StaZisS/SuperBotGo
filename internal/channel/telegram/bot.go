@@ -114,9 +114,17 @@ func (b *Bot) registerHandlers() {
 		platformUserID := strconv.FormatInt(c.Sender().ID, 10)
 		data := c.Callback().Data
 
+		// Strip telebot's internal prefix from callback data.
+		// telebot v3.3+ encodes as: \f<unique>|<data> (pipe separator).
+		// Older versions used: \f<unique>\f<data> (form-feed separator).
 		if len(data) > 0 && data[0] == '\f' {
-			if idx := indexOf(data[1:], '\f'); idx >= 0 {
-				data = data[idx+2:]
+			rest := data[1:]
+			if idx := indexOf(rest, '|'); idx >= 0 {
+				data = rest[idx+1:]
+			} else if idx := indexOf(rest, '\f'); idx >= 0 {
+				data = rest[idx+1:]
+			} else {
+				data = rest
 			}
 		}
 
