@@ -71,6 +71,15 @@ func (m *Manager) GetCommandDefinition(commandName string) *state.CommandDefinit
 	return nil
 }
 
+// GetPluginIDByCommand returns the plugin ID that handles the given command, or empty string.
+func (m *Manager) GetPluginIDByCommand(commandName string) string {
+	p := m.GetByCommand(commandName)
+	if p == nil {
+		return ""
+	}
+	return p.ID()
+}
+
 // All returns all registered plugins as a map of ID to Plugin.
 func (m *Manager) All() map[string]Plugin {
 	m.mu.RLock()

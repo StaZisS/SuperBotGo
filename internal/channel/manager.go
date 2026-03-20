@@ -35,6 +35,7 @@ type StateResult struct {
 // PluginRegistry is a minimal interface for looking up plugins by command.
 type PluginRegistry interface {
 	GetCommandDefinition(commandName string) *state.CommandDefinition
+	GetPluginIDByCommand(commandName string) string
 }
 
 // UpdateRouterIface routes completed command requests to the correct plugin.
@@ -47,6 +48,11 @@ type RoleChecker interface {
 	CheckAccess(ctx context.Context, userID model.GlobalUserID, user *model.GlobalUser, req *model.RoleRequirements) (bool, error)
 }
 
+// CommandAccessChecker проверяет ReBAC-доступ к командам плагинов.
+type CommandAccessChecker interface {
+	CanExecute(ctx context.Context, pluginID, commandName string, userID model.GlobalUserID) (bool, error)
+}
+
 // ChannelManager orchestrates incoming updates: user lookup, dialog state
 // management, role checking, and routing completed commands to plugins.
 type ChannelManager struct {
@@ -55,6 +61,7 @@ type ChannelManager struct {
 	state       StateManager
 	plugins     PluginRegistry
 	roles       RoleChecker
+	cmdAccess   CommandAccessChecker // ReBAC-проверка доступа к командам (может быть nil)
 	adapters    *AdapterRegistry
 	logger      *slog.Logger
 }
@@ -81,6 +88,11 @@ func NewChannelManager(
 		adapters:    adapters,
 		logger:      logger,
 	}
+}
+
+// SetCommandAccessChecker устанавливает ReBAC-проверку доступа к командам.
+func (m *ChannelManager) SetCommandAccessChecker(checker CommandAccessChecker) {
+	m.cmdAccess = checker
 }
 
 // RegisterAdapter registers a platform adapter and wires this manager as its
@@ -142,6 +154,23 @@ func (m *ChannelManager) handleCommand(
 		if !ok {
 			return m.adapters.SendToChat(ctx, channelType, chatID,
 				model.NewTextMessage("Access denied. You don't have permission for this command."))
+		}
+	}
+
+	// ReBAC-проверка доступа к командам плагинов через authorization_tuples
+	if m.cmdAccess != nil {
+		pluginID := m.plugins.GetPluginIDByCommand(commandName)
+		if pluginID != "" {
+			ok, err := m.cmdAccess.CanExecute(ctx, pluginID, commandName, userID)
+			if err != nil {
+				m.logger.Warn("ReBAC command access check failed",
+					slog.String("command", commandName),
+					slog.Int64("user_id", int64(userID)),
+					slog.Any("error", err))
+			} else if !ok {
+				return m.adapters.SendToChat(ctx, channelType, chatID,
+					model.NewTextMessage("Access denied. You don't have permission for this command."))
+			}
 		}
 	}
 

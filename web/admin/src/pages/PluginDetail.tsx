@@ -34,10 +34,10 @@ export default function PluginDetail() {
     try {
       if (wasActive) {
         await api.disablePlugin(id)
-        toast('Plugin disabled')
+        toast('Плагин отключён')
       } else {
         await api.enablePlugin(id)
-        toast('Plugin enabled')
+        toast('Плагин включён')
       }
       load()
     } catch (e: unknown) {
@@ -52,7 +52,7 @@ export default function PluginDetail() {
     setActionLoading(true)
     try {
       await api.deletePlugin(id)
-      toast('Plugin deleted')
+      toast('Плагин удалён')
       navigate('/admin/plugins')
     } catch (e: unknown) {
       toast((e as Error).message, 'error')
@@ -67,7 +67,7 @@ export default function PluginDetail() {
     setActionLoading(true)
     try {
       await api.updatePlugin(id, file)
-      toast('Plugin updated')
+      toast('Плагин обновлён')
       setShowUpdate(false)
       load()
     } catch (e: unknown) {
@@ -78,11 +78,11 @@ export default function PluginDetail() {
   }
 
   if (loading && !plugin) {
-    return <div className="text-gray-400 py-8 text-center">Loading...</div>
+    return <div className="text-gray-400 py-8 text-center">Загрузка...</div>
   }
 
   if (!plugin) {
-    return <div className="text-gray-400 py-8 text-center">Plugin not found</div>
+    return <div className="text-gray-400 py-8 text-center">Плагин не найден</div>
   }
 
   return (
@@ -92,7 +92,7 @@ export default function PluginDetail() {
         <div className="min-w-0">
           <div className="flex items-center gap-3 mb-1">
             <Link to="/admin/plugins" className="text-gray-400 hover:text-gray-600 text-sm">
-              &larr; Back
+              &larr; Назад
             </Link>
           </div>
           <h2 className="text-lg font-semibold truncate">{plugin.name || plugin.id}</h2>
@@ -107,11 +107,11 @@ export default function PluginDetail() {
       <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           <div>
-            <span className="text-gray-500 block text-xs uppercase tracking-wide">Type</span>
+            <span className="text-gray-500 block text-xs uppercase tracking-wide">Тип</span>
             <div className="font-medium mt-0.5">{plugin.type || 'wasm'}</div>
           </div>
           <div>
-            <span className="text-gray-500 block text-xs uppercase tracking-wide">Version</span>
+            <span className="text-gray-500 block text-xs uppercase tracking-wide">Версия</span>
             <div className="font-medium mt-0.5">{plugin.version || '-'}</div>
           </div>
           {plugin.wasm_hash && (
@@ -124,13 +124,13 @@ export default function PluginDetail() {
           )}
           {plugin.installed_at && (
             <div>
-              <span className="text-gray-500 block text-xs uppercase tracking-wide">Installed</span>
+              <span className="text-gray-500 block text-xs uppercase tracking-wide">Установлен</span>
               <div className="font-medium mt-0.5">{new Date(plugin.installed_at).toLocaleDateString()}</div>
             </div>
           )}
           {plugin.updated_at && (
             <div>
-              <span className="text-gray-500 block text-xs uppercase tracking-wide">Updated</span>
+              <span className="text-gray-500 block text-xs uppercase tracking-wide">Обновлён</span>
               <div className="font-medium mt-0.5">{new Date(plugin.updated_at).toLocaleDateString()}</div>
             </div>
           )}
@@ -139,7 +139,7 @@ export default function PluginDetail() {
         {/* Commands */}
         {plugin.commands && plugin.commands.length > 0 && (
           <div>
-            <h4 className="text-sm font-medium text-gray-700 mb-2">Commands ({plugin.commands.length})</h4>
+            <h4 className="text-sm font-medium text-gray-700 mb-2">Команды ({plugin.commands.length})</h4>
             <div className="space-y-1">
               {plugin.commands.map((cmd) => (
                 <div key={cmd.name} className="flex items-center gap-3 text-sm p-2 bg-gray-50 rounded">
@@ -157,7 +157,7 @@ export default function PluginDetail() {
         {/* Permissions */}
         {plugin.permissions && plugin.permissions.length > 0 && (
           <div>
-            <h4 className="text-sm font-medium text-gray-700 mb-2">Permissions</h4>
+            <h4 className="text-sm font-medium text-gray-700 mb-2">Разрешения</h4>
             <div className="flex flex-wrap gap-2">
               {plugin.permissions.map((p) => (
                 <span key={p} className="px-2 py-1 bg-gray-100 rounded text-xs font-mono">
@@ -176,38 +176,44 @@ export default function PluginDetail() {
           disabled={actionLoading}
           className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50 transition-colors"
         >
-          {plugin.status === 'active' ? 'Disable' : 'Enable'}
+          {plugin.status === 'active' ? 'Отключить' : 'Включить'}
         </button>
         <Link
           to={`/admin/plugins/${id}/config`}
           className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors"
         >
-          Configure
+          Настроить
+        </Link>
+        <Link
+          to={`/admin/plugins/${id}/permissions`}
+          className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors"
+        >
+          Права команд
         </Link>
         <button
           onClick={() => setShowUpdate((v) => !v)}
           className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors"
         >
-          Update .wasm
+          Обновить .wasm
         </button>
         <button
           onClick={() => setShowDelete(true)}
           className="px-4 py-2 border border-red-300 text-red-600 rounded-lg text-sm hover:bg-red-50 transition-colors"
         >
-          Delete
+          Удалить
         </button>
       </div>
 
       {/* Update panel */}
       {showUpdate && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="font-medium mb-4">Upload new .wasm</h3>
+          <h3 className="font-medium mb-4">Загрузить новый .wasm</h3>
           <WasmUploader onFile={handleUpdate} loading={actionLoading} />
           <button
             onClick={() => setShowUpdate(false)}
             className="mt-3 text-sm text-gray-500 hover:text-gray-700"
           >
-            Cancel
+            Отмена
           </button>
         </div>
       )}
@@ -216,7 +222,7 @@ export default function PluginDetail() {
       {showDelete && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-6">
           <p className="text-sm text-red-800 mb-4">
-            Are you sure you want to delete <strong>{plugin.name || plugin.id}</strong>? This action cannot be undone.
+            Вы уверены, что хотите удалить <strong>{plugin.name || plugin.id}</strong>? Это действие нельзя отменить.
           </p>
           <div className="flex gap-3">
             <button
@@ -224,14 +230,14 @@ export default function PluginDetail() {
               disabled={actionLoading}
               className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 disabled:opacity-50 transition-colors"
             >
-              {actionLoading ? 'Deleting...' : 'Confirm Delete'}
+              {actionLoading ? 'Удаление...' : 'Подтвердить удаление'}
             </button>
             <button
               onClick={() => setShowDelete(false)}
               disabled={actionLoading}
               className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-white transition-colors"
             >
-              Cancel
+              Отмена
             </button>
           </div>
         </div>

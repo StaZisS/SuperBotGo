@@ -91,6 +91,43 @@ export interface PluginDetail {
   updated_at?: string
 }
 
+// Настройка вкл/выкл команды
+export interface CommandSetting {
+  id: number
+  plugin_id: string
+  command_name: string
+  enabled: boolean
+  policy_expression: string
+  created_at: string
+  updated_at: string
+}
+
+export interface RuleParamOption {
+  value: string
+  label: string
+}
+
+export interface RuleParam {
+  name: string
+  label: string
+  type: 'select' | 'text' | 'text_or_select'
+  placeholder?: string
+  options?: RuleParamOption[]
+  depends_on?: string
+}
+
+export interface RuleConditionType {
+  id: string
+  label: string
+  template: string
+  params: RuleParam[]
+}
+
+export interface RuleSchema {
+  condition_types: RuleConditionType[]
+  field_values: Record<string, RuleParamOption[]>
+}
+
 export const api = {
   listPlugins: () => request<PluginInfo[]>('/plugins'),
 
@@ -131,4 +168,22 @@ export const api = {
 
   deletePlugin: (id: string) =>
     request<{ status: string }>(`/plugins/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  getRuleSchema: () => request<RuleSchema>('/rule-schema'),
+
+  listCommandSettings: (pluginId: string) =>
+    request<CommandSetting[]>(`/plugins/${encodeURIComponent(pluginId)}/commands/settings`),
+
+  setCommandEnabled: (pluginId: string, commandName: string, enabled: boolean) =>
+    request<{ status: string }>(
+      `/plugins/${encodeURIComponent(pluginId)}/commands/${encodeURIComponent(commandName)}/enabled`,
+      { method: 'PUT', body: JSON.stringify({ enabled }) },
+    ),
+
+  setCommandPolicy: (pluginId: string, commandName: string, expression: string) =>
+    request<{ status: string }>(
+      `/plugins/${encodeURIComponent(pluginId)}/commands/${encodeURIComponent(commandName)}/policy`,
+      { method: 'PUT', body: JSON.stringify({ expression }) },
+    ),
+
 }

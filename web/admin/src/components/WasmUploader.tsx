@@ -15,7 +15,7 @@ export default function WasmUploader({ onFile, loading, accept = '.wasm' }: Prop
     (file: File | undefined) => {
       if (!file) return
       if (!file.name.endsWith('.wasm')) {
-        toast('Only .wasm files are supported', 'error')
+        toast('Поддерживаются только .wasm файлы', 'error')
         return
       }
       onFile(file)
@@ -56,10 +56,10 @@ export default function WasmUploader({ onFile, loading, accept = '.wasm' }: Prop
         </svg>
       </div>
       <p className="text-gray-500 mb-4 text-sm sm:text-base">
-        {loading ? 'Uploading...' : 'Drag & drop a .wasm file here, or click to browse'}
+        {loading ? 'Загрузка...' : 'Перетащите .wasm файл сюда или нажмите для выбора'}
       </p>
       <label className="inline-block px-4 py-2 bg-blue-600 text-white rounded-lg cursor-pointer hover:bg-blue-700 text-sm transition-colors">
-        Browse
+        Выбрать файл
         <input type="file" accept={accept} onChange={handleChange} className="hidden" />
       </label>
     </div>

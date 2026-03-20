@@ -1,6 +1,6 @@
 package main
 
-import "github.com/superbot/go-plugin"
+import "github.com/superbot/wasmplugin"
 
 func main() {
 	wasmplugin.Run(wasmplugin.Plugin{

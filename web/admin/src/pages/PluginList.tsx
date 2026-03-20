@@ -33,22 +33,22 @@ export default function PluginList() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-lg font-semibold">Plugins</h2>
+        <h2 className="text-lg font-semibold">Плагины</h2>
         <Link
           to="/admin/plugins/upload"
           className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors"
         >
-          Upload Plugin
+          Загрузить плагин
         </Link>
       </div>
 
-      {/* Filters */}
+      {/* Фильтры */}
       <div className="flex flex-wrap gap-3 mb-4">
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name or ID..."
+          placeholder="Поиск по названию или ID..."
           className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm w-full sm:w-64 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <select
@@ -56,7 +56,7 @@ export default function PluginList() {
           onChange={(e) => setTypeFilter(e.target.value)}
           className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
         >
-          <option value="all">All types</option>
+          <option value="all">Все типы</option>
           <option value="go">Go</option>
           <option value="wasm">Wasm</option>
         </select>
@@ -65,37 +65,37 @@ export default function PluginList() {
           onChange={(e) => setStatusFilter(e.target.value)}
           className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
         >
-          <option value="all">All statuses</option>
-          <option value="active">Active</option>
-          <option value="disabled">Disabled</option>
-          <option value="error">Error</option>
+          <option value="all">Все статусы</option>
+          <option value="active">Активные</option>
+          <option value="disabled">Отключённые</option>
+          <option value="error">С ошибкой</option>
         </select>
       </div>
 
-      {/* Table */}
+      {/* Таблица */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
             <tr>
-              <th className="px-4 py-3 text-left">Name</th>
-              <th className="px-4 py-3 text-left hidden sm:table-cell">Version</th>
-              <th className="px-4 py-3 text-left">Type</th>
-              <th className="px-4 py-3 text-left">Status</th>
-              <th className="px-4 py-3 text-right hidden sm:table-cell">Commands</th>
+              <th className="px-4 py-3 text-left">Название</th>
+              <th className="px-4 py-3 text-left hidden sm:table-cell">Версия</th>
+              <th className="px-4 py-3 text-left">Тип</th>
+              <th className="px-4 py-3 text-left">Статус</th>
+              <th className="px-4 py-3 text-right hidden sm:table-cell">Команды</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {loading && (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
-                  Loading...
+                  Загрузка...
                 </td>
               </tr>
             )}
             {!loading && filtered.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
-                  {plugins.length === 0 ? 'No plugins installed' : 'No plugins match the current filters'}
+                  {plugins.length === 0 ? 'Плагины не установлены' : 'Нет плагинов, подходящих под фильтры'}
                 </td>
               </tr>
             )}

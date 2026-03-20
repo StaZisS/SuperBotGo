@@ -22,7 +22,7 @@ export default function PluginUpload() {
       const required = result.permissions.filter((p) => p.required).map((p) => p.key)
       setSelectedPerms(required)
       setMeta(result)
-      toast('File uploaded, review metadata below')
+      toast('Файл загружен, проверьте метаданные ниже')
     } catch (e: unknown) {
       toast((e as Error).message, 'error')
     } finally {
@@ -39,7 +39,7 @@ export default function PluginUpload() {
         config: {},
         permissions: selectedPerms,
       })
-      toast('Plugin installed successfully')
+      toast('Плагин успешно установлен')
       navigate(`/admin/plugins/${meta.id}/config`)
     } catch (e: unknown) {
       toast((e as Error).message, 'error')
@@ -55,7 +55,7 @@ export default function PluginUpload() {
 
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-6">Upload Plugin</h2>
+      <h2 className="text-lg font-semibold mb-6">Загрузка плагина</h2>
 
       {!meta && <WasmUploader onFile={handleFile} loading={uploading} />}
 
@@ -78,7 +78,7 @@ export default function PluginUpload() {
           {meta.commands.length > 0 && (
             <div>
               <h4 className="text-sm font-medium text-gray-700 mb-2">
-                Commands ({meta.commands.length})
+                Команды ({meta.commands.length})
               </h4>
               <div className="space-y-1">
                 {meta.commands.map((cmd) => (
@@ -106,7 +106,7 @@ export default function PluginUpload() {
           {/* Config schema hint */}
           {meta.config_schema && Object.keys(meta.config_schema).length > 0 && (
             <p className="text-sm text-gray-500 bg-blue-50 border border-blue-100 rounded-lg p-3">
-              This plugin has configuration options. You can set them after installation.
+              У этого плагина есть параметры конфигурации. Вы можете настроить их после установки.
             </p>
           )}
 
@@ -117,14 +117,14 @@ export default function PluginUpload() {
               disabled={installing}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50 transition-colors"
             >
-              {installing ? 'Installing...' : 'Install'}
+              {installing ? 'Установка...' : 'Установить'}
             </button>
             <button
               onClick={handleReset}
               disabled={installing}
               className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50"
             >
-              Cancel
+              Отмена
             </button>
           </div>
         </div>

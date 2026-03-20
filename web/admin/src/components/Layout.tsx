@@ -2,8 +2,8 @@ import { Outlet, Link, useLocation } from 'react-router-dom'
 import ToastContainer from './Toast'
 
 const navItems = [
-  { to: '/admin/plugins', label: 'Plugins', exact: true },
-  { to: '/admin/plugins/upload', label: 'Upload', exact: true },
+  { to: '/admin/plugins', label: 'Плагины', exact: true },
+  { to: '/admin/plugins/upload', label: 'Загрузка', exact: true },
 ]
 
 export default function Layout() {
@@ -18,7 +18,7 @@ export default function Layout() {
       <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <Link to="/admin/plugins" className="text-xl font-semibold text-gray-900 hover:text-gray-700">
-            SuperBot Admin
+            SuperBot Админ
           </Link>
           <nav className="flex gap-4 text-sm">
             {navItems.map((item) => (

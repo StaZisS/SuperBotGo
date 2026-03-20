@@ -49,7 +49,7 @@ export default function PluginConfig() {
       )
       if (Object.keys(validationErrors).length > 0) {
         setErrors(validationErrors)
-        toast('Please fix validation errors', 'error')
+        toast('Исправьте ошибки валидации', 'error')
         return
       }
     }
@@ -58,7 +58,7 @@ export default function PluginConfig() {
     setSaving(true)
     try {
       await api.updateConfig(id, config)
-      toast('Configuration saved')
+      toast('Конфигурация сохранена')
       navigate(`/admin/plugins/${id}`)
     } catch (e: unknown) {
       toast((e as Error).message, 'error')
@@ -68,20 +68,20 @@ export default function PluginConfig() {
   }
 
   if (loading) {
-    return <div className="text-gray-400 py-8 text-center">Loading...</div>
+    return <div className="text-gray-400 py-8 text-center">Загрузка...</div>
   }
 
   if (!plugin) {
-    return <div className="text-gray-400 py-8 text-center">Plugin not found</div>
+    return <div className="text-gray-400 py-8 text-center">Плагин не найден</div>
   }
 
   return (
     <div className="space-y-6">
       <div>
         <Link to={`/admin/plugins/${id}`} className="text-gray-400 hover:text-gray-600 text-sm">
-          &larr; Back to plugin
+          &larr; Назад к плагину
         </Link>
-        <h2 className="text-lg font-semibold mt-1">Configure: {plugin.name || plugin.id}</h2>
+        <h2 className="text-lg font-semibold mt-1">Настройка: {plugin.name || plugin.id}</h2>
         <p className="text-sm text-gray-500">{plugin.id}</p>
       </div>
 
@@ -98,7 +98,7 @@ export default function PluginConfig() {
             errors={errors}
           />
         ) : (
-          <p className="text-gray-400 text-sm">This plugin has no configurable options.</p>
+          <p className="text-gray-400 text-sm">У этого плагина нет настраиваемых параметров.</p>
         )}
       </div>
 
@@ -108,13 +108,13 @@ export default function PluginConfig() {
           disabled={saving || (!hasSchema)}
           className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50 transition-colors"
         >
-          {saving ? 'Saving...' : 'Save'}
+          {saving ? 'Сохранение...' : 'Сохранить'}
         </button>
         <button
           onClick={() => navigate(`/admin/plugins/${id}`)}
           className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
         >
-          Cancel
+          Отмена
         </button>
       </div>
     </div>

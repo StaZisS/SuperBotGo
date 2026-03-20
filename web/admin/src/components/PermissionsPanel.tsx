@@ -26,9 +26,9 @@ export default function PermissionsPanel({ permissions, selected, onChange, read
 
   return (
     <div className="space-y-2">
-      <h3 className="text-sm font-medium text-gray-700">Permissions</h3>
+      <h3 className="text-sm font-medium text-gray-700">Разрешения</h3>
       {permissions.length === 0 && (
-        <p className="text-sm text-gray-400">No permissions required.</p>
+        <p className="text-sm text-gray-400">Разрешения не требуются.</p>
       )}
       {permissions.map((p) => (
         <label
@@ -48,10 +48,10 @@ export default function PermissionsPanel({ permissions, selected, onChange, read
             <div className="text-sm font-mono break-all">
               {p.key}
               {p.required && (
-                <span className="ml-2 text-xs text-red-600 font-medium font-sans">Required</span>
+                <span className="ml-2 text-xs text-red-600 font-medium font-sans">Обязательно</span>
               )}
               {!p.required && (
-                <span className="ml-2 text-xs text-gray-400 font-sans">Optional</span>
+                <span className="ml-2 text-xs text-gray-400 font-sans">Опционально</span>
               )}
             </div>
             {p.description && (
