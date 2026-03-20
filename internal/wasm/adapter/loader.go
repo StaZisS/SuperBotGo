@@ -12,7 +12,6 @@ import (
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 )
 
-// Loader manages the lifecycle of Wasm plugins.
 type Loader struct {
 	mu      sync.RWMutex
 	rt      *wasmrt.Runtime
@@ -29,7 +28,6 @@ type loadedPlugin struct {
 	perms    []string
 }
 
-// NewLoader creates a new Wasm plugin loader.
 func NewLoader(rt *wasmrt.Runtime, hostAPI *hostapi.HostAPI, reply ReplyFunc, send SendFunc) *Loader {
 	return &Loader{
 		rt:      rt,
@@ -40,10 +38,6 @@ func NewLoader(rt *wasmrt.Runtime, hostAPI *hostapi.HostAPI, reply ReplyFunc, se
 	}
 }
 
-// LoadPlugin compiles and loads a Wasm plugin from the given file path.
-// It returns a WasmPlugin that implements the Plugin interface.
-//
-// Flow: read file -> LoadPluginFromBytes.
 func (l *Loader) LoadPlugin(ctx context.Context, wasmPath string, config json.RawMessage, permissions []string) (*WasmPlugin, error) {
 	data, err := os.ReadFile(wasmPath)
 	if err != nil {
@@ -52,10 +46,6 @@ func (l *Loader) LoadPlugin(ctx context.Context, wasmPath string, config json.Ra
 	return l.LoadPluginFromBytes(ctx, data, config, permissions)
 }
 
-// LoadPluginFromBytes compiles and loads a Wasm plugin from raw bytes.
-// It returns a WasmPlugin that implements the Plugin interface.
-//
-// Flow: compile -> CallMeta -> CallConfigure -> create WasmPlugin with CompiledModule.
 func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, config json.RawMessage, permissions []string) (*WasmPlugin, error) {
 
 	compiled, err := l.rt.CompileModule(ctx, wasmBytes)
@@ -63,7 +53,6 @@ func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, conf
 		return nil, fmt.Errorf("compile wasm plugin: %w", err)
 	}
 
-	// Grant temporary permissions so host functions work during meta call.
 	const probeID = "_temp_probe"
 	l.hostAPI.ForPlugin(probeID, permissions)
 	compiled.ID = probeID
@@ -108,7 +97,6 @@ func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, conf
 	return wp, nil
 }
 
-// UnloadPlugin stops and removes a loaded plugin.
 func (l *Loader) UnloadPlugin(ctx context.Context, pluginID string) error {
 	l.mu.Lock()
 	lp, ok := l.plugins[pluginID]
@@ -129,7 +117,6 @@ func (l *Loader) UnloadPlugin(ctx context.Context, pluginID string) error {
 	return nil
 }
 
-// ReloadPlugin loads a new version of a plugin from a file path and gracefully switches traffic.
 func (l *Loader) ReloadPlugin(ctx context.Context, pluginID string, newWasmPath string, newConfig json.RawMessage) error {
 	data, err := os.ReadFile(newWasmPath)
 	if err != nil {
@@ -138,7 +125,6 @@ func (l *Loader) ReloadPlugin(ctx context.Context, pluginID string, newWasmPath 
 	return l.ReloadPluginFromBytes(ctx, pluginID, data, newConfig)
 }
 
-// ReloadPluginFromBytes loads a new version of a plugin from raw bytes and gracefully switches traffic.
 func (l *Loader) ReloadPluginFromBytes(ctx context.Context, pluginID string, wasmBytes []byte, newConfig json.RawMessage) error {
 	l.mu.RLock()
 	old, ok := l.plugins[pluginID]
@@ -174,7 +160,6 @@ func (l *Loader) ReloadPluginFromBytes(ctx context.Context, pluginID string, was
 	return nil
 }
 
-// GetPlugin returns a loaded Wasm plugin by ID.
 func (l *Loader) GetPlugin(pluginID string) (*WasmPlugin, bool) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
@@ -185,7 +170,6 @@ func (l *Loader) GetPlugin(pluginID string) (*WasmPlugin, bool) {
 	return lp.plugin, true
 }
 
-// AllPlugins returns all loaded Wasm plugins.
 func (l *Loader) AllPlugins() []*WasmPlugin {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
@@ -196,7 +180,6 @@ func (l *Loader) AllPlugins() []*WasmPlugin {
 	return result
 }
 
-// Close stops all loaded plugins.
 func (l *Loader) Close(ctx context.Context) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()

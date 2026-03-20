@@ -9,14 +9,12 @@ import (
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
 
-// Runtime wraps wazero and provides Wasm module compilation and instantiation.
 type Runtime struct {
 	engine wazero.Runtime
 	cache  wazero.CompilationCache
 	config Config
 }
 
-// NewRuntime creates a new Wasm runtime with optional AOT compilation cache on disk.
 func NewRuntime(ctx context.Context, cfg Config) (*Runtime, error) {
 	cfg = cfg.withDefaults()
 
@@ -48,17 +46,14 @@ func NewRuntime(ctx context.Context, cfg Config) (*Runtime, error) {
 	}, nil
 }
 
-// Engine returns the underlying wazero.Runtime for host module registration.
 func (r *Runtime) Engine() wazero.Runtime {
 	return r.engine
 }
 
-// Config returns the runtime configuration.
 func (r *Runtime) Config() Config {
 	return r.config
 }
 
-// Close releases all runtime resources.
 func (r *Runtime) Close(ctx context.Context) error {
 	var firstErr error
 	if err := r.engine.Close(ctx); err != nil {

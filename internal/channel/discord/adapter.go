@@ -9,13 +9,11 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-// Adapter implements channel.ChannelAdapter for Discord.
 type Adapter struct {
 	session  *discordgo.Session
 	renderer *Renderer
 }
 
-// NewAdapter creates a Discord adapter wrapping the given discordgo session.
 func NewAdapter(session *discordgo.Session) *Adapter {
 	return &Adapter{
 		session:  session,
@@ -23,12 +21,10 @@ func NewAdapter(session *discordgo.Session) *Adapter {
 	}
 }
 
-// Type returns the Discord channel type.
 func (a *Adapter) Type() model.ChannelType {
 	return model.ChannelDiscord
 }
 
-// SendToUser sends a direct message to a Discord user.
 func (a *Adapter) SendToUser(ctx context.Context, platformUserID model.PlatformUserID, msg model.Message) error {
 	dmChannel, err := a.session.UserChannelCreate(string(platformUserID))
 	if err != nil {
@@ -37,7 +33,6 @@ func (a *Adapter) SendToUser(ctx context.Context, platformUserID model.PlatformU
 	return a.sendMessage(ctx, dmChannel.ID, msg)
 }
 
-// SendToChat sends a message to a Discord channel by its ID.
 func (a *Adapter) SendToChat(ctx context.Context, chatID string, msg model.Message) error {
 	return a.sendMessage(ctx, chatID, msg)
 }

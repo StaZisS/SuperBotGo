@@ -8,7 +8,6 @@ import (
 	"SuperBotGo/internal/model"
 )
 
-// Registry manages chat references and their project associations.
 type Registry interface {
 	FindOrCreateChat(ctx context.Context, channelType model.ChannelType, chatID string, kind model.ChatKind, title string) (*model.ChatReference, error)
 	FindChat(ctx context.Context, channelType model.ChannelType, platformChatID string) (*model.ChatReference, error)
@@ -17,15 +16,12 @@ type Registry interface {
 	UnregisterChat(ctx context.Context, chatRefID int64) error
 }
 
-// PlaceholderRegistry is an in-memory placeholder for Registry.
-// It will be replaced with a database-backed implementation later.
 type PlaceholderRegistry struct {
 	mu    sync.RWMutex
 	chats []*model.ChatReference
 	seq   atomic.Int64
 }
 
-// NewPlaceholderRegistry creates a new in-memory chat registry.
 func NewPlaceholderRegistry() *PlaceholderRegistry {
 	return &PlaceholderRegistry{}
 }

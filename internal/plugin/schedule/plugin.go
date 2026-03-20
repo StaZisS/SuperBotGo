@@ -15,13 +15,11 @@ type scheduleEntry struct {
 	Teacher string
 }
 
-// Plugin handles the /schedule command.
 type Plugin struct {
 	api    *plugin.SenderAPI
 	cmdDef *state.CommandDefinition
 }
 
-// New creates a SchedulePlugin.
 func New(api *plugin.SenderAPI) *Plugin {
 	return &Plugin{
 		api:    api,
@@ -35,7 +33,6 @@ func (p *Plugin) Version() string                      { return "1.0.0" }
 func (p *Plugin) SupportedRoles() []string             { return []string{"USER", "ADMIN"} }
 func (p *Plugin) Commands() []*state.CommandDefinition { return []*state.CommandDefinition{p.cmdDef} }
 
-// HandleCommand processes a completed schedule command.
 func (p *Plugin) HandleCommand(ctx context.Context, req model.CommandRequest) error {
 	building := req.Params.GetOr("building", "?")
 	room := req.Params.GetOr("room", "?")

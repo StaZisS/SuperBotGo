@@ -7,41 +7,34 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// RuleParamOption — вариант значения для параметра условия.
 type RuleParamOption struct {
 	Value string `json:"value"`
 	Label string `json:"label"`
 }
 
-// RuleParam — параметр условия (поле в UI).
 type RuleParam struct {
 	Name        string            `json:"name"`
 	Label       string            `json:"label"`
-	Type        string            `json:"type"` // "select", "text", "text_or_select"
+	Type        string            `json:"type"`
 	Placeholder string            `json:"placeholder,omitempty"`
 	Options     []RuleParamOption `json:"options,omitempty"`
-	// DependsOn указывает, от какого другого параметра зависят options.
-	// Если задан, options загружаются динамически по значению зависимого параметра.
-	DependsOn string `json:"depends_on,omitempty"`
+	DependsOn   string            `json:"depends_on,omitempty"`
 }
 
-// RuleConditionType — тип условия в конструкторе правил.
 type RuleConditionType struct {
 	ID       string      `json:"id"`
 	Label    string      `json:"label"`
-	Template string      `json:"template"` // шаблон выражения: check("{relation}", "{objectType}", "{objectId}")
+	Template string      `json:"template"`
 	Params   []RuleParam `json:"params"`
 }
 
-// RuleSchema — полная схема для конструктора правил.
 type RuleSchema struct {
 	ConditionTypes []RuleConditionType          `json:"condition_types"`
-	FieldValues    map[string][]RuleParamOption `json:"field_values"` // field_name → options для depends_on
+	FieldValues    map[string][]RuleParamOption `json:"field_values"`
 }
 
-// RuleSchemaHandler отдаёт схему конструктора правил.
 type RuleSchemaHandler struct {
-	pool *pgxpool.Pool // может быть nil
+	pool *pgxpool.Pool
 }
 
 func NewRuleSchemaHandler(pool *pgxpool.Pool) *RuleSchemaHandler {
@@ -68,8 +61,6 @@ func (h *RuleSchemaHandler) buildSchema(ctx context.Context) RuleSchema {
 	}
 }
 
-// buildFieldValues возвращает маппинг field_name → возможные значения.
-// Используется фронтендом для depends_on параметров.
 func (h *RuleSchemaHandler) buildFieldValues(ctx context.Context) map[string][]RuleParamOption {
 	fv := map[string][]RuleParamOption{
 		"nationality_type": {{Value: "domestic", Label: "domestic"}, {Value: "foreign", Label: "foreign"}},
@@ -97,7 +88,6 @@ func (h *RuleSchemaHandler) buildFieldValues(ctx context.Context) map[string][]R
 }
 
 func (h *RuleSchemaHandler) buildAttributeType(ctx context.Context) RuleConditionType {
-	// Атрибуты студентов — берём из CHECK constraints или хардкодим известные enum-значения
 	fields := []RuleParamOption{
 		{Value: "nationality_type", Label: "Гражданство"},
 		{Value: "funding_type", Label: "Финансирование"},
@@ -139,7 +129,6 @@ func (h *RuleSchemaHandler) buildAttributeType(ctx context.Context) RuleConditio
 }
 
 func (h *RuleSchemaHandler) buildGraphType(ctx context.Context) RuleConditionType {
-	// Типы связей — из БД если возможно
 	relations := []RuleParamOption{
 		{Value: "member", Label: "member (член)"},
 		{Value: "teacher", Label: "teacher (преподаватель)"},
@@ -156,7 +145,6 @@ func (h *RuleSchemaHandler) buildGraphType(ctx context.Context) RuleConditionTyp
 		}
 	}
 
-	// Типы объектов — из БД если возможно
 	objectTypes := []RuleParamOption{
 		{Value: "faculty", Label: "Факультет"},
 		{Value: "department", Label: "Кафедра"},
@@ -204,7 +192,6 @@ func (h *RuleSchemaHandler) buildRoleType(_ context.Context) RuleConditionType {
 	var roleOptions []RuleParamOption
 
 	if h.pool != nil {
-		// Подгружаем реальные роли из БД
 		rows, err := h.pool.Query(context.Background(), `
 			SELECT DISTINCT role_name FROM user_roles ORDER BY role_name
 		`)
@@ -240,10 +227,7 @@ func (h *RuleSchemaHandler) buildRoleType(_ context.Context) RuleConditionType {
 	}
 }
 
-// --- Хелперы для загрузки данных из БД ---
-
 func (h *RuleSchemaHandler) loadDistinctValues(ctx context.Context, table, column string) []RuleParamOption {
-	// Безопасно — table и column контролируются кодом, не пользователем
 	allowedColumns := map[string]bool{
 		"student_positions:nationality_type": true,
 		"student_positions:funding_type":     true,

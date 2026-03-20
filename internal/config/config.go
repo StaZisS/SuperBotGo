@@ -10,7 +10,6 @@ import (
 	"github.com/knadh/koanf/v2"
 )
 
-// Config holds the top-level application configuration.
 type Config struct {
 	DefaultLocale string         `koanf:"default_locale"`
 	Database      DatabaseConfig `koanf:"database"`
@@ -20,7 +19,6 @@ type Config struct {
 	Admin         AdminConfig    `koanf:"admin"`
 }
 
-// AdminConfig holds Admin API HTTP server settings.
 type AdminConfig struct {
 	Port       int    `koanf:"port"`
 	ModulesDir string `koanf:"modules_dir"`
@@ -28,7 +26,6 @@ type AdminConfig struct {
 	APIKey     string `koanf:"api_key"`
 }
 
-// DatabaseConfig holds PostgreSQL connection parameters.
 type DatabaseConfig struct {
 	Host     string `koanf:"host"`
 	Port     int    `koanf:"port"`
@@ -38,30 +35,20 @@ type DatabaseConfig struct {
 	SSLMode  string `koanf:"sslmode"`
 }
 
-// RedisConfig holds Redis connection parameters.
 type RedisConfig struct {
 	Addr     string `koanf:"addr"`
 	Password string `koanf:"password"`
 	DB       int    `koanf:"db"`
 }
 
-// TelegramConfig holds Telegram bot settings.
 type TelegramConfig struct {
 	Token string `koanf:"token"`
 }
 
-// DiscordConfig holds Discord bot settings.
 type DiscordConfig struct {
 	Token string `koanf:"token"`
 }
 
-// Load reads configuration from config.yaml in the working directory,
-// then overrides values with environment variables prefixed with BOT_.
-//
-// Environment variable mapping example:
-//
-//	BOT_DATABASE_HOST -> database.host
-//	BOT_REDIS_ADDR   -> redis.addr
 func Load() (*Config, error) {
 	k := koanf.New(".")
 
@@ -111,7 +98,6 @@ func Load() (*Config, error) {
 	return &cfg, nil
 }
 
-// isFileNotFound checks whether the error indicates a missing file.
 func isFileNotFound(err error) bool {
 	return strings.Contains(err.Error(), "no such file") ||
 		strings.Contains(err.Error(), "cannot find the file") ||

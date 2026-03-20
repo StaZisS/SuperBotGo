@@ -5,13 +5,11 @@ import (
 	"sync"
 )
 
-// ErrPermissionDenied is returned when a plugin lacks the required permission.
 var ErrPermissionDenied = fmt.Errorf("permission denied")
 
-// permissionStore tracks per-plugin granted permissions.
 type permissionStore struct {
 	mu    sync.RWMutex
-	perms map[string]map[string]bool // pluginID -> set of permissions
+	perms map[string]map[string]bool
 }
 
 func newPermissionStore() *permissionStore {
@@ -20,7 +18,6 @@ func newPermissionStore() *permissionStore {
 	}
 }
 
-// Grant registers permissions for a plugin.
 func (ps *permissionStore) Grant(pluginID string, permissions []string) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
@@ -31,14 +28,12 @@ func (ps *permissionStore) Grant(pluginID string, permissions []string) {
 	ps.perms[pluginID] = set
 }
 
-// Revoke removes all permissions for a plugin.
 func (ps *permissionStore) Revoke(pluginID string) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 	delete(ps.perms, pluginID)
 }
 
-// CheckPermission returns an error if the plugin does not have the given permission.
 func (ps *permissionStore) CheckPermission(pluginID, requiredPermission string) error {
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()

@@ -12,10 +12,6 @@ import (
 
 var bundle *i18n.Bundle
 
-// Init sets up the i18n bundle with the given default locale and loads
-// all TOML translation files from the "i18n" directory relative to the
-// working directory. Translation files should be named like "en.toml",
-// "ru.toml", etc.
 func Init(defaultLocale string) error {
 	tag, err := language.Parse(defaultLocale)
 	if err != nil {
@@ -50,10 +46,6 @@ func Init(defaultLocale string) error {
 	return nil
 }
 
-// Get retrieves a translated message for the given key and locale.
-// If no translation is found the key itself is returned.
-//
-// Optional args are passed as template data using keys "V0", "V1", etc.
 func Get(key string, locale string, args ...any) string {
 	if bundle == nil {
 		return key

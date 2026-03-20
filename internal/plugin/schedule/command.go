@@ -10,7 +10,6 @@ import (
 
 var datePattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 
-// ScheduleCommand builds the command definition for schedule lookup.
 func ScheduleCommand() *state.CommandDefinition {
 	return state.NewCommand("schedule").
 		Description("University Schedule").

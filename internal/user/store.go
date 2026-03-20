@@ -9,27 +9,23 @@ import (
 	"SuperBotGo/internal/model"
 )
 
-// UserRepository persists GlobalUser records.
 type UserRepository interface {
 	FindByID(ctx context.Context, id model.GlobalUserID) (*model.GlobalUser, error)
 	Save(ctx context.Context, user *model.GlobalUser) (*model.GlobalUser, error)
 	UpdateLocale(ctx context.Context, userID model.GlobalUserID, locale string) error
 }
 
-// AccountRepository persists ChannelAccount records.
 type AccountRepository interface {
 	FindByChannelAndPlatformID(ctx context.Context, ct model.ChannelType, platformID model.PlatformUserID) (*model.ChannelAccount, error)
 	Save(ctx context.Context, account *model.ChannelAccount) (*model.ChannelAccount, error)
 }
 
-// PlaceholderUserRepo is an in-memory placeholder for UserRepository.
 type PlaceholderUserRepo struct {
 	mu    sync.RWMutex
 	users map[model.GlobalUserID]*model.GlobalUser
 	seq   atomic.Int64
 }
 
-// NewPlaceholderUserRepo creates a new placeholder user repository.
 func NewPlaceholderUserRepo() *PlaceholderUserRepo {
 	return &PlaceholderUserRepo{
 		users: make(map[model.GlobalUserID]*model.GlobalUser),
@@ -72,14 +68,12 @@ func (r *PlaceholderUserRepo) UpdateLocale(_ context.Context, userID model.Globa
 
 var _ UserRepository = (*PlaceholderUserRepo)(nil)
 
-// PlaceholderAccountRepo is an in-memory placeholder for AccountRepository.
 type PlaceholderAccountRepo struct {
 	mu       sync.RWMutex
 	accounts []*model.ChannelAccount
 	seq      atomic.Int64
 }
 
-// NewPlaceholderAccountRepo creates a new placeholder account repository.
 func NewPlaceholderAccountRepo() *PlaceholderAccountRepo {
 	return &PlaceholderAccountRepo{}
 }

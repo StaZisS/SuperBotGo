@@ -7,12 +7,10 @@ import (
 	"SuperBotGo/internal/state"
 )
 
-// ProjectLister provides the list of projects for the broadcast target selection.
 type ProjectLister interface {
 	ListProjects() ([]model.Project, error)
 }
 
-// BroadcastCommand builds the command definition for broadcasting messages.
 func BroadcastCommand(projects ProjectLister) *state.CommandDefinition {
 	return state.NewCommand("broadcast").
 		Description("Broadcast messages").

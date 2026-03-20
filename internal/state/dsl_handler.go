@@ -9,25 +9,20 @@ import (
 )
 
 const (
-	// PageNext is the callback value used to navigate to the next page.
 	PageNext = "__page_next"
-	// PagePrev is the callback value used to navigate to the previous page.
 	PagePrev = "__page_prev"
 )
 
-// DslState is the in-memory state for a DSL-defined command dialog.
 type DslState struct {
 	Command   *CommandDefinition
 	Params    model.OptionMap
 	PageState map[string]int
 }
 
-// IsComplete returns true when there are no more steps requiring input.
 func (s *DslState) IsComplete() bool {
 	return s.Command.IsComplete(s.Params)
 }
 
-// FinalParams returns a copy of the collected parameters.
 func (s *DslState) FinalParams() model.OptionMap {
 	result := make(model.OptionMap, len(s.Params))
 	for k, v := range s.Params {
@@ -36,17 +31,14 @@ func (s *DslState) FinalParams() model.OptionMap {
 	return result
 }
 
-// DslStateHandler implements StateHandler for DSL-defined commands.
 type DslStateHandler struct {
 	command *CommandDefinition
 }
 
-// NewDslStateHandler creates a handler for the given command definition.
 func NewDslStateHandler(command *CommandDefinition) *DslStateHandler {
 	return &DslStateHandler{command: command}
 }
 
-// CreateNewState initializes a fresh DslState.
 func (h *DslStateHandler) CreateNewState(_ string) (State, error) {
 	return &DslState{
 		Command:   h.command,
@@ -55,7 +47,6 @@ func (h *DslStateHandler) CreateNewState(_ string) (State, error) {
 	}, nil
 }
 
-// RestoreState reconstructs a DslState from a persisted DialogState.
 func (h *DslStateHandler) RestoreState(ds model.DialogState) (State, error) {
 	params := make(model.OptionMap, len(ds.Params))
 	for k, v := range ds.Params {
@@ -72,7 +63,6 @@ func (h *DslStateHandler) RestoreState(ds model.DialogState) (State, error) {
 	}, nil
 }
 
-// PersistState serializes a DslState into a DialogState for storage.
 func (h *DslStateHandler) PersistState(s State) model.DialogState {
 	ds := requireDslState(s)
 	params := make(model.OptionMap, len(ds.Params))
@@ -90,9 +80,6 @@ func (h *DslStateHandler) PersistState(s State) model.DialogState {
 	}
 }
 
-// ProcessInput handles user input for the current step. It manages pagination
-// navigation (PAGE_NEXT / PAGE_PREV), validates input, and stores the parameter
-// value when valid.
 func (h *DslStateHandler) ProcessInput(_ model.GlobalUserID, s State, input model.UserInput) (State, StepOutcome, error) {
 	ds := requireDslState(s)
 	step := h.command.CurrentStep(ds.Params)
@@ -157,8 +144,6 @@ func (h *DslStateHandler) ProcessInput(_ model.GlobalUserID, s State, input mode
 	return ds, outcome, nil
 }
 
-// BuildStepMessage constructs the prompt message for the current step.
-// If the command is complete, it returns a completion message.
 func (h *DslStateHandler) BuildStepMessage(s State, locale string) model.Message {
 	ds := requireDslState(s)
 	step := h.command.CurrentStep(ds.Params)
@@ -184,8 +169,6 @@ func (h *DslStateHandler) BuildStepMessage(s State, locale string) model.Message
 	return message
 }
 
-// applyPagination augments the message with paginated options and navigation
-// buttons.
 func (h *DslStateHandler) applyPagination(message model.Message, step *StepNode, ds *DslState, locale string) model.Message {
 	config := step.Pagination
 	currentPage := ds.PageState[step.ParamName]
@@ -196,7 +179,6 @@ func (h *DslStateHandler) applyPagination(message model.Message, step *StepNode,
 	}
 	result := config.PageProvider(ctx, currentPage)
 
-	// Build navigation options.
 	var navOptions []model.Option
 	if currentPage > 0 {
 		navOptions = append(navOptions, model.Option{Label: "Previous", Value: PagePrev})
@@ -221,7 +203,6 @@ func (h *DslStateHandler) applyPagination(message model.Message, step *StepNode,
 	return model.Message{Blocks: blocks}
 }
 
-// requireDslState asserts that the State is a *DslState and panics otherwise.
 func requireDslState(s State) *DslState {
 	ds, ok := s.(*DslState)
 	if !ok {
@@ -230,11 +211,8 @@ func requireDslState(s State) *DslState {
 	return ds
 }
 
-// Ensure DslStateHandler implements StateHandler at compile time.
 var _ StateHandler = (*DslStateHandler)(nil)
 
-// ErrCommandNotFound is returned when a command name is not registered.
 var ErrCommandNotFound = errors.New("command not found")
 
-// ErrNoActiveDialog is returned when there is no active dialog for a user.
 var ErrNoActiveDialog = errors.New("no active dialog")

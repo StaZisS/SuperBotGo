@@ -9,7 +9,6 @@ import (
 	"SuperBotGo/internal/model"
 )
 
-// PgStore реализует Store на PostgreSQL.
 type PgStore struct {
 	pool *pgxpool.Pool
 }

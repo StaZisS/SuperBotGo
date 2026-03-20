@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-// PluginRecord is the persistent state of a Wasm plugin.
 type PluginRecord struct {
 	ID            string          `json:"id"`
 	WasmKey       string          `json:"wasm_key"`
@@ -19,7 +18,6 @@ type PluginRecord struct {
 	UpdatedAt     time.Time       `json:"updated_at"`
 }
 
-// PluginStore persists Wasm plugin state.
 type PluginStore interface {
 	SavePlugin(ctx context.Context, record PluginRecord) error
 	GetPlugin(ctx context.Context, id string) (PluginRecord, error)

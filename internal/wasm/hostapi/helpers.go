@@ -7,7 +7,6 @@ import (
 	"github.com/tetratelabs/wazero/api"
 )
 
-// readModMemory reads bytes from a wasm module's memory.
 func readModMemory(mod api.Module, offset, length uint32) ([]byte, error) {
 	if length == 0 {
 		return nil, nil
@@ -25,7 +24,6 @@ func readModMemory(mod api.Module, offset, length uint32) ([]byte, error) {
 	return result, nil
 }
 
-// writeModMemory allocates memory in the module and writes data to it.
 func writeModMemory(ctx context.Context, mod api.Module, data []byte) (uint32, uint32, error) {
 	length := uint32(len(data))
 	if length == 0 {
@@ -50,7 +48,6 @@ func writeModMemory(ctx context.Context, mod api.Module, data []byte) (uint32, u
 	return offset, length, nil
 }
 
-// errDepNotAvailable returns an error indicating a dependency is not configured.
 func errDepNotAvailable(name string) error {
 	return fmt.Errorf("dependency %q is not available", name)
 }

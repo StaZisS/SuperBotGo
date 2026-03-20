@@ -10,13 +10,11 @@ import (
 	tele "gopkg.in/telebot.v3"
 )
 
-// Adapter implements channel.ChannelAdapter for Telegram.
 type Adapter struct {
 	bot      *tele.Bot
 	renderer *Renderer
 }
 
-// NewAdapter creates a Telegram adapter wrapping the given telebot instance.
 func NewAdapter(bot *tele.Bot) *Adapter {
 	return &Adapter{
 		bot:      bot,
@@ -24,17 +22,14 @@ func NewAdapter(bot *tele.Bot) *Adapter {
 	}
 }
 
-// Type returns the Telegram channel type.
 func (a *Adapter) Type() model.ChannelType {
 	return model.ChannelTelegram
 }
 
-// SendToUser sends a message to a user by their Telegram user ID.
 func (a *Adapter) SendToUser(ctx context.Context, platformUserID model.PlatformUserID, msg model.Message) error {
 	return a.sendMessage(ctx, string(platformUserID), msg)
 }
 
-// SendToChat sends a message to a Telegram chat by its chat ID.
 func (a *Adapter) SendToChat(ctx context.Context, chatID string, msg model.Message) error {
 	return a.sendMessage(ctx, chatID, msg)
 }
@@ -83,7 +78,6 @@ func (a *Adapter) sendMessage(_ context.Context, chatID string, msg model.Messag
 	return nil
 }
 
-// telegramChat implements telebot's Recipient interface.
 type telegramChat struct {
 	id int64
 }

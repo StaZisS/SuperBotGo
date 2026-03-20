@@ -8,17 +8,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// PgPluginStore implements PluginStore using PostgreSQL via pgxpool.
 type PgPluginStore struct {
 	pool *pgxpool.Pool
 }
 
-// NewPgPluginStore creates a PostgreSQL-backed plugin store.
 func NewPgPluginStore(pool *pgxpool.Pool) *PgPluginStore {
 	return &PgPluginStore{pool: pool}
 }
 
-// SavePlugin inserts or updates a plugin record (UPSERT).
 func (s *PgPluginStore) SavePlugin(ctx context.Context, record PluginRecord) error {
 	configJSON := json.RawMessage("null")
 	if len(record.ConfigJSON) > 0 {
@@ -53,7 +50,6 @@ func (s *PgPluginStore) SavePlugin(ctx context.Context, record PluginRecord) err
 	return nil
 }
 
-// GetPlugin retrieves a single plugin record by ID.
 func (s *PgPluginStore) GetPlugin(ctx context.Context, id string) (PluginRecord, error) {
 	var rec PluginRecord
 	err := s.pool.QueryRow(ctx, `
@@ -77,7 +73,6 @@ func (s *PgPluginStore) GetPlugin(ctx context.Context, id string) (PluginRecord,
 	return rec, nil
 }
 
-// ListPlugins returns all plugin records.
 func (s *PgPluginStore) ListPlugins(ctx context.Context) ([]PluginRecord, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, wasm_key, config_json, permissions, enabled, schema_version, wasm_hash, installed_at, updated_at
@@ -113,7 +108,6 @@ func (s *PgPluginStore) ListPlugins(ctx context.Context) ([]PluginRecord, error)
 	return records, nil
 }
 
-// DeletePlugin removes a plugin record by ID.
 func (s *PgPluginStore) DeletePlugin(ctx context.Context, id string) error {
 	tag, err := s.pool.Exec(ctx, `DELETE FROM wasm_plugins WHERE id = $1`, id)
 	if err != nil {

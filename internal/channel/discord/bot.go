@@ -11,14 +11,12 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-// Bot wraps a Discord session and routes events to an UpdateHandler.
 type Bot struct {
 	session *discordgo.Session
 	handler channel.UpdateHandler
 	logger  *slog.Logger
 }
 
-// NewBot creates a Discord bot. The bot is not started until Start is called.
 func NewBot(token string, handler channel.UpdateHandler, logger *slog.Logger) (*Bot, error) {
 	if logger == nil {
 		logger = slog.Default()
@@ -45,12 +43,10 @@ func NewBot(token string, handler channel.UpdateHandler, logger *slog.Logger) (*
 	return b, nil
 }
 
-// Adapter returns the ChannelAdapter for this bot.
 func (b *Bot) Adapter() *Adapter {
 	return NewAdapter(b.session)
 }
 
-// Start opens the gateway connection and blocks until the context is cancelled.
 func (b *Bot) Start(ctx context.Context) error {
 	b.logger.Info("Discord bot opening gateway connection")
 
@@ -63,7 +59,6 @@ func (b *Bot) Start(ctx context.Context) error {
 	return b.session.Close()
 }
 
-// Stop closes the Discord session.
 func (b *Bot) Stop() error {
 	return b.session.Close()
 }

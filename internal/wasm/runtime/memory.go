@@ -7,8 +7,6 @@ import (
 	"github.com/tetratelabs/wazero/api"
 )
 
-// writeToMemory allocates space in the module's memory via the "alloc" export
-// and copies data into it. Returns the offset and length.
 func writeToMemory(ctx context.Context, mod api.Module, data []byte) (uint32, uint32, error) {
 	length := uint32(len(data))
 	if length == 0 {
@@ -41,7 +39,6 @@ func writeToMemory(ctx context.Context, mod api.Module, data []byte) (uint32, ui
 	return offset, length, nil
 }
 
-// readFromMemory reads a byte slice from the module's memory at the given offset and length.
 func readFromMemory(mod api.Module, offset, length uint32) ([]byte, error) {
 	if length == 0 {
 		return nil, nil

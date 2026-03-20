@@ -7,17 +7,14 @@ import (
 	"SuperBotGo/internal/state"
 )
 
-// ProjectLister provides the list of projects for option selection.
 type ProjectLister interface {
 	ListProjects() ([]model.Project, error)
 }
 
-// ChatLister provides the list of chat references for option selection.
 type ChatLister interface {
 	ListChats() ([]model.ChatReference, error)
 }
 
-// ProjectCommand builds the command definition for project management.
 func ProjectCommand(projects ProjectLister, chats ChatLister) *state.CommandDefinition {
 	return state.NewCommand("project").
 		Description("Project management").

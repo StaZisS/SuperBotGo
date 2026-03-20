@@ -9,16 +9,12 @@ import (
 	"sync"
 )
 
-// FilePluginStore persists plugin records as a JSON file on disk.
-// The file is stored alongside the wasm modules directory.
 type FilePluginStore struct {
 	mu   sync.RWMutex
 	path string
 	data map[string]PluginRecord
 }
 
-// NewFilePluginStore creates a file-backed store. It loads existing records
-// from the file if it exists.
 func NewFilePluginStore(modulesDir string) (*FilePluginStore, error) {
 	if err := os.MkdirAll(modulesDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create modules dir: %w", err)
@@ -81,7 +77,6 @@ func (s *FilePluginStore) DeletePlugin(_ context.Context, id string) error {
 	return s.flush()
 }
 
-// flush writes the current state to disk. Must be called with mu held.
 func (s *FilePluginStore) flush() error {
 	records := make([]PluginRecord, 0, len(s.data))
 	for _, r := range s.data {

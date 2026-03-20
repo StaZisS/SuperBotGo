@@ -8,24 +8,20 @@ import (
 	"SuperBotGo/internal/model"
 )
 
-// SenderUserService is the user service interface needed by SenderAPI.
 type SenderUserService interface {
 	GetUser(ctx context.Context, id model.GlobalUserID) (*model.GlobalUser, error)
 }
 
-// SenderChatRegistry is the chat registry interface needed by SenderAPI.
 type SenderChatRegistry interface {
 	FindChatsByProject(ctx context.Context, projectID int64) ([]model.ChatReference, error)
 }
 
-// SenderAPI provides plugins with the ability to send messages to users and chats.
 type SenderAPI struct {
 	adapters    *channel.AdapterRegistry
 	userService SenderUserService
 	chatReg     SenderChatRegistry
 }
 
-// NewSenderAPI creates a new SenderAPI.
 func NewSenderAPI(adapters *channel.AdapterRegistry, userService SenderUserService, chatReg SenderChatRegistry) *SenderAPI {
 	return &SenderAPI{
 		adapters:    adapters,
@@ -34,12 +30,10 @@ func NewSenderAPI(adapters *channel.AdapterRegistry, userService SenderUserServi
 	}
 }
 
-// Reply sends a message back to the chat from which the command was issued.
 func (s *SenderAPI) Reply(ctx context.Context, req model.CommandRequest, msg model.Message) error {
 	return s.adapters.SendToChat(ctx, req.ChannelType, req.ChatID, msg)
 }
 
-// SendToUser sends a message to a specific user via their primary channel.
 func (s *SenderAPI) SendToUser(ctx context.Context, userID model.GlobalUserID, msg model.Message) error {
 	user, err := s.userService.GetUser(ctx, userID)
 	if err != nil {
@@ -57,7 +51,6 @@ func (s *SenderAPI) SendToUser(ctx context.Context, userID model.GlobalUserID, m
 	return s.adapters.SendToUser(ctx, user.PrimaryChannel, platformID, msg)
 }
 
-// SendToAllChannels sends a message to a user on all their linked channels.
 func (s *SenderAPI) SendToAllChannels(ctx context.Context, userID model.GlobalUserID, msg model.Message) error {
 	user, err := s.userService.GetUser(ctx, userID)
 	if err != nil {
@@ -75,7 +68,6 @@ func (s *SenderAPI) SendToAllChannels(ctx context.Context, userID model.GlobalUs
 	return nil
 }
 
-// SendToProject sends a message to all chats bound to a project.
 func (s *SenderAPI) SendToProject(ctx context.Context, projectID int64, msg model.Message) error {
 	chats, err := s.chatReg.FindChatsByProject(ctx, projectID)
 	if err != nil {
@@ -94,7 +86,6 @@ func (s *SenderAPI) SendToProject(ctx context.Context, projectID int64, msg mode
 	return nil
 }
 
-// ReplyToChat sends a message to a specific chat on a specific channel.
 func (s *SenderAPI) ReplyToChat(ctx context.Context, channelType model.ChannelType, chatID string, msg model.Message) error {
 	return s.adapters.SendToChat(ctx, channelType, chatID, msg)
 }

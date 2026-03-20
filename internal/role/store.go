@@ -7,7 +7,6 @@ import (
 	"SuperBotGo/internal/model"
 )
 
-// Store is the interface for role persistence.
 type Store interface {
 	GetRoles(ctx context.Context, userID model.GlobalUserID, roleType model.RoleLayer) ([]model.UserRole, error)
 	GetAllRoles(ctx context.Context, userID model.GlobalUserID) ([]model.UserRole, error)
@@ -16,14 +15,11 @@ type Store interface {
 	ClearRoles(ctx context.Context, userID model.GlobalUserID, roleType model.RoleLayer) error
 }
 
-// PlaceholderStore is an in-memory placeholder that satisfies the Store interface.
-// It will be replaced with a PostgreSQL-backed implementation later.
 type PlaceholderStore struct {
 	mu    sync.RWMutex
 	roles map[model.GlobalUserID][]model.UserRole
 }
 
-// NewPlaceholderStore creates a new in-memory role store.
 func NewPlaceholderStore() *PlaceholderStore {
 	return &PlaceholderStore{
 		roles: make(map[model.GlobalUserID][]model.UserRole),
@@ -86,5 +82,4 @@ func (s *PlaceholderStore) ClearRoles(_ context.Context, userID model.GlobalUser
 	return nil
 }
 
-// Ensure PlaceholderStore implements Store.
 var _ Store = (*PlaceholderStore)(nil)

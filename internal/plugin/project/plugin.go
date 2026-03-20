@@ -11,14 +11,12 @@ import (
 	"SuperBotGo/internal/state"
 )
 
-// ProjectStore provides CRUD operations for projects.
 type ProjectStore interface {
 	ProjectLister
 	FindProject(ctx context.Context, id int64) (*model.Project, error)
 	SaveProject(ctx context.Context, name, description string) (*model.Project, error)
 }
 
-// ChatStore provides CRUD operations for chat references and bindings.
 type ChatStore interface {
 	ChatLister
 	FindChat(ctx context.Context, channelType model.ChannelType, platformChatID string) (*model.ChatReference, error)
@@ -27,7 +25,6 @@ type ChatStore interface {
 	BindChat(ctx context.Context, projectID, chatRefID int64) error
 }
 
-// Plugin handles the /project command.
 type Plugin struct {
 	api      *plugin.SenderAPI
 	projects ProjectStore
@@ -35,7 +32,6 @@ type Plugin struct {
 	cmdDef   *state.CommandDefinition
 }
 
-// New creates a ProjectPlugin.
 func New(api *plugin.SenderAPI, projects ProjectStore, chats ChatStore) *Plugin {
 	return &Plugin{
 		api:      api,
@@ -51,7 +47,6 @@ func (p *Plugin) Version() string                      { return "1.0.0" }
 func (p *Plugin) SupportedRoles() []string             { return []string{"ADMIN"} }
 func (p *Plugin) Commands() []*state.CommandDefinition { return []*state.CommandDefinition{p.cmdDef} }
 
-// HandleCommand processes a completed project command.
 func (p *Plugin) HandleCommand(ctx context.Context, req model.CommandRequest) error {
 	locale := req.Locale
 	switch req.Params.Get("action") {

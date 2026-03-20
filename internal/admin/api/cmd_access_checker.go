@@ -11,12 +11,6 @@ import (
 	"SuperBotGo/internal/policy"
 )
 
-// CommandAccessChecker проверяет доступ пользователя к командам плагинов.
-//
-// Логика:
-//  1. enabled = false → запрет
-//  2. policy_expression задано → вычисляем выражение (expr-lang)
-//  3. Нет выражения → разрешено всем
 type CommandAccessChecker struct {
 	pool      *pgxpool.Pool
 	evaluator *policy.Evaluator
@@ -30,7 +24,6 @@ func NewCommandAccessChecker(pool *pgxpool.Pool) *CommandAccessChecker {
 }
 
 func (c *CommandAccessChecker) CanExecute(ctx context.Context, pluginID, commandName string, userID model.GlobalUserID) (bool, error) {
-	// Читаем настройки команды
 	var enabled bool
 	var policyExpr *string
 	err := c.pool.QueryRow(ctx, `
@@ -39,19 +32,16 @@ func (c *CommandAccessChecker) CanExecute(ctx context.Context, pluginID, command
 	`, pluginID, commandName).Scan(&enabled, &policyExpr)
 
 	if err == pgx.ErrNoRows {
-		// Нет настроек — команда открыта всем
 		return true, nil
 	}
 	if err != nil {
 		return false, err
 	}
 
-	// Команда отключена
 	if !enabled {
 		return false, nil
 	}
 
-	// Есть policy expression — вычисляем
 	if policyExpr != nil && *policyExpr != "" {
 		ok, evalErr := c.evaluator.Evaluate(ctx, *policyExpr, userID)
 		if evalErr != nil {
@@ -59,11 +49,10 @@ func (c *CommandAccessChecker) CanExecute(ctx context.Context, pluginID, command
 				slog.String("plugin", pluginID),
 				slog.String("command", commandName),
 				slog.Any("error", evalErr))
-			return false, nil // ошибка в выражении → запрет
+			return false, nil
 		}
 		return ok, nil
 	}
 
-	// enabled=true, выражения нет → открыто всем
 	return true, nil
 }

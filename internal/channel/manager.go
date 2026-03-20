@@ -10,13 +10,11 @@ import (
 	"SuperBotGo/internal/state"
 )
 
-// UserService is the interface the ChannelManager uses for user lookups.
 type UserService interface {
 	FindOrCreateUser(ctx context.Context, channelType model.ChannelType, platformUserID model.PlatformUserID) (*model.GlobalUser, error)
 	GetUser(ctx context.Context, id model.GlobalUserID) (*model.GlobalUser, error)
 }
 
-// StateManager is the interface the ChannelManager uses for dialog state.
 type StateManager interface {
 	Register(def *state.CommandDefinition)
 	StartCommand(ctx context.Context, userID model.GlobalUserID, channelType model.ChannelType, commandName string, locale string) (*StateResult, error)
@@ -24,7 +22,6 @@ type StateManager interface {
 	CancelCommand(ctx context.Context, userID model.GlobalUserID, channelType model.ChannelType) error
 }
 
-// StateResult represents the outcome of a dialog step.
 type StateResult struct {
 	Message     model.Message
 	CommandName string
@@ -32,41 +29,34 @@ type StateResult struct {
 	Params      model.OptionMap
 }
 
-// PluginRegistry is a minimal interface for looking up plugins by command.
 type PluginRegistry interface {
 	GetCommandDefinition(commandName string) *state.CommandDefinition
 	GetPluginIDByCommand(commandName string) string
 }
 
-// UpdateRouterIface routes completed command requests to the correct plugin.
 type UpdateRouterIface interface {
 	Route(ctx context.Context, req model.CommandRequest) error
 }
 
-// RoleChecker checks if a user has the required roles.
 type RoleChecker interface {
 	CheckAccess(ctx context.Context, userID model.GlobalUserID, user *model.GlobalUser, req *model.RoleRequirements) (bool, error)
 }
 
-// CommandAccessChecker проверяет ReBAC-доступ к командам плагинов.
 type CommandAccessChecker interface {
 	CanExecute(ctx context.Context, pluginID, commandName string, userID model.GlobalUserID) (bool, error)
 }
 
-// ChannelManager orchestrates incoming updates: user lookup, dialog state
-// management, role checking, and routing completed commands to plugins.
 type ChannelManager struct {
 	userService UserService
 	router      UpdateRouterIface
 	state       StateManager
 	plugins     PluginRegistry
 	roles       RoleChecker
-	cmdAccess   CommandAccessChecker // ReBAC-проверка доступа к командам (может быть nil)
+	cmdAccess   CommandAccessChecker
 	adapters    *AdapterRegistry
 	logger      *slog.Logger
 }
 
-// NewChannelManager creates a ChannelManager with the given dependencies.
 func NewChannelManager(
 	userService UserService,
 	router UpdateRouterIface,
@@ -90,19 +80,14 @@ func NewChannelManager(
 	}
 }
 
-// SetCommandAccessChecker устанавливает ReBAC-проверку доступа к командам.
 func (m *ChannelManager) SetCommandAccessChecker(checker CommandAccessChecker) {
 	m.cmdAccess = checker
 }
 
-// RegisterAdapter registers a platform adapter and wires this manager as its
-// update handler (conceptually; Go adapters hold a reference at construction).
 func (m *ChannelManager) RegisterAdapter(adapter ChannelAdapter) {
 	m.adapters.Register(adapter)
 }
 
-// OnUpdate implements the UpdateHandler interface. It is called by platform
-// adapters when a user sends a message or presses a button.
 func (m *ChannelManager) OnUpdate(ctx context.Context, channelType model.ChannelType, platformUserID model.PlatformUserID, input model.UserInput, chatID string) error {
 	user, err := m.userService.FindOrCreateUser(ctx, channelType, platformUserID)
 	if err != nil {
@@ -157,7 +142,6 @@ func (m *ChannelManager) handleCommand(
 		}
 	}
 
-	// ReBAC-проверка доступа к командам плагинов через authorization_tuples
 	if m.cmdAccess != nil {
 		pluginID := m.plugins.GetPluginIDByCommand(commandName)
 		if pluginID != "" {

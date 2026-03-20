@@ -5,7 +5,6 @@ import (
 	"SuperBotGo/internal/state"
 )
 
-// SettingsCommand builds the command definition for user settings.
 func SettingsCommand() *state.CommandDefinition {
 	return state.NewCommand("settings").
 		Description("User Settings").

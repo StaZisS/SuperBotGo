@@ -13,17 +13,12 @@ import (
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 )
 
-// Compile-time check: WasmPlugin must satisfy the plugin.Plugin interface.
 var _ plugin.Plugin = (*WasmPlugin)(nil)
 
-// ReplyFunc sends a text reply back to the chat that issued the command.
 type ReplyFunc func(ctx context.Context, req model.CommandRequest, text string) error
 
-// SendFunc sends a message to an arbitrary chat on the same channel.
 type SendFunc func(ctx context.Context, channelType model.ChannelType, chatID string, text string) error
 
-// WasmPlugin wraps a compiled Wasm module and implements the plugin.Plugin interface.
-// Each call creates a new one-shot module instance (fast due to AOT compilation).
 type WasmPlugin struct {
 	compiled *wasmrt.CompiledModule
 	meta     wasmrt.PluginMeta
@@ -32,22 +27,18 @@ type WasmPlugin struct {
 	send     SendFunc
 }
 
-// ID returns the plugin's unique identifier.
 func (wp *WasmPlugin) ID() string {
 	return wp.meta.ID
 }
 
-// Name returns the human-readable plugin name.
 func (wp *WasmPlugin) Name() string {
 	return wp.meta.Name
 }
 
-// Version returns the plugin version.
 func (wp *WasmPlugin) Version() string {
 	return wp.meta.Version
 }
 
-// SupportedRoles extracts unique roles from the plugin's command definitions.
 func (wp *WasmPlugin) SupportedRoles() []string {
 	seen := make(map[string]bool)
 	var roles []string
@@ -60,7 +51,6 @@ func (wp *WasmPlugin) SupportedRoles() []string {
 	return roles
 }
 
-// Commands converts the plugin's command definitions to state.CommandDefinition.
 func (wp *WasmPlugin) Commands() []*state.CommandDefinition {
 	defs := make([]*state.CommandDefinition, len(wp.meta.Commands))
 	for i, cmd := range wp.meta.Commands {
@@ -75,14 +65,12 @@ func (wp *WasmPlugin) Commands() []*state.CommandDefinition {
 		}
 
 		if len(cmd.Nodes) > 0 {
-			// New node-based command flow.
 			for _, nd := range cmd.Nodes {
 				if cn := wp.nodeDefToCommandNode(nd); cn != nil {
 					def.Nodes = append(def.Nodes, cn)
 				}
 			}
 		} else {
-			// Legacy step-based command flow.
 			for _, step := range cmd.Steps {
 				def.Nodes = append(def.Nodes, stepDefToNode(step))
 			}
@@ -93,11 +81,6 @@ func (wp *WasmPlugin) Commands() []*state.CommandDefinition {
 	return defs
 }
 
-// ---------------------------------------------------------------------------
-// Legacy step conversion (backward compat)
-// ---------------------------------------------------------------------------
-
-// stepDefToNode converts a wasm StepDef to a state.StepNode.
 func stepDefToNode(sd wasmrt.StepDef) state.StepNode {
 	node := state.StepNode{
 		ParamName: sd.Param,
@@ -138,12 +121,6 @@ func stepDefToNode(sd wasmrt.StepDef) state.StepNode {
 	return node
 }
 
-// ---------------------------------------------------------------------------
-// Node tree conversion
-// ---------------------------------------------------------------------------
-
-// nodeDefToCommandNode recursively converts a NodeDef to a state.CommandNode.
-// Returns nil for unknown node types.
 func (wp *WasmPlugin) nodeDefToCommandNode(nd wasmrt.NodeDef) state.CommandNode {
 	switch nd.Type {
 	case "step":
@@ -158,13 +135,11 @@ func (wp *WasmPlugin) nodeDefToCommandNode(nd wasmrt.NodeDef) state.CommandNode 
 	}
 }
 
-// stepNodeDefToStepNode converts a step NodeDef to a state.StepNode.
 func (wp *WasmPlugin) stepNodeDefToStepNode(nd wasmrt.NodeDef) state.StepNode {
 	node := state.StepNode{
 		ParamName: nd.Param,
 	}
 
-	// --- MessageBuilder ---
 	if len(nd.Blocks) > 0 {
 		blocks := nd.Blocks
 		node.MessageBuilder = func(ctx state.StepContext) model.Message {
@@ -203,13 +178,11 @@ func (wp *WasmPlugin) stepNodeDefToStepNode(nd wasmrt.NodeDef) state.StepNode {
 			return model.Message{Blocks: contentBlocks}
 		}
 	} else {
-		// Fallback: empty message.
 		node.MessageBuilder = func(_ state.StepContext) model.Message {
 			return model.Message{}
 		}
 	}
 
-	// --- Validation ---
 	if nd.Validation != "" {
 		pattern := nd.Validation
 		node.Validate = func(input model.UserInput) bool {
@@ -220,7 +193,6 @@ func (wp *WasmPlugin) stepNodeDefToStepNode(nd wasmrt.NodeDef) state.StepNode {
 			return re.MatchString(input.TextValue())
 		}
 	}
-	// ValidateFn takes precedence over regex if both are present.
 	if nd.ValidateFn != "" {
 		cbName := nd.ValidateFn
 		node.Validate = func(input model.UserInput) bool {
@@ -228,14 +200,12 @@ func (wp *WasmPlugin) stepNodeDefToStepNode(nd wasmrt.NodeDef) state.StepNode {
 		}
 	}
 
-	// --- Visibility condition ---
 	if nd.VisibleWhen != nil {
 		cond := nd.VisibleWhen
 		node.Condition = func(params model.OptionMap) bool {
 			return evalCondition(cond, params)
 		}
 	}
-	// ConditionFn takes precedence over declarative if both are present.
 	if nd.ConditionFn != "" {
 		cbName := nd.ConditionFn
 		node.Condition = func(params model.OptionMap) bool {
@@ -243,7 +213,6 @@ func (wp *WasmPlugin) stepNodeDefToStepNode(nd wasmrt.NodeDef) state.StepNode {
 		}
 	}
 
-	// --- Pagination ---
 	if nd.Pagination != nil {
 		pag := nd.Pagination
 		cbName := pag.Provider
@@ -259,7 +228,6 @@ func (wp *WasmPlugin) stepNodeDefToStepNode(nd wasmrt.NodeDef) state.StepNode {
 	return node
 }
 
-// branchNodeDefToBranchNode converts a branch NodeDef to a state.BranchNode.
 func (wp *WasmPlugin) branchNodeDefToBranchNode(nd wasmrt.NodeDef) state.BranchNode {
 	bn := state.BranchNode{
 		OnParam: nd.OnParam,
@@ -286,8 +254,6 @@ func (wp *WasmPlugin) branchNodeDefToBranchNode(nd wasmrt.NodeDef) state.BranchN
 	return bn
 }
 
-// condBranchNodeDefToCondBranchNode converts a conditional_branch NodeDef to
-// a state.ConditionalBranchNode.
 func (wp *WasmPlugin) condBranchNodeDefToCondBranchNode(nd wasmrt.NodeDef) state.ConditionalBranchNode {
 	cbn := state.ConditionalBranchNode{}
 	for _, cc := range nd.ConditionalCases {
@@ -331,11 +297,6 @@ func (wp *WasmPlugin) condBranchNodeDefToCondBranchNode(nd wasmrt.NodeDef) state
 	return cbn
 }
 
-// ---------------------------------------------------------------------------
-// WASM callback helpers
-// ---------------------------------------------------------------------------
-
-// callOptionsCallback invokes a plugin's dynamic options callback.
 func (wp *WasmPlugin) callOptionsCallback(cbName string, ctx state.StepContext) []model.Option {
 	req := wasmrt.StepCallbackRequest{
 		Callback: cbName,
@@ -365,7 +326,6 @@ func (wp *WasmPlugin) callOptionsCallback(cbName string, ctx state.StepContext) 
 	return opts
 }
 
-// callValidateCallback invokes a plugin's custom validation callback.
 func (wp *WasmPlugin) callValidateCallback(cbName string, inputText string) bool {
 	req := wasmrt.StepCallbackRequest{
 		Callback: cbName,
@@ -375,7 +335,7 @@ func (wp *WasmPlugin) callValidateCallback(cbName string, inputText string) bool
 	result, err := wp.compiled.CallStepCallback(context.Background(), reqJSON, wp.config)
 	if err != nil {
 		slog.Error("wasm validate callback failed", "plugin", wp.meta.ID, "callback", cbName, "error", err)
-		return true // safe default: accept input
+		return true
 	}
 	var resp wasmrt.StepCallbackResponse
 	if err := json.Unmarshal(result, &resp); err != nil {
@@ -387,7 +347,6 @@ func (wp *WasmPlugin) callValidateCallback(cbName string, inputText string) bool
 	return true
 }
 
-// callConditionCallback invokes a plugin's condition evaluation callback.
 func (wp *WasmPlugin) callConditionCallback(cbName string, params model.OptionMap) bool {
 	req := wasmrt.StepCallbackRequest{
 		Callback: cbName,
@@ -397,7 +356,7 @@ func (wp *WasmPlugin) callConditionCallback(cbName string, params model.OptionMa
 	result, err := wp.compiled.CallStepCallback(context.Background(), reqJSON, wp.config)
 	if err != nil {
 		slog.Error("wasm condition callback failed", "plugin", wp.meta.ID, "callback", cbName, "error", err)
-		return true // safe default: show the step
+		return true
 	}
 	var resp wasmrt.StepCallbackResponse
 	if err := json.Unmarshal(result, &resp); err != nil {
@@ -409,7 +368,6 @@ func (wp *WasmPlugin) callConditionCallback(cbName string, params model.OptionMa
 	return true
 }
 
-// callPaginationCallback invokes a plugin's pagination provider callback.
 func (wp *WasmPlugin) callPaginationCallback(cbName string, ctx state.StepContext, page int) state.OptionsPage {
 	req := wasmrt.StepCallbackRequest{
 		Callback: cbName,
@@ -440,17 +398,11 @@ func (wp *WasmPlugin) callPaginationCallback(cbName string, ctx state.StepContex
 	return state.OptionsPage{Options: opts, HasMore: resp.HasMore}
 }
 
-// ---------------------------------------------------------------------------
-// Declarative condition evaluation
-// ---------------------------------------------------------------------------
-
-// evalCondition evaluates a declarative condition against the collected params.
 func evalCondition(cond *wasmrt.ConditionDef, params model.OptionMap) bool {
 	if cond == nil {
 		return true
 	}
 
-	// Compound conditions.
 	if len(cond.And) > 0 {
 		for _, c := range cond.And {
 			if !evalCondition(c, params) {
@@ -471,7 +423,6 @@ func evalCondition(cond *wasmrt.ConditionDef, params model.OptionMap) bool {
 		return !evalCondition(cond.Not, params)
 	}
 
-	// Simple conditions.
 	val := params.Get(cond.Param)
 
 	if cond.Set != nil {
@@ -498,11 +449,6 @@ func evalCondition(cond *wasmrt.ConditionDef, params model.OptionMap) bool {
 	return true
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-// parseTextStyle converts a style string to model.TextStyle.
 func parseTextStyle(s string) model.TextStyle {
 	switch s {
 	case "header":
@@ -518,8 +464,6 @@ func parseTextStyle(s string) model.TextStyle {
 	}
 }
 
-// HandleCommand serializes the request, runs a one-shot handle_command action,
-// and returns the result.
 func (wp *WasmPlugin) HandleCommand(ctx context.Context, req model.CommandRequest) error {
 	reqJSON, err := json.Marshal(req)
 	if err != nil {
@@ -577,22 +521,18 @@ func (wp *WasmPlugin) HandleCommand(ctx context.Context, req model.CommandReques
 	return nil
 }
 
-// SetConfig updates the in-memory plugin configuration.
 func (wp *WasmPlugin) SetConfig(config json.RawMessage) {
 	wp.config = config
 }
 
-// Meta returns the cached plugin metadata.
 func (wp *WasmPlugin) Meta() wasmrt.PluginMeta {
 	return wp.meta
 }
 
-// IsWasm returns true, indicating this is a Wasm plugin.
 func (wp *WasmPlugin) IsWasm() bool {
 	return true
 }
 
-// Close releases the compiled module resources.
 func (wp *WasmPlugin) Close(ctx context.Context) error {
 	return wp.compiled.Close(ctx)
 }

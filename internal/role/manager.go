@@ -7,13 +7,11 @@ import (
 	"SuperBotGo/internal/model"
 )
 
-// Manager handles role checking, assignment, and revocation.
 type Manager struct {
 	store  Store
 	logger *slog.Logger
 }
 
-// NewManager creates a RoleManager.
 func NewManager(store Store, logger *slog.Logger) *Manager {
 	if logger == nil {
 		logger = slog.Default()
@@ -21,8 +19,6 @@ func NewManager(store Store, logger *slog.Logger) *Manager {
 	return &Manager{store: store, logger: logger}
 }
 
-// CheckAccess verifies whether a user has the roles specified in the requirements.
-// Returns true if access is granted, false otherwise.
 func (m *Manager) CheckAccess(ctx context.Context, userID model.GlobalUserID, _ *model.GlobalUser, req *model.RoleRequirements) (bool, error) {
 	if req == nil {
 		return true, nil
@@ -75,7 +71,6 @@ func (m *Manager) CheckAccess(ctx context.Context, userID model.GlobalUserID, _ 
 	return true, nil
 }
 
-// AssignRole adds a role to a user.
 func (m *Manager) AssignRole(ctx context.Context, userID model.GlobalUserID, roleType model.RoleLayer, roleName string) error {
 	err := m.store.AddRole(ctx, model.UserRole{
 		UserID:   userID,
@@ -92,7 +87,6 @@ func (m *Manager) AssignRole(ctx context.Context, userID model.GlobalUserID, rol
 	return nil
 }
 
-// RevokeRole removes a specific role from a user.
 func (m *Manager) RevokeRole(ctx context.Context, userID model.GlobalUserID, roleType model.RoleLayer, roleName string) error {
 	err := m.store.RemoveRole(ctx, userID, roleType, roleName)
 	if err != nil {
@@ -105,7 +99,6 @@ func (m *Manager) RevokeRole(ctx context.Context, userID model.GlobalUserID, rol
 	return nil
 }
 
-// SetSystemRole clears existing system roles and sets a new one.
 func (m *Manager) SetSystemRole(ctx context.Context, userID model.GlobalUserID, role string) error {
 	if err := m.store.ClearRoles(ctx, userID, model.RoleLayerSystem); err != nil {
 		return err

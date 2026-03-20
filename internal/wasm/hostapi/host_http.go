@@ -16,10 +16,8 @@ import (
 	"github.com/tetratelabs/wazero/api"
 )
 
-// wasmHTTPTimeout is the maximum duration for a single HTTP request from a WASM plugin.
 const wasmHTTPTimeout = 30 * time.Second
 
-// isBlockedHost returns true if the URL targets a private/internal network address.
 func isBlockedHost(rawURL string) bool {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -31,23 +29,20 @@ func isBlockedHost(rawURL string) bool {
 		return true
 	}
 
-	// Block common internal hostnames.
 	lower := strings.ToLower(hostname)
 	if lower == "localhost" || lower == "metadata.google.internal" {
 		return true
 	}
 
-	// Block link-local metadata endpoints (AWS, GCP, Azure).
 	if lower == "169.254.169.254" || lower == "metadata" {
 		return true
 	}
 
 	ip := net.ParseIP(hostname)
 	if ip == nil {
-		return false // non-IP hostnames are allowed (except blocked above)
+		return false
 	}
 
-	// Block private & loopback ranges.
 	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
 }
 
@@ -96,13 +91,11 @@ func (h *HostAPI) httpRequestFunc() api.GoModuleFunc {
 			return
 		}
 
-		// SSRF protection: block requests to internal/private networks.
 		if isBlockedHost(payload.URL) {
 			writeErrorResult(ctx, mod, stack, fmt.Errorf("requests to internal/private addresses are not allowed"))
 			return
 		}
 
-		// Enforce a per-request timeout.
 		reqCtx, cancel := context.WithTimeout(ctx, wasmHTTPTimeout)
 		defer cancel()
 

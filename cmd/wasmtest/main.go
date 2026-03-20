@@ -1,11 +1,3 @@
-// Command wasmtest is a standalone CLI utility for testing .wasm plugins
-// in the SuperBotGo one-shot execution model.
-//
-// Usage:
-//
-//	go run ./cmd/wasmtest meta   <path.wasm>
-//	go run ./cmd/wasmtest configure <path.wasm> '<json>'
-//	go run ./cmd/wasmtest handle    <path.wasm> '<json>'
 package main
 
 import (
@@ -105,7 +97,6 @@ func run() error {
 
 	fmt.Fprintf(os.Stdout, "\n--- Running action: %s ---\n", action)
 
-	// Prepare stdin.
 	var stdin *bytes.Reader
 	if jsonData != "" {
 		stdin = bytes.NewReader([]byte(jsonData))
@@ -145,7 +136,6 @@ func run() error {
 	fmt.Fprintf(os.Stdout, "\n--- Result (stdout) ---\n")
 	result := stdout.Bytes()
 	if len(result) > 0 {
-		// Try to pretty-print JSON.
 		var prettyBuf bytes.Buffer
 		if json.Indent(&prettyBuf, result, "", "  ") == nil {
 			fmt.Fprintln(os.Stdout, prettyBuf.String())
@@ -164,9 +154,6 @@ func run() error {
 	return nil
 }
 
-// registerEnvModule registers the "env" host module with stub implementations
-// of all host functions. Each stub reads data from module memory (when applicable)
-// and logs the call to stderr.
 func registerEnvModule(ctx context.Context, rt wazero.Runtime) error {
 	builder := rt.NewHostModuleBuilder("env")
 
@@ -231,7 +218,6 @@ func registerEnvModule(ctx context.Context, rt wazero.Runtime) error {
 	return err
 }
 
-// readMem reads bytes from the module's memory. Returns empty slice on failure.
 func readMem(mod api.Module, offset, length uint32) []byte {
 	if length == 0 {
 		return nil
@@ -251,8 +237,6 @@ func readMem(mod api.Module, offset, length uint32) []byte {
 	return result
 }
 
-// writeStubResponse allocates memory in the module via "alloc" and writes data.
-// Returns the packed offset<<32|length value, or 0 on failure.
 func writeStubResponse(ctx context.Context, mod api.Module, data []byte) uint64 {
 	length := uint32(len(data))
 	if length == 0 {
@@ -284,7 +268,6 @@ func writeStubResponse(ctx context.Context, mod api.Module, data []byte) uint64 
 	return uint64(offset)<<32 | uint64(length)
 }
 
-// formatPayload tries to pretty-print data as JSON; falls back to showing raw bytes.
 func formatPayload(data []byte) string {
 	if len(data) == 0 {
 		return "(empty)"
@@ -304,8 +287,6 @@ func formatPayload(data []byte) string {
 	return fmt.Sprintf("(%d bytes) %x", len(data), data)
 }
 
-// prettyJSON attempts to format raw bytes as indented JSON.
-// Returns the original string if it is not valid JSON.
 func prettyJSON(data []byte) string {
 	var buf bytes.Buffer
 	if json.Indent(&buf, data, "", "  ") == nil {
@@ -314,7 +295,6 @@ func prettyJSON(data []byte) string {
 	return string(data)
 }
 
-// isPrintable returns true if all bytes are printable ASCII or common whitespace.
 func isPrintable(data []byte) bool {
 	for _, b := range data {
 		if b < 0x20 && b != '\n' && b != '\r' && b != '\t' {
@@ -327,7 +307,6 @@ func isPrintable(data []byte) bool {
 	return true
 }
 
-// formatDuration formats a duration as a human-friendly string.
 func formatDuration(d time.Duration) string {
 	switch {
 	case d < time.Millisecond:

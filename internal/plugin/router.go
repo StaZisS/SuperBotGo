@@ -8,18 +8,15 @@ import (
 	"SuperBotGo/internal/model"
 )
 
-// RouterRoleChecker checks roles for the UpdateRouter.
 type RouterRoleChecker interface {
 	CheckAccess(ctx context.Context, userID model.GlobalUserID, user *model.GlobalUser, req *model.RoleRequirements) (bool, error)
 }
 
-// UpdateRouter routes completed CommandRequests to the appropriate plugin.
 type UpdateRouter struct {
 	plugins *Manager
 	roles   RouterRoleChecker
 }
 
-// NewUpdateRouter creates a new UpdateRouter.
 func NewUpdateRouter(plugins *Manager, roles RouterRoleChecker) *UpdateRouter {
 	return &UpdateRouter{
 		plugins: plugins,
@@ -27,7 +24,6 @@ func NewUpdateRouter(plugins *Manager, roles RouterRoleChecker) *UpdateRouter {
 	}
 }
 
-// Route finds the plugin for the command and invokes its HandleCommand method.
 func (r *UpdateRouter) Route(ctx context.Context, req model.CommandRequest) error {
 	p := r.plugins.GetByCommand(req.CommandName)
 	if p == nil {

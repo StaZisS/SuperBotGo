@@ -9,14 +9,12 @@ import (
 	"SuperBotGo/internal/state"
 )
 
-// LinkResult represents the outcome of a linking operation.
 type LinkResult struct {
 	Kind    LinkResultKind
-	Code    string // for CodeGenerated
-	Message string // for Linked or Error
+	Code    string
+	Message string
 }
 
-// LinkResultKind enumerates the types of link results.
 type LinkResultKind int
 
 const (
@@ -25,20 +23,17 @@ const (
 	LinkError
 )
 
-// AccountLinker handles account linking operations.
 type AccountLinker interface {
 	InitiateLinking(ctx context.Context, userID model.GlobalUserID) LinkResult
 	CompleteLinking(ctx context.Context, userID model.GlobalUserID, code string) LinkResult
 }
 
-// Plugin handles the /link command.
 type Plugin struct {
 	api    *plugin.SenderAPI
 	linker AccountLinker
 	cmdDef *state.CommandDefinition
 }
 
-// New creates a LinkPlugin.
 func New(api *plugin.SenderAPI, linker AccountLinker) *Plugin {
 	return &Plugin{
 		api:    api,
@@ -53,7 +48,6 @@ func (p *Plugin) Version() string                      { return "1.0.0" }
 func (p *Plugin) SupportedRoles() []string             { return []string{"USER", "ADMIN"} }
 func (p *Plugin) Commands() []*state.CommandDefinition { return []*state.CommandDefinition{p.cmdDef} }
 
-// HandleCommand processes a completed link command.
 func (p *Plugin) HandleCommand(ctx context.Context, req model.CommandRequest) error {
 	locale := req.Locale
 	action := req.Params.Get("action")

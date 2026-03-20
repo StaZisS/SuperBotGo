@@ -9,12 +9,6 @@ import (
 	adminui "SuperBotGo/web/admin"
 )
 
-// RegisterStaticRoutes registers the embedded Admin UI SPA on the given mux.
-//
-// Static assets (js, css, images, fonts) are served as-is with the correct
-// Content-Type derived by http.FileServer.  All other paths under /admin/ that
-// do not correspond to an existing file are served index.html so that the
-// React SPA router can handle client-side navigation.
 func RegisterStaticRoutes(mux *http.ServeMux) {
 
 	subFS, err := fs.Sub(adminui.DistFS, "dist")
@@ -30,8 +24,6 @@ func RegisterStaticRoutes(mux *http.ServeMux) {
 	mux.Handle("/admin/", http.StripPrefix("/admin", &handler))
 }
 
-// spaHandler serves static files from the embedded filesystem and falls back
-// to index.html for paths that do not match an existing file (SPA routing).
 type spaHandler struct {
 	fs         fs.FS
 	fileServer http.Handler

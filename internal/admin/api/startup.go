@@ -9,7 +9,6 @@ import (
 	"SuperBotGo/internal/wasm/adapter"
 )
 
-// AutoloadPlugins loads all enabled Wasm plugins from the store at startup.
 func AutoloadPlugins(ctx context.Context, store PluginStore, blobs BlobStore, loader *adapter.Loader, manager *plugin.Manager) error {
 	records, err := store.ListPlugins(ctx)
 	if err != nil {

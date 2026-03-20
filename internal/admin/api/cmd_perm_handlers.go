@@ -5,8 +5,6 @@ import (
 	"net/http"
 )
 
-// CommandPermHandler — HTTP-обработчики настроек команд плагинов.
-// Доступ к командам определяется через policy expressions (expr-lang).
 type CommandPermHandler struct {
 	store CommandPermStore
 }

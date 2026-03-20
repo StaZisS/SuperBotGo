@@ -8,18 +8,16 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// CommandSetting хранит настройку команды плагина.
 type CommandSetting struct {
 	ID               int64     `json:"id"`
 	PluginID         string    `json:"plugin_id"`
 	CommandName      string    `json:"command_name"`
 	Enabled          bool      `json:"enabled"`
-	PolicyExpression string    `json:"policy_expression"` // expr-lang выражение
+	PolicyExpression string    `json:"policy_expression"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }
 
-// CommandPermStore управляет настройками команд плагинов.
 type CommandPermStore interface {
 	ListCommandSettings(ctx context.Context, pluginID string) ([]CommandSetting, error)
 	SetCommandEnabled(ctx context.Context, pluginID, commandName string, enabled bool) error
@@ -29,7 +27,6 @@ type CommandPermStore interface {
 	DeleteAllPluginCommandSettings(ctx context.Context, pluginID string) error
 }
 
-// PgCommandPermStore реализует CommandPermStore на PostgreSQL.
 type PgCommandPermStore struct {
 	pool *pgxpool.Pool
 }
@@ -37,8 +34,6 @@ type PgCommandPermStore struct {
 func NewPgCommandPermStore(pool *pgxpool.Pool) *PgCommandPermStore {
 	return &PgCommandPermStore{pool: pool}
 }
-
-// --- Настройки команд ---
 
 func (s *PgCommandPermStore) ListCommandSettings(ctx context.Context, pluginID string) ([]CommandSetting, error) {
 	rows, err := s.pool.Query(ctx, `
@@ -102,7 +97,7 @@ func (s *PgCommandPermStore) GetPolicyExpression(ctx context.Context, pluginID, 
 		WHERE plugin_id = $1 AND command_name = $2
 	`, pluginID, commandName).Scan(&expr)
 	if err != nil {
-		return "", nil // no row = no expression
+		return "", nil
 	}
 	if expr == nil {
 		return "", nil

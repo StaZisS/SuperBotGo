@@ -11,7 +11,6 @@ import (
 	"SuperBotGo/internal/model"
 )
 
-// UserContext — контекст пользователя, доступный в выражениях как `user.*`.
 type UserContext struct {
 	ID              int64    `expr:"id"`
 	ExternalID      string   `expr:"external_id"`
@@ -24,18 +23,15 @@ type UserContext struct {
 	Locale          string   `expr:"locale"`
 }
 
-// Env — окружение для вычисления выражений.
 type Env struct {
 	User UserContext `expr:"user"`
 
-	// Функции, доступные в выражениях
 	Check      func(relation, objectType, objectID string) bool `expr:"check"`
 	IsMember   func(objectType, objectID string) bool           `expr:"is_member"`
 	HasRole    func(roleName string) bool                       `expr:"has_role"`
 	HasAnyRole func(roleNames ...string) bool                   `expr:"has_any_role"`
 }
 
-// Evaluator вычисляет policy-выражения с контекстом пользователя.
 type Evaluator struct {
 	pool *pgxpool.Pool
 }
@@ -44,7 +40,6 @@ func NewEvaluator(pool *pgxpool.Pool) *Evaluator {
 	return &Evaluator{pool: pool}
 }
 
-// Evaluate вычисляет выражение для данного пользователя. Возвращает true если доступ разрешён.
 func (e *Evaluator) Evaluate(ctx context.Context, expression string, userID model.GlobalUserID) (bool, error) {
 	env, err := e.buildEnv(ctx, userID)
 	if err != nil {
@@ -71,7 +66,6 @@ func (e *Evaluator) Evaluate(ctx context.Context, expression string, userID mode
 func (e *Evaluator) buildEnv(ctx context.Context, userID model.GlobalUserID) (Env, error) {
 	uc := UserContext{ID: int64(userID)}
 
-	// Загружаем данные person
 	var extID *string
 	err := e.pool.QueryRow(ctx, `
 		SELECT external_id FROM persons WHERE global_user_id = $1
@@ -82,7 +76,6 @@ func (e *Evaluator) buildEnv(ctx context.Context, userID model.GlobalUserID) (En
 		return Env{}, err
 	}
 
-	// Атрибуты студента (берём первую активную позицию)
 	if uc.ExternalID != "" {
 		var natType, fundType, eduForm *string
 		_ = e.pool.QueryRow(ctx, `
@@ -103,7 +96,6 @@ func (e *Evaluator) buildEnv(ctx context.Context, userID model.GlobalUserID) (En
 		}
 	}
 
-	// Группы, в которых состоит пользователь
 	if uc.ExternalID != "" {
 		rows, err := e.pool.Query(ctx, `
 			SELECT object_id FROM authorization_tuples
@@ -121,7 +113,6 @@ func (e *Evaluator) buildEnv(ctx context.Context, userID model.GlobalUserID) (En
 		}
 	}
 
-	// Роли пользователя
 	{
 		rows, err := e.pool.Query(ctx, `
 			SELECT role_name FROM user_roles WHERE user_id = $1
@@ -137,7 +128,6 @@ func (e *Evaluator) buildEnv(ctx context.Context, userID model.GlobalUserID) (En
 		}
 	}
 
-	// Данные из global_users
 	{
 		var ch, loc *string
 		_ = e.pool.QueryRow(ctx, `
@@ -151,8 +141,6 @@ func (e *Evaluator) buildEnv(ctx context.Context, userID model.GlobalUserID) (En
 		}
 	}
 
-	// SQL: проверяет, что пользователь имеет relation на объекте ИЛИ на чём-то внутри объекта.
-	// Т.е. ahmed member группы 972203, а 972203 внутри faculty:engineering → check("member", "faculty", "engineering") = true
 	const belongsToSQL = `
 		WITH RECURSIVE
 		-- Все объекты, где у пользователя есть данная relation
@@ -178,8 +166,6 @@ func (e *Evaluator) buildEnv(ctx context.Context, userID model.GlobalUserID) (En
 	env := Env{
 		User: uc,
 
-		// check(relation, object_type, object_id) — пользователь имеет relation внутри указанного объекта
-		// Пример: check("member", "faculty", "engineering") — ahmed member группы внутри этого факультета
 		Check: func(relation, objectType, objectID string) bool {
 			if uc.ExternalID == "" {
 				return false
@@ -191,7 +177,6 @@ func (e *Evaluator) buildEnv(ctx context.Context, userID model.GlobalUserID) (En
 			return ok
 		},
 
-		// is_member(object_type, object_id) — shortcut для check("member", ...)
 		IsMember: func(objectType, objectID string) bool {
 			if uc.ExternalID == "" {
 				return false
@@ -203,7 +188,6 @@ func (e *Evaluator) buildEnv(ctx context.Context, userID model.GlobalUserID) (En
 			return ok
 		},
 
-		// has_role(role_name) — проверяет user_roles
 		HasRole: func(roleName string) bool {
 			for _, r := range uc.Roles {
 				if r == roleName {
@@ -213,7 +197,6 @@ func (e *Evaluator) buildEnv(ctx context.Context, userID model.GlobalUserID) (En
 			return false
 		},
 
-		// has_any_role("ADMIN", "MODERATOR") — любая из указанных
 		HasAnyRole: func(roleNames ...string) bool {
 			for _, rn := range roleNames {
 				for _, r := range uc.Roles {

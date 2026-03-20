@@ -11,7 +11,6 @@ import (
 	"SuperBotGo/internal/model"
 )
 
-// PgUserRepo реализует UserRepository на PostgreSQL.
 type PgUserRepo struct {
 	pool *pgxpool.Pool
 }
@@ -45,7 +44,6 @@ func (r *PgUserRepo) FindByID(ctx context.Context, id model.GlobalUserID) (*mode
 		_ = json.Unmarshal([]byte(*profileJSON), &u.ProfileData)
 	}
 
-	// Загрузить привязанные аккаунты
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, channel_type, channel_user_id, global_user_id
 		FROM channel_accounts WHERE global_user_id = $1
@@ -85,7 +83,6 @@ func (r *PgUserRepo) Save(ctx context.Context, user *model.GlobalUser) (*model.G
 	}
 
 	if user.ID == 0 {
-		// INSERT
 		err := r.pool.QueryRow(ctx, `
 			INSERT INTO global_users (tsu_accounts_id, primary_channel, profile_data, locale, role)
 			VALUES ($1, $2, $3, $4, $5)
@@ -95,7 +92,6 @@ func (r *PgUserRepo) Save(ctx context.Context, user *model.GlobalUser) (*model.G
 			return nil, fmt.Errorf("insert user: %w", err)
 		}
 	} else {
-		// UPDATE
 		_, err := r.pool.Exec(ctx, `
 			UPDATE global_users
 			SET primary_channel = $2, profile_data = $3, locale = $4, role = $5
@@ -122,7 +118,6 @@ func (r *PgUserRepo) UpdateLocale(ctx context.Context, userID model.GlobalUserID
 
 var _ UserRepository = (*PgUserRepo)(nil)
 
-// PgAccountRepo реализует AccountRepository на PostgreSQL.
 type PgAccountRepo struct {
 	pool *pgxpool.Pool
 }

@@ -1,6 +1,5 @@
 package model
 
-// TextStyle controls how a text block is rendered by the platform adapter.
 type TextStyle int
 
 const (
@@ -11,13 +10,10 @@ const (
 	StyleQuote
 )
 
-// ContentBlock is the sealed interface for message content elements.
-// Only types in this package may implement it.
 type ContentBlock interface {
 	blockType() string
 }
 
-// TextBlock holds styled text.
 type TextBlock struct {
 	Text  string
 	Style TextStyle
@@ -25,7 +21,6 @@ type TextBlock struct {
 
 func (TextBlock) blockType() string { return "text" }
 
-// OptionsBlock presents a prompt with selectable options.
 type OptionsBlock struct {
 	Prompt  string
 	Options []Option
@@ -33,13 +28,11 @@ type OptionsBlock struct {
 
 func (OptionsBlock) blockType() string { return "options" }
 
-// Option is a single selectable choice within an OptionsBlock.
 type Option struct {
 	Label string
 	Value string
 }
 
-// LinkBlock embeds a hyperlink.
 type LinkBlock struct {
 	URL   string
 	Label string
@@ -47,14 +40,12 @@ type LinkBlock struct {
 
 func (LinkBlock) blockType() string { return "link" }
 
-// ImageBlock embeds an image by URL.
 type ImageBlock struct {
 	URL string
 }
 
 func (ImageBlock) blockType() string { return "image" }
 
-// MentionBlock references another user in a message.
 type MentionBlock struct {
 	UserID   string
 	Username string
@@ -62,13 +53,10 @@ type MentionBlock struct {
 
 func (MentionBlock) blockType() string { return "mention" }
 
-// Message is an ordered sequence of ContentBlock elements that platform
-// adapters render into the native message format.
 type Message struct {
 	Blocks []ContentBlock
 }
 
-// NewTextMessage creates a Message containing a single plain-text block.
 func NewTextMessage(text string) Message {
 	return Message{
 		Blocks: []ContentBlock{
@@ -77,7 +65,6 @@ func NewTextMessage(text string) Message {
 	}
 }
 
-// NewStyledTextMessage creates a Message containing a single styled text block.
 func NewStyledTextMessage(text string, style TextStyle) Message {
 	return Message{
 		Blocks: []ContentBlock{
@@ -86,7 +73,6 @@ func NewStyledTextMessage(text string, style TextStyle) Message {
 	}
 }
 
-// NewOptionsMessage creates a Message containing a prompt with options.
 func NewOptionsMessage(prompt string, options []Option) Message {
 	return Message{
 		Blocks: []ContentBlock{
@@ -95,7 +81,6 @@ func NewOptionsMessage(prompt string, options []Option) Message {
 	}
 }
 
-// NewLinkMessage creates a Message containing a single link.
 func NewLinkMessage(url, label string) Message {
 	return Message{
 		Blocks: []ContentBlock{
@@ -104,7 +89,6 @@ func NewLinkMessage(url, label string) Message {
 	}
 }
 
-// NewImageMessage creates a Message containing a single image.
 func NewImageMessage(url string) Message {
 	return Message{
 		Blocks: []ContentBlock{

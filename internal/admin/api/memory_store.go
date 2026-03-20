@@ -6,13 +6,11 @@ import (
 	"sync"
 )
 
-// MemoryPluginStore is an in-memory implementation of PluginStore for development.
 type MemoryPluginStore struct {
 	mu      sync.RWMutex
 	records map[string]PluginRecord
 }
 
-// NewMemoryPluginStore creates an empty in-memory store.
 func NewMemoryPluginStore() *MemoryPluginStore {
 	return &MemoryPluginStore{
 		records: make(map[string]PluginRecord),

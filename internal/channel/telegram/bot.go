@@ -13,14 +13,12 @@ import (
 	tele "gopkg.in/telebot.v3"
 )
 
-// Bot wraps a Telegram bot instance and routes events to an UpdateHandler.
 type Bot struct {
 	bot     *tele.Bot
 	handler channel.UpdateHandler
 	logger  *slog.Logger
 }
 
-// NewBot creates a Telegram bot. The bot is not started until Start is called.
 func NewBot(token string, handler channel.UpdateHandler, logger *slog.Logger) (*Bot, error) {
 	if logger == nil {
 		logger = slog.Default()
@@ -47,12 +45,10 @@ func NewBot(token string, handler channel.UpdateHandler, logger *slog.Logger) (*
 	return tb, nil
 }
 
-// Adapter returns the ChannelAdapter for this bot.
 func (b *Bot) Adapter() *Adapter {
 	return NewAdapter(b.bot)
 }
 
-// Start begins long-polling. It blocks until the context is cancelled.
 func (b *Bot) Start(ctx context.Context) error {
 	b.logger.Info("Telegram bot starting long polling")
 
@@ -66,13 +62,10 @@ func (b *Bot) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop halts the bot polling.
 func (b *Bot) Stop() {
 	b.bot.Stop()
 }
 
-// RegisterCommands registers Telegram handlers for each known bot command.
-// Must be called before Start().
 func (b *Bot) RegisterCommands(commands []string) {
 	for _, cmd := range commands {
 		name := cmd
@@ -114,9 +107,6 @@ func (b *Bot) registerHandlers() {
 		platformUserID := strconv.FormatInt(c.Sender().ID, 10)
 		data := c.Callback().Data
 
-		// Strip telebot's internal prefix from callback data.
-		// telebot v3.3+ encodes as: \f<unique>|<data> (pipe separator).
-		// Older versions used: \f<unique>\f<data> (form-feed separator).
 		if len(data) > 0 && data[0] == '\f' {
 			rest := data[1:]
 			if idx := indexOf(rest, '|'); idx >= 0 {

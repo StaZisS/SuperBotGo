@@ -6,13 +6,11 @@ import (
 	"SuperBotGo/internal/model"
 )
 
-// Service provides user-related operations.
 type Service struct {
 	userRepo    UserRepository
 	accountRepo AccountRepository
 }
 
-// NewService creates a new UserService.
 func NewService(userRepo UserRepository, accountRepo AccountRepository) *Service {
 	return &Service{
 		userRepo:    userRepo,
@@ -20,8 +18,6 @@ func NewService(userRepo UserRepository, accountRepo AccountRepository) *Service
 	}
 }
 
-// FindOrCreateUser looks up a user by their platform identity, creating a new
-// GlobalUser and ChannelAccount if one does not exist.
 func (s *Service) FindOrCreateUser(ctx context.Context, channelType model.ChannelType, platformUserID model.PlatformUserID) (*model.GlobalUser, error) {
 
 	account, err := s.accountRepo.FindByChannelAndPlatformID(ctx, channelType, platformUserID)
@@ -65,12 +61,10 @@ func (s *Service) FindOrCreateUser(ctx context.Context, channelType model.Channe
 	return savedUser, nil
 }
 
-// GetUser retrieves a user by their global ID.
 func (s *Service) GetUser(ctx context.Context, id model.GlobalUserID) (*model.GlobalUser, error) {
 	return s.userRepo.FindByID(ctx, id)
 }
 
-// UpdateLocale changes a user's locale preference.
 func (s *Service) UpdateLocale(ctx context.Context, userID model.GlobalUserID, locale string) error {
 	return s.userRepo.UpdateLocale(ctx, userID, locale)
 }

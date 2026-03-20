@@ -5,7 +5,6 @@ import (
 	"SuperBotGo/internal/state"
 )
 
-// LinkCommand builds the command definition for account linking.
 func LinkCommand() *state.CommandDefinition {
 	return state.NewCommand("link").
 		Description("Account Linking").

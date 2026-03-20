@@ -9,10 +9,7 @@ import (
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 )
 
-// TestBranchNodeRoundTrip verifies the full path:
-// SDK JSON → host NodeDef deserialization → state.CommandNode conversion → flattenNodes.
 func TestBranchNodeRoundTrip(t *testing.T) {
-	// This is the exact JSON produced by the SDK test (TestBranchSerialization).
 	nodesJSON := `[
 		{"type":"step","param":"mode","blocks":[{"type":"options","prompt":"Choose:","options":[{"label":"Quick","value":"quick"},{"label":"By date","value":"by_date"}]}]},
 		{"type":"step","param":"building","blocks":[{"type":"text","text":"Building:","style":"plain"}]},
@@ -29,7 +26,6 @@ func TestBranchNodeRoundTrip(t *testing.T) {
 		t.Fatalf("expected 4 NodeDefs, got %d", len(nodeDefs))
 	}
 
-	// Verify deserialized branch.
 	branch := nodeDefs[3]
 	t.Logf("branch NodeDef: type=%q on_param=%q cases=%v", branch.Type, branch.OnParam, branch.Cases)
 	if branch.Type != "branch" {
@@ -49,8 +45,7 @@ func TestBranchNodeRoundTrip(t *testing.T) {
 		t.Fatalf("expected date step, got param=%q", byDate[0].Param)
 	}
 
-	// Convert to state.CommandNode tree (adapter logic).
-	wp := &WasmPlugin{} // no compiled module needed for non-callback nodes
+	wp := &WasmPlugin{}
 
 	var commandNodes []state.CommandNode
 	for _, nd := range nodeDefs {
@@ -63,7 +58,6 @@ func TestBranchNodeRoundTrip(t *testing.T) {
 		t.Fatalf("expected 4 CommandNodes, got %d", len(commandNodes))
 	}
 
-	// Verify types.
 	if _, ok := commandNodes[0].(state.StepNode); !ok {
 		t.Fatalf("node[0]: expected StepNode, got %T", commandNodes[0])
 	}
@@ -79,13 +73,11 @@ func TestBranchNodeRoundTrip(t *testing.T) {
 		t.Fatalf("BranchNode missing by_date case")
 	}
 
-	// Build a CommandDefinition and test flattenNodes.
 	cmdDef := &state.CommandDefinition{
 		Name:  "schedule",
 		Nodes: commandNodes,
 	}
 
-	// --- mode="quick" → active steps: mode, building, room (NO date) ---
 	quickParams := model.OptionMap{"mode": "quick", "building": "1", "room": "101"}
 	quickSteps := cmdDef.ResolveActiveSteps(quickParams)
 	quickNames := stepNames(quickSteps)
@@ -98,7 +90,6 @@ func TestBranchNodeRoundTrip(t *testing.T) {
 		t.Fatalf("quick path should be complete")
 	}
 
-	// --- mode="by_date" → active steps: mode, building, room, date ---
 	byDateParams := model.OptionMap{"mode": "by_date", "building": "1", "room": "101"}
 	byDateSteps := cmdDef.ResolveActiveSteps(byDateParams)
 	byDateNames := stepNames(byDateSteps)
@@ -116,7 +107,6 @@ func TestBranchNodeRoundTrip(t *testing.T) {
 		t.Fatalf("expected CurrentStep=date, got %q", cur.ParamName)
 	}
 
-	// Fill date → now complete.
 	fullParams := model.OptionMap{"mode": "by_date", "building": "1", "room": "101", "date": "2026-03-25"}
 	if !cmdDef.IsComplete(fullParams) {
 		t.Fatalf("by_date path with date filled should be complete")

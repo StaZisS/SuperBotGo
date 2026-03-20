@@ -7,29 +7,24 @@ import (
 	"SuperBotGo/internal/model"
 )
 
-// InlineButton represents a Telegram inline keyboard button.
 type InlineButton struct {
 	Text         string
 	CallbackData string
 }
 
-// RenderedMessage is the Telegram-specific rendering of a model.Message.
 type RenderedMessage struct {
 	Text      string
-	ParseMode string // "HTML"
+	ParseMode string
 	Keyboard  [][]InlineButton
 	PhotoURLs []string
 }
 
-// Renderer converts model.Message to Telegram RenderedMessage.
 type Renderer struct{}
 
-// NewRenderer creates a new Telegram message renderer.
 func NewRenderer() *Renderer {
 	return &Renderer{}
 }
 
-// Render converts a model.Message into a Telegram-specific RenderedMessage.
 func (r *Renderer) Render(msg model.Message) RenderedMessage {
 	var textParts []string
 	var photoURLs []string

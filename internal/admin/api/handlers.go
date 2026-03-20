@@ -21,18 +21,15 @@ import (
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 )
 
-const maxUploadSize = 50 << 20 // 50MB
+const maxUploadSize = 50 << 20
 
-// maxRequestBodySize limits non-upload JSON request bodies (1 MB).
 const maxRequestBodySize = 1 << 20
 
-// StateManagerRegistrar registers and unregisters command definitions at runtime.
 type StateManagerRegistrar interface {
 	RegisterCommand(def *state.CommandDefinition)
 	UnregisterCommand(name string)
 }
 
-// AdminHandler provides HTTP handlers for the Wasm plugin admin API.
 type AdminHandler struct {
 	store    PluginStore
 	blobs    BlobStore
@@ -41,13 +38,10 @@ type AdminHandler struct {
 	rt       *wasmrt.Runtime
 	hostAPI  *hostapi.HostAPI
 	stateMgr StateManagerRegistrar
-	cmdStore CommandPermStore // nil when PostgreSQL is unavailable
+	cmdStore CommandPermStore
 	apiKey   string
 }
 
-// NewAdminHandler creates a new AdminHandler.
-// If apiKey is non-empty, all routes require Bearer token authentication.
-// cmdStore may be nil when PostgreSQL is unavailable.
 func NewAdminHandler(
 	store PluginStore,
 	blobs BlobStore,
@@ -75,7 +69,6 @@ func NewAdminHandler(
 	}
 }
 
-// requireAuth is middleware that checks the Bearer token against the configured API key.
 func (h *AdminHandler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if h.apiKey == "" {
@@ -97,7 +90,6 @@ func (h *AdminHandler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// registerPluginCommands registers a plugin's commands with the state manager.
 func (h *AdminHandler) registerPluginCommands(p plugin.Plugin) {
 	if h.stateMgr == nil {
 		return
@@ -107,8 +99,6 @@ func (h *AdminHandler) registerPluginCommands(p plugin.Plugin) {
 	}
 }
 
-// RegisterRoutes registers all admin API routes on the given mux.
-// TODO: wrap handlers with h.requireAuth() before going to production.
 func (h *AdminHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/plugins/upload", h.handleUpload)
 	mux.HandleFunc("POST /api/admin/plugins/{id}/install", h.handleInstall)
@@ -121,12 +111,10 @@ func (h *AdminHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/plugins", h.handleListPlugins)
 }
 
-// validateBlobKey checks that a blob key is safe (no path traversal or directory escape).
 func validateBlobKey(key string) bool {
 	if key == "" {
 		return false
 	}
-	// Block path traversal, absolute paths, backslash paths, and subdirectories.
 	if strings.Contains(key, "..") ||
 		strings.HasPrefix(key, "/") ||
 		strings.Contains(key, "\\") ||
@@ -137,12 +125,6 @@ func validateBlobKey(key string) bool {
 	return true
 }
 
-// handleUpload validates and stores a .wasm file, returning its metadata.
-//
-// The uploaded module is compiled, then a one-shot "meta" action is run
-// to extract metadata. The compiled module is closed immediately after;
-// the actual long-lived compiled module is created later by handleInstall
-// via Loader.LoadPluginFromBytes.
 func (h *AdminHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
@@ -175,7 +157,6 @@ func (h *AdminHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Grant temporary permissions so host functions can resolve during meta.
 	const probeID = "_upload_probe"
 	h.hostAPI.ForPlugin(probeID, nil)
 	compiled.ID = probeID
@@ -211,7 +192,6 @@ func (h *AdminHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// handleInstall loads and registers a previously uploaded plugin.
 func (h *AdminHandler) handleInstall(w http.ResponseWriter, r *http.Request) {
 	pluginID := r.PathValue("id")
 
@@ -291,7 +271,6 @@ func (h *AdminHandler) handleInstall(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleUpdateConfig updates plugin configuration.
 func (h *AdminHandler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	pluginID := r.PathValue("id")
 
@@ -324,7 +303,6 @@ func (h *AdminHandler) handleUpdateConfig(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }
 
-// handleUpdate uploads a new .wasm version and reloads the plugin.
 func (h *AdminHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	pluginID := r.PathValue("id")
 
@@ -334,7 +312,6 @@ func (h *AdminHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Collect old command names before reload.
 	var oldCommands map[string]struct{}
 	if oldPlugin, ok := h.manager.All()[pluginID]; ok {
 		oldCommands = make(map[string]struct{}, len(oldPlugin.Commands()))
@@ -397,19 +374,14 @@ func (h *AdminHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }
 
-// syncCommandsOnUpdate compares old and new command sets after a plugin
-// .wasm update, cleaning up orphaned command settings and unregistering
-// removed commands from the state manager.
 func (h *AdminHandler) syncCommandsOnUpdate(ctx context.Context, pluginID string, oldCommands map[string]struct{}, newPlugin plugin.Plugin) {
 	newCommands := make(map[string]struct{}, len(newPlugin.Commands()))
 	for _, def := range newPlugin.Commands() {
 		newCommands[def.Name] = struct{}{}
 	}
 
-	// Register new commands in the state manager.
 	h.registerPluginCommands(newPlugin)
 
-	// Find removed commands (present in old but absent in new).
 	var removed []string
 	for name := range oldCommands {
 		if _, ok := newCommands[name]; !ok {
@@ -417,7 +389,6 @@ func (h *AdminHandler) syncCommandsOnUpdate(ctx context.Context, pluginID string
 		}
 	}
 
-	// Find added commands (present in new but absent in old).
 	var added []string
 	for name := range newCommands {
 		if _, ok := oldCommands[name]; !ok {
@@ -425,14 +396,12 @@ func (h *AdminHandler) syncCommandsOnUpdate(ctx context.Context, pluginID string
 		}
 	}
 
-	// Unregister removed commands from the state manager.
 	if h.stateMgr != nil {
 		for _, name := range removed {
 			h.stateMgr.UnregisterCommand(name)
 		}
 	}
 
-	// Delete orphaned command settings from the database.
 	if h.cmdStore != nil && len(removed) > 0 {
 		if err := h.cmdStore.DeleteCommandSettings(ctx, pluginID, removed); err != nil {
 			slog.Error("admin: failed to delete orphaned command settings",
@@ -449,7 +418,6 @@ func (h *AdminHandler) syncCommandsOnUpdate(ctx context.Context, pluginID string
 	}
 }
 
-// handleDisable disables a plugin without deleting it.
 func (h *AdminHandler) handleDisable(w http.ResponseWriter, r *http.Request) {
 	pluginID := r.PathValue("id")
 
@@ -479,7 +447,6 @@ func (h *AdminHandler) handleDisable(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "disabled"})
 }
 
-// handleEnable re-enables a disabled plugin.
 func (h *AdminHandler) handleEnable(w http.ResponseWriter, r *http.Request) {
 	pluginID := r.PathValue("id")
 
@@ -526,7 +493,6 @@ func (h *AdminHandler) handleEnable(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "enabled"})
 }
 
-// handleDelete completely removes a plugin.
 func (h *AdminHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	pluginID := r.PathValue("id")
 
@@ -536,7 +502,6 @@ func (h *AdminHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Unregister commands from the state manager before removing.
 	if h.stateMgr != nil {
 		if p, ok := h.manager.All()[pluginID]; ok {
 			for _, def := range p.Commands() {
@@ -558,7 +523,6 @@ func (h *AdminHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Clean up all command settings for this plugin.
 	if h.cmdStore != nil {
 		if err := h.cmdStore.DeleteAllPluginCommandSettings(r.Context(), pluginID); err != nil {
 			slog.Error("admin: failed to delete command settings on plugin delete",
@@ -574,7 +538,6 @@ func (h *AdminHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
-// handleListPlugins returns all plugins (Go and Wasm).
 func (h *AdminHandler) handleListPlugins(w http.ResponseWriter, r *http.Request) {
 	allPlugins := h.manager.All()
 	records, _ := h.store.ListPlugins(r.Context())
@@ -622,7 +585,6 @@ func (h *AdminHandler) handleListPlugins(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, result)
 }
 
-// handleGetPlugin returns detailed info about a single plugin.
 func (h *AdminHandler) handleGetPlugin(w http.ResponseWriter, r *http.Request) {
 	pluginID := r.PathValue("id")
 
@@ -647,8 +609,6 @@ func (h *AdminHandler) handleGetPlugin(w http.ResponseWriter, r *http.Request) {
 		resp["version"] = p.Version()
 		resp["type"] = pType
 		resp["status"] = "active"
-		// Serialize only command names/descriptions (CommandDefinition contains
-		// unexportable func fields like MessageBuilder).
 		type cmdInfo struct {
 			Name        string `json:"name"`
 			Description string `json:"description"`

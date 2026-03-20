@@ -7,29 +7,24 @@ import (
 	"SuperBotGo/internal/model"
 )
 
-// Button represents a Discord message component button.
 type Button struct {
 	Label    string
 	CustomID string
 }
 
-// RenderedMessage is the Discord-specific rendering of a model.Message.
 type RenderedMessage struct {
 	Text       string
 	ImageURLs  []string
 	HasOptions bool
-	Buttons    [][]Button // rows of buttons, max 5 per row, max 5 rows
+	Buttons    [][]Button
 }
 
-// Renderer converts model.Message to Discord RenderedMessage.
 type Renderer struct{}
 
-// NewRenderer creates a new Discord message renderer.
 func NewRenderer() *Renderer {
 	return &Renderer{}
 }
 
-// Render converts a model.Message into a Discord-specific RenderedMessage.
 func (r *Renderer) Render(msg model.Message) RenderedMessage {
 	var textParts []string
 	var imageURLs []string
@@ -84,7 +79,6 @@ func renderLinkBlock(b model.LinkBlock) string {
 	return fmt.Sprintf("[%s](%s)", b.Label, b.URL)
 }
 
-// buildOptionButtons groups options into rows of up to 5 buttons, max 5 rows.
 func buildOptionButtons(options []model.Option) [][]Button {
 	const maxPerRow = 5
 	const maxRows = 5

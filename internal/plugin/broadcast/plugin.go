@@ -11,20 +11,17 @@ import (
 	"SuperBotGo/internal/state"
 )
 
-// ProjectFinder looks up projects by ID and lists all projects.
 type ProjectFinder interface {
 	ProjectLister
 	FindProject(ctx context.Context, id int64) (*model.Project, error)
 }
 
-// Plugin handles the /broadcast command.
 type Plugin struct {
 	api      *plugin.SenderAPI
 	projects ProjectFinder
 	cmdDef   *state.CommandDefinition
 }
 
-// New creates a BroadcastPlugin.
 func New(api *plugin.SenderAPI, projects ProjectFinder) *Plugin {
 	return &Plugin{
 		api:      api,
@@ -39,7 +36,6 @@ func (p *Plugin) Version() string                      { return "1.0.0" }
 func (p *Plugin) SupportedRoles() []string             { return []string{"ADMIN"} }
 func (p *Plugin) Commands() []*state.CommandDefinition { return []*state.CommandDefinition{p.cmdDef} }
 
-// HandleCommand processes a completed broadcast command.
 func (p *Plugin) HandleCommand(ctx context.Context, req model.CommandRequest) error {
 	locale := req.Locale
 	target := req.Params.Get("target")
