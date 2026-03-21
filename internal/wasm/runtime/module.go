@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"time"
 
@@ -70,6 +71,22 @@ func (cm *CompiledModule) RunActionWithConfig(ctx context.Context, action string
 
 	ctx = context.WithValue(ctx, PluginIDKey{}, cm.ID)
 
+	start := time.Now()
+	status := "ok"
+	defer func() {
+		duration := time.Since(start)
+		if cm.rt.metrics != nil {
+			cm.rt.metrics.PluginActionDuration.WithLabelValues(cm.ID, action).Observe(duration.Seconds())
+			cm.rt.metrics.PluginActionTotal.WithLabelValues(cm.ID, action, status).Inc()
+		}
+		slog.Info("plugin action",
+			"plugin_id", cm.ID,
+			"action", action,
+			"duration_ms", duration.Milliseconds(),
+			"status", status,
+		)
+	}()
+
 	var stdout bytes.Buffer
 	var stdin *bytes.Reader
 	if len(input) > 0 {
@@ -96,8 +113,10 @@ func (cm *CompiledModule) RunActionWithConfig(ctx context.Context, action string
 
 				return stdout.Bytes(), nil
 			}
+			status = "error"
 			return nil, fmt.Errorf("wasm module exited with code %d", exitErr.ExitCode())
 		}
+		status = "error"
 		return nil, fmt.Errorf("instantiate wasm module: %w", err)
 	}
 

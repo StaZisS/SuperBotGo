@@ -5,14 +5,21 @@ import (
 	"fmt"
 	"log/slog"
 
+	"SuperBotGo/internal/metrics"
+
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
 
 type Runtime struct {
-	engine wazero.Runtime
-	cache  wazero.CompilationCache
-	config Config
+	engine  wazero.Runtime
+	cache   wazero.CompilationCache
+	config  Config
+	metrics *metrics.Metrics
+}
+
+func (r *Runtime) SetMetrics(m *metrics.Metrics) {
+	r.metrics = m
 }
 
 func NewRuntime(ctx context.Context, cfg Config) (*Runtime, error) {

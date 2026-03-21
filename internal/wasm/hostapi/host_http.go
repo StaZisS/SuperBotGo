@@ -62,17 +62,30 @@ type httpResponsePayload struct {
 func (h *HostAPI) httpRequestFunc() api.GoModuleFunc {
 	return func(ctx context.Context, mod api.Module, stack []uint64) {
 		pluginID := pluginIDFromContext(ctx)
+		start := time.Now()
+		status := "ok"
+		defer func() {
+			dur := time.Since(start)
+			if h.metrics != nil {
+				h.metrics.HostAPIDuration.WithLabelValues(pluginID, "http_request").Observe(dur.Seconds())
+				h.metrics.HostAPITotal.WithLabelValues(pluginID, "http_request", status).Inc()
+			}
+			slog.Info("host api call", "plugin_id", pluginID, "function", "http_request", "duration_ms", dur.Milliseconds(), "status", status)
+		}()
+
 		offset := uint32(stack[0])
 		length := uint32(stack[1])
 
 		data, err := readModMemory(mod, offset, length)
 		if err != nil {
+			status = "error"
 			writeErrorResult(ctx, mod, stack, err)
 			return
 		}
 
 		var payload httpRequestPayload
 		if err := json.Unmarshal(data, &payload); err != nil {
+			status = "error"
 			writeErrorResult(ctx, mod, stack, err)
 			return
 		}
@@ -82,16 +95,19 @@ func (h *HostAPI) httpRequestFunc() api.GoModuleFunc {
 			requiredPerm = "network:write"
 		}
 		if err := h.perms.CheckPermission(pluginID, requiredPerm); err != nil {
+			status = "error"
 			writeErrorResult(ctx, mod, stack, err)
 			return
 		}
 
 		if h.deps.HTTP == nil {
+			status = "error"
 			writeErrorResult(ctx, mod, stack, errDepNotAvailable("HTTP"))
 			return
 		}
 
 		if isBlockedHost(payload.URL) {
+			status = "error"
 			writeErrorResult(ctx, mod, stack, fmt.Errorf("requests to internal/private addresses are not allowed"))
 			return
 		}
@@ -111,6 +127,7 @@ func (h *HostAPI) httpRequestFunc() api.GoModuleFunc {
 
 		req, err := http.NewRequestWithContext(reqCtx, method, payload.URL, body)
 		if err != nil {
+			status = "error"
 			writeErrorResult(ctx, mod, stack, fmt.Errorf("create request: %w", err))
 			return
 		}
@@ -121,6 +138,7 @@ func (h *HostAPI) httpRequestFunc() api.GoModuleFunc {
 
 		resp, err := h.deps.HTTP.Do(req)
 		if err != nil {
+			status = "error"
 			writeErrorResult(ctx, mod, stack, fmt.Errorf("http request: %w", err))
 			return
 		}

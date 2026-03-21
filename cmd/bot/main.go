@@ -19,6 +19,7 @@ import (
 	"SuperBotGo/internal/config"
 	"SuperBotGo/internal/database"
 	"SuperBotGo/internal/i18n"
+	"SuperBotGo/internal/metrics"
 	"SuperBotGo/internal/model"
 	"SuperBotGo/internal/plugin"
 	"SuperBotGo/internal/plugin/broadcast"
@@ -32,6 +33,8 @@ import (
 	"SuperBotGo/internal/wasm/adapter"
 	"SuperBotGo/internal/wasm/hostapi"
 	wasmrt "SuperBotGo/internal/wasm/runtime"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -52,6 +55,8 @@ func main() {
 	adapterRegistry := channel.NewAdapterRegistry()
 	pluginManager := plugin.NewManager()
 
+	m := metrics.New()
+
 	wasmCtx := context.Background()
 
 	rt, err := wasmrt.NewRuntime(wasmCtx, wasmrt.Config{
@@ -62,7 +67,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	rt.SetMetrics(m)
+
 	hostAPI := hostapi.NewHostAPI(hostapi.Dependencies{})
+	hostAPI.SetMetrics(m)
 
 	if err := hostAPI.RegisterHostModule(wasmCtx, rt); err != nil {
 		logger.Error("failed to register wasm host module", slog.Any("error", err))
@@ -83,6 +91,7 @@ func main() {
 	})
 
 	wasmLoader := adapter.NewLoader(rt, hostAPI, wasmSendFunc)
+	wasmLoader.SetMetrics(m)
 
 	triggerRegistry := trigger.NewRegistry()
 	wasmLoader.SetTriggerRegistry(triggerRegistry)
@@ -184,7 +193,10 @@ func main() {
 	ruleSchemaHandler.RegisterRoutes(adminMux)
 	triggerRouter := trigger.NewRouter(triggerRegistry, pluginManager)
 	httpTrigger := trigger.NewHTTPTriggerHandler(triggerRouter, triggerRegistry)
+	httpTrigger.SetMetrics(m)
 	adminMux.Handle("/api/triggers/http/", httpTrigger)
+
+	adminMux.Handle("GET /metrics", promhttp.Handler())
 
 	admin.RegisterStaticRoutes(adminMux)
 

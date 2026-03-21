@@ -3,6 +3,7 @@ package hostapi
 import (
 	"context"
 
+	"SuperBotGo/internal/metrics"
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 
 	"github.com/tetratelabs/wazero"
@@ -10,8 +11,9 @@ import (
 )
 
 type HostAPI struct {
-	deps  Dependencies
-	perms *permissionStore
+	deps    Dependencies
+	perms   *permissionStore
+	metrics *metrics.Metrics
 }
 
 func NewHostAPI(deps Dependencies) *HostAPI {
@@ -19,6 +21,10 @@ func NewHostAPI(deps Dependencies) *HostAPI {
 		deps:  deps,
 		perms: newPermissionStore(),
 	}
+}
+
+func (h *HostAPI) SetMetrics(m *metrics.Metrics) {
+	h.metrics = m
 }
 
 func (h *HostAPI) RegisterHostModule(ctx context.Context, rt *wasmrt.Runtime) error {

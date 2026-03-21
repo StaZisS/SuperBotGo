@@ -8,6 +8,7 @@ import (
 	"os"
 	"sync"
 
+	"SuperBotGo/internal/metrics"
 	"SuperBotGo/internal/trigger"
 	"SuperBotGo/internal/wasm/hostapi"
 	wasmrt "SuperBotGo/internal/wasm/runtime"
@@ -20,6 +21,11 @@ type Loader struct {
 	send            SendFunc
 	plugins         map[string]*loadedPlugin
 	triggerRegistry *trigger.Registry
+	metrics         *metrics.Metrics
+}
+
+func (l *Loader) SetMetrics(m *metrics.Metrics) {
+	l.metrics = m
 }
 
 type loadedPlugin struct {
@@ -92,6 +98,10 @@ func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, conf
 	}
 	l.mu.Unlock()
 
+	if l.metrics != nil {
+		l.metrics.LoadedPluginsGauge.Inc()
+	}
+
 	if l.triggerRegistry != nil && len(meta.Triggers) > 0 {
 		l.triggerRegistry.RegisterTriggers(meta.ID, meta.Triggers)
 		slog.Info("wasm: registered triggers", "plugin", meta.ID, "count", len(meta.Triggers))
@@ -110,6 +120,10 @@ func (l *Loader) UnloadPlugin(ctx context.Context, pluginID string) error {
 	}
 	delete(l.plugins, pluginID)
 	l.mu.Unlock()
+
+	if l.metrics != nil {
+		l.metrics.LoadedPluginsGauge.Dec()
+	}
 
 	l.hostAPI.RevokePermissions(pluginID)
 
@@ -213,5 +227,8 @@ func (l *Loader) Close(ctx context.Context) error {
 		l.hostAPI.RevokePermissions(id)
 	}
 	l.plugins = make(map[string]*loadedPlugin)
+	if l.metrics != nil {
+		l.metrics.LoadedPluginsGauge.Set(0)
+	}
 	return firstErr
 }
