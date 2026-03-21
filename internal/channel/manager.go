@@ -40,12 +40,10 @@ type UpdateRouterIface interface {
 	Route(ctx context.Context, req model.CommandRequest) error
 }
 
-type RoleChecker interface {
-	CheckAccess(ctx context.Context, userID model.GlobalUserID, user *model.GlobalUser, req *model.RoleRequirements) (bool, error)
-}
-
-type CommandAccessChecker interface {
-	CanExecute(ctx context.Context, pluginID, commandName string, userID model.GlobalUserID) (bool, error)
+// Authorizer is the single authorization interface.
+// It checks both static RoleRequirements and dynamic policy expressions.
+type Authorizer interface {
+	CheckCommand(ctx context.Context, userID model.GlobalUserID, pluginID string, commandName string, requirements *model.RoleRequirements) (bool, error)
 }
 
 type ChannelManager struct {
@@ -53,8 +51,7 @@ type ChannelManager struct {
 	router      UpdateRouterIface
 	state       StateManager
 	plugins     PluginRegistry
-	roles       RoleChecker
-	cmdAccess   CommandAccessChecker
+	authorizer  Authorizer
 	adapters    *AdapterRegistry
 	logger      *slog.Logger
 }
@@ -64,7 +61,7 @@ func NewChannelManager(
 	router UpdateRouterIface,
 	stateManager StateManager,
 	plugins PluginRegistry,
-	roles RoleChecker,
+	authorizer Authorizer,
 	adapters *AdapterRegistry,
 	logger *slog.Logger,
 ) *ChannelManager {
@@ -76,14 +73,10 @@ func NewChannelManager(
 		router:      router,
 		state:       stateManager,
 		plugins:     plugins,
-		roles:       roles,
+		authorizer:  authorizer,
 		adapters:    adapters,
 		logger:      logger,
 	}
-}
-
-func (m *ChannelManager) SetCommandAccessChecker(checker CommandAccessChecker) {
-	m.cmdAccess = checker
 }
 
 func (m *ChannelManager) RegisterAdapter(adapter ChannelAdapter) {
@@ -116,7 +109,7 @@ func (m *ChannelManager) processUpdate(
 	locale string,
 ) error {
 	if input.IsCommand() {
-		return m.handleCommand(ctx, user.ID, user, channelType, input, chatID, locale)
+		return m.handleCommand(ctx, user.ID, channelType, input, chatID, locale)
 	}
 	return m.handleInput(ctx, user.ID, channelType, input, chatID, locale)
 }
@@ -124,7 +117,6 @@ func (m *ChannelManager) processUpdate(
 func (m *ChannelManager) handleCommand(
 	ctx context.Context,
 	userID model.GlobalUserID,
-	user *model.GlobalUser,
 	channelType model.ChannelType,
 	input model.UserInput,
 	chatID string,
@@ -132,32 +124,21 @@ func (m *ChannelManager) handleCommand(
 ) error {
 	commandName := input.CommandName()
 
+	var requirements *model.RoleRequirements
 	def := m.plugins.GetCommandDefinition(commandName)
-	if def != nil && def.Requirements != nil {
-		ok, err := m.roles.CheckAccess(ctx, userID, user, def.Requirements)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return m.adapters.SendToChat(ctx, channelType, chatID,
-				model.NewTextMessage("Access denied. You don't have permission for this command."))
-		}
+	if def != nil {
+		requirements = def.Requirements
 	}
 
-	if m.cmdAccess != nil {
-		pluginID := m.plugins.GetPluginIDByCommand(commandName)
-		if pluginID != "" {
-			ok, err := m.cmdAccess.CanExecute(ctx, pluginID, commandName, userID)
-			if err != nil {
-				m.logger.Warn("ReBAC command access check failed",
-					slog.String("command", commandName),
-					slog.Int64("user_id", int64(userID)),
-					slog.Any("error", err))
-			} else if !ok {
-				return m.adapters.SendToChat(ctx, channelType, chatID,
-					model.NewTextMessage("Access denied. You don't have permission for this command."))
-			}
-		}
+	pluginID := m.plugins.GetPluginIDByCommand(commandName)
+
+	ok, err := m.authorizer.CheckCommand(ctx, userID, pluginID, commandName, requirements)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return m.adapters.SendToChat(ctx, channelType, chatID,
+			model.NewTextMessage("Access denied. You don't have permission for this command."))
 	}
 
 	if !m.state.IsPreservesDialog(commandName) {

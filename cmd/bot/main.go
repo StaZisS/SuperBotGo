@@ -12,6 +12,8 @@ import (
 
 	"SuperBotGo/internal/admin"
 	adminapi "SuperBotGo/internal/admin/api"
+	"SuperBotGo/internal/authz"
+	"SuperBotGo/internal/authz/providers"
 	"SuperBotGo/internal/channel"
 	"SuperBotGo/internal/channel/discord"
 	"SuperBotGo/internal/channel/telegram"
@@ -108,8 +110,8 @@ func main() {
 	var roleStore role.Store
 	var pluginStore adminapi.PluginStore
 	var cmdPermStore adminapi.CommandPermStore
-	var cmdAccessChecker *adminapi.CommandAccessChecker
-	var ruleSchemaHandler *adminapi.RuleSchemaHandler
+	var authzStore authz.Store
+	var universityProvider *providers.UniversityProvider
 
 	connString := fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
@@ -132,8 +134,8 @@ func main() {
 				roleStore = role.NewPgStore(pool)
 				pluginStore = adminapi.NewPgPluginStore(pool)
 				cmdPermStore = adminapi.NewPgCommandPermStore(pool)
-				cmdAccessChecker = adminapi.NewCommandAccessChecker(pool)
-				ruleSchemaHandler = adminapi.NewRuleSchemaHandler(pool)
+				authzStore = authz.NewPgStore(pool)
+				universityProvider = providers.NewUniversityProvider(pool)
 				logger.Info("using PostgreSQL stores")
 			}
 		}
@@ -148,6 +150,9 @@ func main() {
 		roleStore = role.NewPlaceholderStore()
 		logger.Warn("using in-memory role store (data will be lost on restart)")
 	}
+	if authzStore == nil {
+		authzStore = authz.NewPlaceholderStore()
+	}
 	if pluginStore == nil {
 		fileStore, fsErr := adminapi.NewFilePluginStore(cfg.Admin.ModulesDir)
 		if fsErr != nil {
@@ -160,6 +165,17 @@ func main() {
 
 	userService := user.NewService(userRepo, accountRepo)
 	roleManager := role.NewManager(roleStore, logger)
+
+	var authzProviders []authz.AttributeProvider
+	var schemaContributors []authz.SchemaContributor
+	if universityProvider != nil {
+		authzProviders = append(authzProviders, universityProvider)
+		schemaContributors = append(schemaContributors, universityProvider)
+	}
+
+	authorizer := authz.NewAuthorizer(authzStore, logger, authzProviders...)
+	schemaBuilder := authz.NewRuleSchemaBuilder(authzStore, schemaContributors...)
+	ruleSchemaHandler := adminapi.NewRuleSchemaHandler(schemaBuilder)
 
 	if err := adminapi.AutoloadPlugins(wasmCtx, pluginStore, blobStore, wasmLoader, pluginManager); err != nil {
 		logger.Warn("wasm autoload failed", slog.Any("error", err))
@@ -188,9 +204,6 @@ func main() {
 	cmdPermHandler.RegisterRoutes(adminMux)
 	pluginPermHandler := adminapi.NewPluginPermHandler(pluginStore, wasmLoader, hostAPI)
 	pluginPermHandler.RegisterRoutes(adminMux)
-	if ruleSchemaHandler == nil {
-		ruleSchemaHandler = adminapi.NewRuleSchemaHandler(nil)
-	}
 	ruleSchemaHandler.RegisterRoutes(adminMux)
 	triggerRouter := trigger.NewRouter(triggerRegistry, pluginManager)
 	httpTrigger := trigger.NewHTTPTriggerHandler(triggerRouter, triggerRegistry)
@@ -246,20 +259,17 @@ func main() {
 
 	pluginManager.Load(allPlugins)
 
-	updateRouter := plugin.NewUpdateRouter(pluginManager, roleManager)
+	updateRouter := plugin.NewUpdateRouter(pluginManager)
 
 	channelMgr := channel.NewChannelManager(
 		userService,
 		updateRouter,
 		stateAdapter,
 		pluginManager,
-		roleManager,
+		authorizer,
 		adapterRegistry,
 		logger,
 	)
-	if cmdAccessChecker != nil {
-		channelMgr.SetCommandAccessChecker(cmdAccessChecker)
-	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -331,4 +341,7 @@ func main() {
 	}
 
 	logger.Info("SuperBotGo stopped")
+
+	// roleManager is available for admin role CRUD operations
+	_ = roleManager
 }
