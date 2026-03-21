@@ -210,9 +210,6 @@ export const api = {
       { method: 'PUT', body: JSON.stringify({ expression }) },
     ),
 
-  listAvailablePermissions: () =>
-    request<HostPermissionInfo[]>('/plugin-permissions'),
-
   getPluginPermissions: (id: string) =>
     request<PluginPermissionsDetail>(`/plugins/${encodeURIComponent(id)}/plugin-permissions`),
 

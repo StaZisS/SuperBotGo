@@ -519,10 +519,6 @@ func (wp *WasmPlugin) Meta() wasmrt.PluginMeta {
 	return wp.meta
 }
 
-func (wp *WasmPlugin) IsWasm() bool {
-	return true
-}
-
 func (wp *WasmPlugin) Close(ctx context.Context) error {
 	return wp.compiled.Close(ctx)
 }

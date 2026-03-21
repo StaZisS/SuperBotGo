@@ -71,6 +71,13 @@ func (m *Manager) GetPluginIDByCommand(commandName string) string {
 	return p.ID()
 }
 
+func (m *Manager) Get(id string) (Plugin, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	p, ok := m.plugins[id]
+	return p, ok
+}
+
 func (m *Manager) All() map[string]Plugin {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

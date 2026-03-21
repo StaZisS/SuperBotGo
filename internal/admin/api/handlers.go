@@ -25,6 +25,29 @@ const maxUploadSize = 50 << 20
 
 const maxRequestBodySize = 1 << 20
 
+type uploadResponse struct {
+	ID           string                 `json:"id"`
+	Name         string                 `json:"name"`
+	Version      string                 `json:"version"`
+	Commands     []wasmrt.CommandDef    `json:"commands"`
+	Permissions  []wasmrt.PermissionDef `json:"permissions"`
+	ConfigSchema json.RawMessage        `json:"config_schema"`
+	WasmKey      string                 `json:"wasm_key"`
+	WasmHash     string                 `json:"wasm_hash"`
+}
+
+type installResponse struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Status  string `json:"status"`
+}
+
+type cmdInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
 type StateManagerRegistrar interface {
 	RegisterCommand(def *state.CommandDefinition)
 	UnregisterCommand(name string)
@@ -116,10 +139,9 @@ func validateBlobKey(key string) bool {
 		return false
 	}
 	if strings.Contains(key, "..") ||
-		strings.HasPrefix(key, "/") ||
+		strings.Contains(key, "/") ||
 		strings.Contains(key, "\\") ||
-		strings.ContainsAny(key, "\x00") ||
-		strings.Contains(key, "/") {
+		strings.ContainsAny(key, "\x00") {
 		return false
 	}
 	return true
@@ -178,18 +200,16 @@ func (h *AdminHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	hash := sha256.Sum256(wasmBytes)
 
-	resp := map[string]interface{}{
-		"id":            meta.ID,
-		"name":          meta.Name,
-		"version":       meta.Version,
-		"commands":      meta.Commands,
-		"permissions":   meta.Permissions,
-		"config_schema": meta.ConfigSchema,
-		"wasm_key":      wasmKey,
-		"wasm_hash":     hex.EncodeToString(hash[:]),
-	}
-
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, http.StatusOK, uploadResponse{
+		ID:           meta.ID,
+		Name:         meta.Name,
+		Version:      meta.Version,
+		Commands:     meta.Commands,
+		Permissions:  meta.Permissions,
+		ConfigSchema: meta.ConfigSchema,
+		WasmKey:      wasmKey,
+		WasmHash:     hex.EncodeToString(hash[:]),
+	})
 }
 
 func (h *AdminHandler) handleInstall(w http.ResponseWriter, r *http.Request) {
@@ -236,7 +256,6 @@ func (h *AdminHandler) handleInstall(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if wp.ID() != pluginID {
-
 		_ = h.loader.UnloadPlugin(r.Context(), wp.ID())
 		slog.Warn("admin: plugin ID mismatch", "url_id", pluginID, "wasm_id", wp.ID())
 		writeError(w, http.StatusBadRequest, "plugin ID mismatch")
@@ -263,11 +282,11 @@ func (h *AdminHandler) handleInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"id":      wp.ID(),
-		"name":    wp.Name(),
-		"version": wp.Version(),
-		"status":  "installed",
+	writeJSON(w, http.StatusOK, installResponse{
+		ID:      wp.ID(),
+		Name:    wp.Name(),
+		Version: wp.Version(),
+		Status:  "installed",
 	})
 }
 
@@ -313,7 +332,7 @@ func (h *AdminHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var oldCommands map[string]struct{}
-	if oldPlugin, ok := h.manager.All()[pluginID]; ok {
+	if oldPlugin, ok := h.manager.Get(pluginID); ok {
 		oldCommands = make(map[string]struct{}, len(oldPlugin.Commands()))
 		for _, def := range oldPlugin.Commands() {
 			oldCommands[def.Name] = struct{}{}
@@ -504,7 +523,7 @@ func (h *AdminHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.stateMgr != nil {
-		if p, ok := h.manager.All()[pluginID]; ok {
+		if p, ok := h.manager.Get(pluginID); ok {
 			for _, def := range p.Commands() {
 				h.stateMgr.UnregisterCommand(def.Name)
 			}
@@ -542,10 +561,6 @@ func (h *AdminHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 func (h *AdminHandler) handleListPlugins(w http.ResponseWriter, r *http.Request) {
 	allPlugins := h.manager.All()
 	records, _ := h.store.ListPlugins(r.Context())
-	recordMap := make(map[string]PluginRecord, len(records))
-	for _, rec := range records {
-		recordMap[rec.ID] = rec
-	}
 
 	type pluginInfo struct {
 		ID       string `json:"id"`
@@ -589,7 +604,7 @@ func (h *AdminHandler) handleListPlugins(w http.ResponseWriter, r *http.Request)
 func (h *AdminHandler) handleGetPlugin(w http.ResponseWriter, r *http.Request) {
 	pluginID := r.PathValue("id")
 
-	p := h.manager.All()[pluginID]
+	p, _ := h.manager.Get(pluginID)
 
 	record, storeErr := h.store.GetPlugin(r.Context(), pluginID)
 
@@ -610,10 +625,6 @@ func (h *AdminHandler) handleGetPlugin(w http.ResponseWriter, r *http.Request) {
 		resp["version"] = p.Version()
 		resp["type"] = pType
 		resp["status"] = "active"
-		type cmdInfo struct {
-			Name        string `json:"name"`
-			Description string `json:"description"`
-		}
 		cmds := make([]cmdInfo, 0, len(p.Commands()))
 		for _, def := range p.Commands() {
 			cmds = append(cmds, cmdInfo{Name: def.Name, Description: def.Description})

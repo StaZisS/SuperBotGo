@@ -63,7 +63,7 @@ func (h *PluginPermHandler) handleGetPluginPerms(w http.ResponseWriter, r *http.
 		granted = []string{}
 	}
 
-	var declared []declaredPermission
+	declared := make([]declaredPermission, 0)
 	if wp, ok := h.loader.GetPlugin(pluginID); ok {
 		meta := wp.Meta()
 		declared = make([]declaredPermission, 0, len(meta.Permissions))
@@ -75,18 +75,13 @@ func (h *PluginPermHandler) handleGetPluginPerms(w http.ResponseWriter, r *http.
 			})
 		}
 	}
-	if declared == nil {
-		declared = []declaredPermission{}
-	}
 
-	var callable []callablePlugin
-	for _, wp := range h.loader.AllPlugins() {
+	allPlugins := h.loader.AllPlugins()
+	callable := make([]callablePlugin, 0, len(allPlugins))
+	for _, wp := range allPlugins {
 		if wp.ID() != pluginID {
 			callable = append(callable, callablePlugin{ID: wp.ID(), Name: wp.Name()})
 		}
-	}
-	if callable == nil {
-		callable = []callablePlugin{}
 	}
 
 	writeJSON(w, http.StatusOK, pluginPermissionsResponse{

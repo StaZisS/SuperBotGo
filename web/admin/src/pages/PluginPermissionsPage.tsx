@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { api, PluginDetail as PluginDetailType, PluginPermissionsDetail, HostPermissionInfo, DeclaredPermission } from '../api/client'
 import { toast } from '../components/Toast'
@@ -36,14 +36,20 @@ export default function PluginPermissionsPage() {
 
   useEffect(() => { load() }, [load])
 
-  const declaredMap = new Map<string, DeclaredPermission>()
-  if (permDetail) {
-    for (const d of permDetail.declared) {
-      declaredMap.set(d.key, d)
+  const declaredMap = useMemo(() => {
+    const map = new Map<string, DeclaredPermission>()
+    if (permDetail) {
+      for (const d of permDetail.declared) {
+        map.set(d.key, d)
+      }
     }
-  }
+    return map
+  }, [permDetail])
 
-  const isRequired = (key: string) => declaredMap.get(key)?.required === true
+  const isRequired = useCallback(
+    (key: string) => declaredMap.get(key)?.required === true,
+    [declaredMap],
+  )
 
   const toggle = (key: string) => {
     if (isRequired(key)) return
@@ -81,30 +87,36 @@ export default function PluginPermissionsPage() {
     return <div className="text-gray-400 py-8 text-center">Плагин не найден</div>
   }
 
-  const byCategory = new Map<string, HostPermissionInfo[]>()
-  for (const p of permDetail.all_available) {
-    const list = byCategory.get(p.category) || []
-    list.push(p)
-    byCategory.set(p.category, list)
-  }
+  const byCategory = useMemo(() => {
+    const map = new Map<string, HostPermissionInfo[]>()
+    for (const p of permDetail.all_available) {
+      const list = map.get(p.category) || []
+      list.push(p)
+      map.set(p.category, list)
+    }
+    return map
+  }, [permDetail])
 
-  const callTargets = new Map<string, { id: string; name: string; declared?: DeclaredPermission }>()
-  for (const cp of permDetail.callable_plugins) {
-    const key = `plugins:call:${cp.id}`
-    callTargets.set(key, { id: cp.id, name: cp.name, declared: declaredMap.get(key) })
-  }
-  for (const d of permDetail.declared) {
-    if (d.key.startsWith('plugins:call:') && !callTargets.has(d.key)) {
-      const targetId = d.key.slice('plugins:call:'.length)
-      callTargets.set(d.key, { id: targetId, name: targetId, declared: d })
+  const callTargets = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; declared?: DeclaredPermission }>()
+    for (const cp of permDetail.callable_plugins) {
+      const key = `plugins:call:${cp.id}`
+      map.set(key, { id: cp.id, name: cp.name, declared: declaredMap.get(key) })
     }
-  }
-  for (const g of permDetail.granted) {
-    if (g.startsWith('plugins:call:') && !callTargets.has(g)) {
-      const targetId = g.slice('plugins:call:'.length)
-      callTargets.set(g, { id: targetId, name: targetId, declared: declaredMap.get(g) })
+    for (const d of permDetail.declared) {
+      if (d.key.startsWith('plugins:call:') && !map.has(d.key)) {
+        const targetId = d.key.slice('plugins:call:'.length)
+        map.set(d.key, { id: targetId, name: targetId, declared: d })
+      }
     }
-  }
+    for (const g of permDetail.granted) {
+      if (g.startsWith('plugins:call:') && !map.has(g)) {
+        const targetId = g.slice('plugins:call:'.length)
+        map.set(g, { id: targetId, name: targetId, declared: declaredMap.get(g) })
+      }
+    }
+    return map
+  }, [permDetail, declaredMap])
 
   const isDisabled = plugin?.status === 'disabled'
 
