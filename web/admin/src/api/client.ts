@@ -152,6 +152,18 @@ export interface PluginPermissionsDetail {
   callable_plugins: CallablePlugin[]
 }
 
+export interface VersionInfo {
+  id: number
+  plugin_id: string
+  version: string
+  wasm_key: string
+  wasm_hash: string
+  config_json: unknown
+  permissions: string[]
+  changelog: string
+  created_at: string
+}
+
 export const api = {
   listPlugins: () => request<PluginInfo[]>('/plugins'),
 
@@ -218,5 +230,20 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ permissions }),
     }),
+
+  listVersions: (pluginId: string) =>
+    request<VersionInfo[]>(`/plugins/${encodeURIComponent(pluginId)}/versions`),
+
+  rollbackVersion: (pluginId: string, versionId: number) =>
+    request<{ status: string; version: string; version_id: number }>(
+      `/plugins/${encodeURIComponent(pluginId)}/versions/${versionId}/rollback`,
+      { method: 'POST' },
+    ),
+
+  deleteVersion: (pluginId: string, versionId: number) =>
+    request<{ status: string }>(
+      `/plugins/${encodeURIComponent(pluginId)}/versions/${versionId}`,
+      { method: 'DELETE' },
+    ),
 
 }

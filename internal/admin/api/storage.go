@@ -24,3 +24,23 @@ type PluginStore interface {
 	ListPlugins(ctx context.Context) ([]PluginRecord, error)
 	DeletePlugin(ctx context.Context, id string) error
 }
+
+type VersionRecord struct {
+	ID          int64           `json:"id"`
+	PluginID    string          `json:"plugin_id"`
+	Version     string          `json:"version"`
+	WasmKey     string          `json:"wasm_key"`
+	WasmHash    string          `json:"wasm_hash"`
+	ConfigJSON  json.RawMessage `json:"config_json,omitempty"`
+	Permissions []string        `json:"permissions,omitempty"`
+	Changelog   string          `json:"changelog"`
+	CreatedAt   time.Time       `json:"created_at"`
+}
+
+type VersionStore interface {
+	SaveVersion(ctx context.Context, rec VersionRecord) (int64, error)
+	ListVersions(ctx context.Context, pluginID string) ([]VersionRecord, error)
+	GetVersion(ctx context.Context, id int64) (VersionRecord, error)
+	DeleteVersion(ctx context.Context, id int64) error
+	DeleteVersionsByPlugin(ctx context.Context, pluginID string) error
+}

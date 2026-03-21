@@ -6,7 +6,7 @@ func main() {
 	wasmplugin.Run(wasmplugin.Plugin{
 		ID:      "schedule",
 		Name:    "University Schedule",
-		Version: "1.3.0",
+		Version: "1.4.0",
 		Config: wasmplugin.ConfigFields(
 			wasmplugin.String("greeting", "Message shown before the schedule").Default("Welcome! Here is your schedule:"),
 			wasmplugin.String("university_name", "University name shown in the header").Default("University"),

@@ -35,5 +35,4 @@ vendor/
 .DS_Store
 Thumbs.db
 .agents/
-promt.md
 skills-lock.json

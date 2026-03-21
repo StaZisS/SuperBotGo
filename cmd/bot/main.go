@@ -155,6 +155,7 @@ func main() {
 	var accountRepo user.AccountRepository
 	var roleStore role.Store
 	var pluginStore adminapi.PluginStore
+	var versionStore adminapi.VersionStore
 	var cmdPermStore adminapi.CommandPermStore
 	var authzStore authz.Store
 	var universityProvider *providers.UniversityProvider
@@ -180,6 +181,7 @@ func main() {
 				accountRepo = user.NewPgAccountRepo(pool)
 				roleStore = role.NewPgStore(pool)
 				pluginStore = adminapi.NewPgPluginStore(pool)
+				versionStore = adminapi.NewPgVersionStore(pool)
 				cmdPermStore = adminapi.NewPgCommandPermStore(pool)
 				authzStore = authz.NewPgStore(pool)
 				universityProvider = providers.NewUniversityProvider(pool)
@@ -209,6 +211,15 @@ func main() {
 		}
 		pluginStore = fileStore
 		logger.Info("using file-based plugin store")
+	}
+	if versionStore == nil {
+		fileVerStore, fsErr := adminapi.NewFileVersionStore(cfg.Admin.ModulesDir)
+		if fsErr != nil {
+			logger.Error("failed to create file version store", slog.Any("error", fsErr))
+			os.Exit(1)
+		}
+		versionStore = fileVerStore
+		logger.Info("using file-based version store")
 	}
 
 	userService := user.NewService(userRepo, accountRepo)
@@ -250,6 +261,7 @@ func main() {
 		hostAPI,
 		stateMgr,
 		cmdPermStore,
+		versionStore,
 		cfg.Admin.APIKey,
 		adminBus,
 	)

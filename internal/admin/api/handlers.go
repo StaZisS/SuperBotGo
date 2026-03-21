@@ -63,6 +63,7 @@ type AdminHandler struct {
 	hostAPI  *hostapi.HostAPI
 	stateMgr StateManagerRegistrar
 	cmdStore CommandPermStore
+	versions VersionStore
 	apiKey   string
 	bus      *pubsub.Bus
 }
@@ -76,6 +77,7 @@ func NewAdminHandler(
 	hostAPI *hostapi.HostAPI,
 	stateMgr StateManagerRegistrar,
 	cmdStore CommandPermStore,
+	versions VersionStore,
 	apiKey string,
 	bus *pubsub.Bus,
 ) *AdminHandler {
@@ -91,6 +93,7 @@ func NewAdminHandler(
 		hostAPI:  hostAPI,
 		stateMgr: stateMgr,
 		cmdStore: cmdStore,
+		versions: versions,
 		apiKey:   apiKey,
 		bus:      bus,
 	}
@@ -148,6 +151,11 @@ func (h *AdminHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/admin/plugins/{id}", h.handleDelete)
 	mux.HandleFunc("GET /api/admin/plugins/{id}", h.handleGetPlugin)
 	mux.HandleFunc("GET /api/admin/plugins", h.handleListPlugins)
+
+	// Version management
+	mux.HandleFunc("GET /api/admin/plugins/{id}/versions", h.handleListVersions)
+	mux.HandleFunc("POST /api/admin/plugins/{id}/versions/{versionId}/rollback", h.handleRollback)
+	mux.HandleFunc("DELETE /api/admin/plugins/{id}/versions/{versionId}", h.handleDeleteVersion)
 }
 
 func validateBlobKey(key string) bool {
@@ -298,6 +306,20 @@ func (h *AdminHandler) handleInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.versions != nil {
+		if _, err := h.versions.SaveVersion(r.Context(), VersionRecord{
+			PluginID:    wp.ID(),
+			Version:     wp.Version(),
+			WasmKey:     body.WasmKey,
+			WasmHash:    record.WasmHash,
+			ConfigJSON:  body.Config,
+			Permissions: body.Permissions,
+			Changelog:   "initial install",
+		}); err != nil {
+			slog.Error("admin: failed to save initial version record", "plugin", wp.ID(), "error", err)
+		}
+	}
+
 	h.publish(r.Context(), pubsub.EventPluginInstalled, wp.ID())
 
 	writeJSON(w, http.StatusOK, installResponse{
@@ -409,6 +431,19 @@ func (h *AdminHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		h.manager.Register(wp)
 		h.syncCommandsOnUpdate(r.Context(), pluginID, oldCommands, wp)
 		h.syncPermissionsOnUpdate(pluginID, record, wp)
+
+		if h.versions != nil {
+			if _, err := h.versions.SaveVersion(r.Context(), VersionRecord{
+				PluginID:    pluginID,
+				Version:     wp.Version(),
+				WasmKey:     newKey,
+				WasmHash:    record.WasmHash,
+				ConfigJSON:  record.ConfigJSON,
+				Permissions: record.Permissions,
+			}); err != nil {
+				slog.Error("admin: failed to save version record on update", "plugin", pluginID, "error", err)
+			}
+		}
 	}
 
 	h.publish(r.Context(), pubsub.EventPluginUpdated, pluginID)

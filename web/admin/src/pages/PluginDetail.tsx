@@ -196,6 +196,12 @@ export default function PluginDetail() {
         >
           Права плагина
         </Link>
+        <Link
+          to={`/admin/plugins/${id}/versions`}
+          className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors"
+        >
+          Версии
+        </Link>
         <button
           onClick={() => setShowUpdate((v) => !v)}
           className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors"

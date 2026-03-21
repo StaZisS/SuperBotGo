@@ -8,6 +8,7 @@ import PluginDetail from './pages/PluginDetail'
 import PluginConfig from './pages/PluginConfig'
 import PluginCommandPermissions from './pages/PluginCommandPermissions'
 import PluginPermissionsPage from './pages/PluginPermissionsPage'
+import PluginVersions from './pages/PluginVersions'
 import Layout from './components/Layout'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -21,6 +22,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <Route path="/admin/plugins/:id/config" element={<PluginConfig />} />
           <Route path="/admin/plugins/:id/permissions" element={<PluginCommandPermissions />} />
           <Route path="/admin/plugins/:id/plugin-permissions" element={<PluginPermissionsPage />} />
+          <Route path="/admin/plugins/:id/versions" element={<PluginVersions />} />
           <Route path="*" element={<Navigate to="/admin/plugins" replace />} />
         </Route>
       </Routes>
