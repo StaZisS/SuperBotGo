@@ -3,10 +3,12 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sort"
 	"time"
 
+	"SuperBotGo/internal/pubsub"
 	"SuperBotGo/internal/wasm/adapter"
 	"SuperBotGo/internal/wasm/hostapi"
 )
@@ -15,10 +17,11 @@ type PluginPermHandler struct {
 	store   PluginStore
 	loader  *adapter.Loader
 	hostAPI *hostapi.HostAPI
+	bus     *pubsub.Bus
 }
 
-func NewPluginPermHandler(store PluginStore, loader *adapter.Loader, hostAPI *hostapi.HostAPI) *PluginPermHandler {
-	return &PluginPermHandler{store: store, loader: loader, hostAPI: hostAPI}
+func NewPluginPermHandler(store PluginStore, loader *adapter.Loader, hostAPI *hostapi.HostAPI, bus *pubsub.Bus) *PluginPermHandler {
+	return &PluginPermHandler{store: store, loader: loader, hostAPI: hostAPI, bus: bus}
 }
 
 func (h *PluginPermHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -141,6 +144,15 @@ func (h *PluginPermHandler) handleUpdatePluginPerms(w http.ResponseWriter, r *ht
 
 	h.hostAPI.GrantPermissions(pluginID, body.Permissions)
 	h.loader.UpdatePermissions(pluginID, body.Permissions)
+
+	if h.bus != nil {
+		if pubErr := h.bus.Publish(r.Context(), pubsub.AdminEvent{
+			Type:     pubsub.EventPermChanged,
+			PluginID: pluginID,
+		}); pubErr != nil {
+			slog.Error("admin: failed to publish permission event", "plugin", pluginID, "error", pubErr)
+		}
+	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }

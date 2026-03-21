@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -29,8 +31,10 @@ import (
 	"SuperBotGo/internal/plugin/project"
 	"SuperBotGo/internal/plugin/resume"
 	"SuperBotGo/internal/plugin/settings"
+	"SuperBotGo/internal/pubsub"
 	"SuperBotGo/internal/role"
 	"SuperBotGo/internal/state"
+	"SuperBotGo/internal/state/storage"
 	"SuperBotGo/internal/trigger"
 	"SuperBotGo/internal/user"
 	"SuperBotGo/internal/wasm/adapter"
@@ -38,6 +42,7 @@ import (
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/redis/go-redis/v9"
 )
 
 func main() {
@@ -105,6 +110,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Redis (dialog storage)
+	var redisClient *redis.Client
+	if cfg.Redis.Addr != "" {
+		rc, redisErr := database.NewRedisClient(wasmCtx, cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
+		if redisErr != nil {
+			logger.Warn("Redis not available, Redis dialog storage disabled", slog.Any("error", redisErr))
+		} else {
+			redisClient = rc
+			logger.Info("connected to Redis", slog.String("addr", cfg.Redis.Addr))
+		}
+	}
+
+	// PostgreSQL
 	var userRepo user.UserRepository
 	var accountRepo user.AccountRepository
 	var roleStore role.Store
@@ -112,6 +130,7 @@ func main() {
 	var cmdPermStore adminapi.CommandPermStore
 	var authzStore authz.Store
 	var universityProvider *providers.UniversityProvider
+	var adminBus *pubsub.Bus
 
 	connString := fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
@@ -136,6 +155,7 @@ func main() {
 				cmdPermStore = adminapi.NewPgCommandPermStore(pool)
 				authzStore = authz.NewPgStore(pool)
 				universityProvider = providers.NewUniversityProvider(pool)
+				adminBus = pubsub.NewBus(pool, connString, generateInstanceID())
 				logger.Info("using PostgreSQL stores")
 			}
 		}
@@ -183,8 +203,15 @@ func main() {
 
 	adapter.RegisterWasmPlugins(pluginManager, wasmLoader)
 
-	dialogStorage := &inMemoryDialogStorage{}
-	stateMgr := state.NewManager(dialogStorage)
+	var dialogStore storage.DialogStorage
+	if redisClient != nil {
+		dialogStore = storage.NewRedisStorage(redisClient)
+		logger.Info("using Redis dialog storage")
+	} else {
+		dialogStore = &inMemoryDialogStorage{}
+		logger.Warn("using in-memory dialog storage (state will be lost on restart)")
+	}
+	stateMgr := state.NewManager(dialogStore)
 
 	adminHandler := adminapi.NewAdminHandler(
 		pluginStore,
@@ -196,13 +223,14 @@ func main() {
 		stateMgr,
 		cmdPermStore,
 		cfg.Admin.APIKey,
+		adminBus,
 	)
 
 	adminMux := http.NewServeMux()
 	adminHandler.RegisterRoutes(adminMux)
 	cmdPermHandler := adminapi.NewCommandPermHandler(cmdPermStore)
 	cmdPermHandler.RegisterRoutes(adminMux)
-	pluginPermHandler := adminapi.NewPluginPermHandler(pluginStore, wasmLoader, hostAPI)
+	pluginPermHandler := adminapi.NewPluginPermHandler(pluginStore, wasmLoader, hostAPI, adminBus)
 	pluginPermHandler.RegisterRoutes(adminMux)
 	ruleSchemaHandler.RegisterRoutes(adminMux)
 	triggerRouter := trigger.NewRouter(triggerRegistry, pluginManager)
@@ -274,6 +302,30 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Start pub/sub subscriber for cross-instance synchronization
+	if adminBus != nil {
+		pluginFetcher := func(fCtx context.Context, id string) (*pubsub.PluginData, error) {
+			rec, err := pluginStore.GetPlugin(fCtx, id)
+			if err != nil {
+				return nil, err
+			}
+			return &pubsub.PluginData{
+				WasmKey:     rec.WasmKey,
+				ConfigJSON:  rec.ConfigJSON,
+				Permissions: rec.Permissions,
+			}, nil
+		}
+		eventHandler := pubsub.NewAdminEventHandler(
+			pluginFetcher, blobStore.Get, wasmLoader, pluginManager, hostAPI, stateMgr,
+		)
+		go func() {
+			if err := adminBus.Subscribe(ctx, eventHandler.Handle); err != nil {
+				logger.Error("pubsub subscriber stopped", slog.Any("error", err))
+			}
+		}()
+		logger.Info("pub/sub subscriber started", slog.String("instance", adminBus.InstanceID()))
+	}
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
@@ -344,4 +396,10 @@ func main() {
 
 	// roleManager is available for admin role CRUD operations
 	_ = roleManager
+}
+
+func generateInstanceID() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }

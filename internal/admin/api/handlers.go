@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"SuperBotGo/internal/plugin"
+	"SuperBotGo/internal/pubsub"
 	"SuperBotGo/internal/state"
 	"SuperBotGo/internal/wasm/adapter"
 	"SuperBotGo/internal/wasm/hostapi"
@@ -63,6 +64,7 @@ type AdminHandler struct {
 	stateMgr StateManagerRegistrar
 	cmdStore CommandPermStore
 	apiKey   string
+	bus      *pubsub.Bus
 }
 
 func NewAdminHandler(
@@ -75,6 +77,7 @@ func NewAdminHandler(
 	stateMgr StateManagerRegistrar,
 	cmdStore CommandPermStore,
 	apiKey string,
+	bus *pubsub.Bus,
 ) *AdminHandler {
 	if apiKey == "" {
 		slog.Warn("admin: API key is not set — admin endpoints are unprotected!")
@@ -89,6 +92,19 @@ func NewAdminHandler(
 		stateMgr: stateMgr,
 		cmdStore: cmdStore,
 		apiKey:   apiKey,
+		bus:      bus,
+	}
+}
+
+func (h *AdminHandler) publish(ctx context.Context, eventType, pluginID string) {
+	if h.bus == nil {
+		return
+	}
+	if err := h.bus.Publish(ctx, pubsub.AdminEvent{
+		Type:     eventType,
+		PluginID: pluginID,
+	}); err != nil {
+		slog.Error("admin: failed to publish event", "type", eventType, "plugin", pluginID, "error", err)
 	}
 }
 
@@ -282,6 +298,8 @@ func (h *AdminHandler) handleInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.publish(r.Context(), pubsub.EventPluginInstalled, wp.ID())
+
 	writeJSON(w, http.StatusOK, installResponse{
 		ID:      wp.ID(),
 		Name:    wp.Name(),
@@ -318,6 +336,8 @@ func (h *AdminHandler) handleUpdateConfig(w http.ResponseWriter, r *http.Request
 	if wp, ok := h.loader.GetPlugin(pluginID); ok {
 		wp.SetConfig(body.Config)
 	}
+
+	h.publish(r.Context(), pubsub.EventConfigChanged, pluginID)
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }
@@ -390,6 +410,8 @@ func (h *AdminHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		h.syncCommandsOnUpdate(r.Context(), pluginID, oldCommands, wp)
 		h.syncPermissionsOnUpdate(pluginID, record, wp)
 	}
+
+	h.publish(r.Context(), pubsub.EventPluginUpdated, pluginID)
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }
@@ -464,6 +486,8 @@ func (h *AdminHandler) handleDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.publish(r.Context(), pubsub.EventPluginDisabled, pluginID)
+
 	writeJSON(w, http.StatusOK, map[string]string{"status": "disabled"})
 }
 
@@ -510,6 +534,8 @@ func (h *AdminHandler) handleEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.publish(r.Context(), pubsub.EventPluginEnabled, pluginID)
+
 	writeJSON(w, http.StatusOK, map[string]string{"status": "enabled"})
 }
 
@@ -554,6 +580,8 @@ func (h *AdminHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to delete record")
 		return
 	}
+
+	h.publish(r.Context(), pubsub.EventPluginUninstalled, pluginID)
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
