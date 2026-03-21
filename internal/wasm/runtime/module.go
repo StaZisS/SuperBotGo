@@ -157,3 +157,11 @@ func (cm *CompiledModule) CallStepCallback(ctx context.Context, reqJSON []byte, 
 	}
 	return data, nil
 }
+
+func (cm *CompiledModule) CallHandleEvent(ctx context.Context, eventJSON []byte, configJSON []byte) ([]byte, error) {
+	data, err := cm.RunActionWithConfig(ctx, "handle_event", eventJSON, configJSON)
+	if err != nil {
+		return nil, fmt.Errorf("call handle_event: %w", err)
+	}
+	return data, nil
+}

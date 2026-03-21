@@ -2,6 +2,7 @@ package link
 
 import (
 	"context"
+	"fmt"
 
 	"SuperBotGo/internal/i18n"
 	"SuperBotGo/internal/model"
@@ -48,25 +49,30 @@ func (p *Plugin) Version() string                      { return "1.0.0" }
 func (p *Plugin) SupportedRoles() []string             { return []string{"USER", "ADMIN"} }
 func (p *Plugin) Commands() []*state.CommandDefinition { return []*state.CommandDefinition{p.cmdDef} }
 
-func (p *Plugin) HandleCommand(ctx context.Context, req model.CommandRequest) error {
-	locale := req.Locale
-	action := req.Params.Get("action")
+func (p *Plugin) HandleEvent(ctx context.Context, event model.Event) (*model.EventResponse, error) {
+	m, err := event.Messenger()
+	if err != nil {
+		return nil, fmt.Errorf("link: parse messenger data: %w", err)
+	}
+
+	locale := m.Locale
+	action := m.Params.Get("action")
 	if action == "" {
-		return p.api.Reply(ctx, req, model.NewTextMessage(i18n.Get("link.action_required", locale)))
+		return nil, p.api.Reply(ctx, m, model.NewTextMessage(i18n.Get("link.action_required", locale)))
 	}
 
 	var result LinkResult
 	switch action {
 	case "generate":
-		result = p.linker.InitiateLinking(ctx, req.UserID)
+		result = p.linker.InitiateLinking(ctx, m.UserID)
 	case "enter":
-		code := req.Params.Get("code")
+		code := m.Params.Get("code")
 		if code == "" {
-			return p.api.Reply(ctx, req, model.NewTextMessage(i18n.Get("link.code_required", locale)))
+			return nil, p.api.Reply(ctx, m, model.NewTextMessage(i18n.Get("link.code_required", locale)))
 		}
-		result = p.linker.CompleteLinking(ctx, req.UserID, code)
+		result = p.linker.CompleteLinking(ctx, m.UserID, code)
 	default:
-		return p.api.Reply(ctx, req, model.NewTextMessage("Unknown action: "+action))
+		return nil, p.api.Reply(ctx, m, model.NewTextMessage("Unknown action: "+action))
 	}
 
 	var msg model.Message
@@ -85,5 +91,5 @@ func (p *Plugin) HandleCommand(ctx context.Context, req model.CommandRequest) er
 		msg = model.NewTextMessage(result.Message)
 	}
 
-	return p.api.Reply(ctx, req, msg)
+	return nil, p.api.Reply(ctx, m, msg)
 }

@@ -13,8 +13,19 @@ type pluginMeta struct {
 	Version      string          `json:"version"`
 	SDKVersion   int             `json:"sdk_version"`
 	Commands     []commandDef    `json:"commands,omitempty"`
+	Triggers     []triggerDef    `json:"triggers,omitempty"`
 	Permissions  []permissionDef `json:"permissions,omitempty"`
 	ConfigSchema json.RawMessage `json:"config_schema,omitempty"`
+}
+
+type triggerDef struct {
+	Name        string   `json:"name"`
+	Type        string   `json:"type"`
+	Description string   `json:"description,omitempty"`
+	Path        string   `json:"path,omitempty"`
+	Methods     []string `json:"methods,omitempty"`
+	Schedule    string   `json:"schedule,omitempty"`
+	Topic       string   `json:"topic,omitempty"`
 }
 
 type commandDef struct {
@@ -43,15 +54,6 @@ type permissionDef struct {
 	Required    bool   `json:"required"`
 }
 
-type commandRequest struct {
-	UserID      int64             `json:"user_id"`
-	ChannelType string            `json:"channel_type"`
-	ChatID      string            `json:"chat_id"`
-	CommandName string            `json:"command_name"`
-	Params      map[string]string `json:"params"`
-	Locale      string            `json:"locale"`
-}
-
 type logEntry struct {
 	Level string `json:"level"`
 	Msg   string `json:"msg"`
@@ -60,14 +62,6 @@ type logEntry struct {
 type messageEntry struct {
 	ChatID string `json:"chat_id"`
 	Text   string `json:"text"`
-}
-
-type responseJSON struct {
-	Status   string         `json:"status,omitempty"`
-	Error    string         `json:"error,omitempty"`
-	Reply    string         `json:"reply,omitempty"`
-	Logs     []logEntry     `json:"logs,omitempty"`
-	Messages []messageEntry `json:"messages,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -142,4 +136,61 @@ type stepCallbackResponse struct {
 	HasMore bool        `json:"has_more,omitempty"`
 	Result  *bool       `json:"result,omitempty"`
 	Error   string      `json:"error,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// handle_event protocol
+// ---------------------------------------------------------------------------
+
+type eventRequest struct {
+	ID          string          `json:"id"`
+	TriggerType string          `json:"trigger_type"`
+	TriggerName string          `json:"trigger_name"`
+	PluginID    string          `json:"plugin_id"`
+	Timestamp   int64           `json:"timestamp"`
+	Data        json.RawMessage `json:"data"`
+}
+
+type eventResponseJSON struct {
+	Status   string          `json:"status,omitempty"`
+	Error    string          `json:"error,omitempty"`
+	Reply    string          `json:"reply,omitempty"`
+	Data     json.RawMessage `json:"data,omitempty"`
+	Logs     []logEntry      `json:"logs,omitempty"`
+	Messages []messageEntry  `json:"messages,omitempty"`
+}
+
+type messengerTriggerData struct {
+	UserID      int64             `json:"user_id"`
+	ChannelType string            `json:"channel_type"`
+	ChatID      string            `json:"chat_id"`
+	CommandName string            `json:"command_name"`
+	Params      map[string]string `json:"params"`
+	Locale      string            `json:"locale"`
+}
+
+type httpTriggerData struct {
+	Method     string            `json:"method"`
+	Path       string            `json:"path"`
+	Query      map[string]string `json:"query,omitempty"`
+	Headers    map[string]string `json:"headers,omitempty"`
+	Body       string            `json:"body,omitempty"`
+	RemoteAddr string            `json:"remote_addr,omitempty"`
+}
+
+type httpResponseData struct {
+	StatusCode int               `json:"status_code"`
+	Headers    map[string]string `json:"headers,omitempty"`
+	Body       string            `json:"body"`
+}
+
+type cronTriggerData struct {
+	ScheduleName string `json:"schedule_name"`
+	FireTime     int64  `json:"fire_time"`
+}
+
+type eventTriggerData struct {
+	Topic   string          `json:"topic"`
+	Payload json.RawMessage `json:"payload"`
+	Source  string          `json:"source"`
 }

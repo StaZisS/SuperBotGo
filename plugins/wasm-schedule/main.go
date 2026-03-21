@@ -11,11 +11,74 @@ func main() {
 			wasmplugin.String("greeting", "Message shown before the schedule").Default("Welcome! Here is your schedule:"),
 			wasmplugin.String("university_name", "University name shown in the header").Default("University"),
 		),
+		Permissions: []wasmplugin.Permission{
+			{Key: "triggers:http", Description: "Serve schedule via HTTP API", Required: false},
+		},
 		Commands: []wasmplugin.Command{
 			scheduleCommand(),
 			findCommand(),
 		},
+		Triggers: []wasmplugin.Trigger{
+			{
+				Name:        "api",
+				Type:        wasmplugin.TriggerHTTP,
+				Description: "REST API for schedule",
+				Path:        "/api/schedule",
+				Methods:     []string{"GET"},
+				Handler:     handleScheduleHTTP,
+			},
+		},
 	})
+}
+
+// handleScheduleHTTP serves GET /api/triggers/http/schedule/api/schedule?building=1&room=101
+func handleScheduleHTTP(ctx *wasmplugin.EventContext) error {
+	building := ctx.HTTP.Query["building"]
+	room := ctx.HTTP.Query["room"]
+	date := ctx.HTTP.Query["date"]
+
+	if building == "" {
+		ctx.JSON(400, map[string]string{"error": "missing 'building' query parameter"})
+		return nil
+	}
+	if room == "" {
+		room = "—"
+	}
+	if date == "" {
+		date = "today"
+	}
+
+	locale := ctx.HTTP.Query["locale"]
+	if locale == "" {
+		locale = "en"
+	}
+
+	entries := schedule[building]
+
+	type entry struct {
+		Time    string `json:"time"`
+		Subject string `json:"subject"`
+		Teacher string `json:"teacher"`
+	}
+
+	result := make([]entry, len(entries))
+	for i, e := range entries {
+		result[i] = entry{
+			Time:    e.Time,
+			Subject: tr(locale, e.Subject),
+			Teacher: e.Teacher,
+		}
+	}
+
+	ctx.JSON(200, map[string]interface{}{
+		"building": building,
+		"room":     room,
+		"date":     date,
+		"classes":  result,
+	})
+
+	ctx.Log("http: schedule building=" + building + " room=" + room)
+	return nil
 }
 
 func buildingPages(ctx *wasmplugin.CallbackContext) wasmplugin.OptionsPage {
@@ -85,12 +148,12 @@ func scheduleCommand() wasmplugin.Command {
 	}
 }
 
-func handleScheduleCmd(ctx *wasmplugin.CommandContext) error {
-	mode := ctx.Params["mode"]
-	building := ctx.Params["building"]
-	room := ctx.Params["room"]
+func handleScheduleCmd(ctx *wasmplugin.EventContext) error {
+	mode := ctx.Param("mode")
+	building := ctx.Param("building")
+	room := ctx.Param("room")
 
-	date := ctx.Params["date"]
+	date := ctx.Param("date")
 	if mode == "quick" {
 		date = "today"
 	}
@@ -107,7 +170,7 @@ func handleScheduleCmd(ctx *wasmplugin.CommandContext) error {
 	if uniName != "" {
 		text += uniName + "\n"
 	}
-	text += generateScheduleForBuilding(building, room, date, ctx.Locale)
+	text += generateScheduleForBuilding(building, room, date, ctx.Locale())
 
 	ctx.Reply(text)
 	return nil
@@ -205,9 +268,9 @@ func findCommand() wasmplugin.Command {
 				VisibleWhen(wasmplugin.ParamNeq("what", "room")),
 		},
 
-		Handler: func(ctx *wasmplugin.CommandContext) error {
-			ctx.Log("find: " + ctx.Params["what"])
-			ctx.Reply(handleFind(ctx.Locale, ctx.Params))
+		Handler: func(ctx *wasmplugin.EventContext) error {
+			ctx.Log("find: " + ctx.Param("what"))
+			ctx.Reply(handleFind(ctx.Locale(), ctx.Messenger.Params))
 			return nil
 		},
 	}

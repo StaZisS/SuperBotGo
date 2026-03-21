@@ -30,8 +30,9 @@ func NewSenderAPI(adapters *channel.AdapterRegistry, userService SenderUserServi
 	}
 }
 
-func (s *SenderAPI) Reply(ctx context.Context, req model.CommandRequest, msg model.Message) error {
-	return s.adapters.SendToChat(ctx, req.ChannelType, req.ChatID, msg)
+// Reply sends a message to the chat from the messenger event data.
+func (s *SenderAPI) Reply(ctx context.Context, m *model.MessengerTriggerData, msg model.Message) error {
+	return s.adapters.SendToChat(ctx, m.ChannelType, m.ChatID, msg)
 }
 
 func (s *SenderAPI) SendToUser(ctx context.Context, userID model.GlobalUserID, msg model.Message) error {

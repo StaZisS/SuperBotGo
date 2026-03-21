@@ -43,5 +43,15 @@ func (r *UpdateRouter) Route(ctx context.Context, req model.CommandRequest) erro
 		}
 	}
 
-	return p.HandleCommand(ctx, req)
+	event := model.NewMessengerEvent(req, p.ID())
+	resp, err := p.HandleEvent(ctx, event)
+	if err != nil {
+		return err
+	}
+
+	if resp != nil && resp.Error != "" {
+		return fmt.Errorf("plugin %q command %q: %s", p.ID(), req.CommandName, resp.Error)
+	}
+
+	return nil
 }

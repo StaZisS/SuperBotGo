@@ -47,44 +47,49 @@ func (p *Plugin) Version() string                      { return "1.0.0" }
 func (p *Plugin) SupportedRoles() []string             { return []string{"ADMIN"} }
 func (p *Plugin) Commands() []*state.CommandDefinition { return []*state.CommandDefinition{p.cmdDef} }
 
-func (p *Plugin) HandleCommand(ctx context.Context, req model.CommandRequest) error {
-	locale := req.Locale
-	switch req.Params.Get("action") {
+func (p *Plugin) HandleEvent(ctx context.Context, event model.Event) (*model.EventResponse, error) {
+	m, err := event.Messenger()
+	if err != nil {
+		return nil, fmt.Errorf("project: parse messenger data: %w", err)
+	}
+
+	locale := m.Locale
+	switch m.Params.Get("action") {
 	case "register_chat":
-		return p.registerChat(ctx, req)
+		return nil, p.registerChat(ctx, m)
 	case "create_project":
-		return p.createProject(ctx, req)
+		return nil, p.createProject(ctx, m)
 	case "bind_chat":
-		return p.bindChat(ctx, req)
+		return nil, p.bindChat(ctx, m)
 	case "list_projects":
-		return p.listProjects(ctx, req)
+		return nil, p.listProjects(ctx, m)
 	default:
-		return p.api.Reply(ctx, req, model.NewTextMessage(i18n.Get("project.unknown_action", locale)))
+		return nil, p.api.Reply(ctx, m, model.NewTextMessage(i18n.Get("project.unknown_action", locale)))
 	}
 }
 
-func (p *Plugin) registerChat(ctx context.Context, req model.CommandRequest) error {
-	locale := req.Locale
-	chatKindName := req.Params.Get("chat_kind")
+func (p *Plugin) registerChat(ctx context.Context, m *model.MessengerTriggerData) error {
+	locale := m.Locale
+	chatKindName := m.Params.Get("chat_kind")
 	if chatKindName == "" {
-		return p.api.Reply(ctx, req, model.NewTextMessage(i18n.Get("project.chat_kind_required", locale)))
+		return p.api.Reply(ctx, m, model.NewTextMessage(i18n.Get("project.chat_kind_required", locale)))
 	}
 	chatKind := model.ChatKind(chatKindName)
 
-	title := req.Params.Get("chat_title")
+	title := m.Params.Get("chat_title")
 	if title == "" {
-		return p.api.Reply(ctx, req, model.NewTextMessage(i18n.Get("project.chat_title_required", locale)))
+		return p.api.Reply(ctx, m, model.NewTextMessage(i18n.Get("project.chat_title_required", locale)))
 	}
 
-	existing, _ := p.chats.FindChat(ctx, req.ChannelType, req.ChatID)
+	existing, _ := p.chats.FindChat(ctx, m.ChannelType, m.ChatID)
 	if existing != nil {
-		return p.api.Reply(ctx, req, model.NewTextMessage(
+		return p.api.Reply(ctx, m, model.NewTextMessage(
 			i18n.Get("project.chat_already_registered", locale, fmt.Sprintf("%d", existing.ID))))
 	}
 
 	chatRef, err := p.chats.RegisterChat(ctx, model.ChatReference{
-		ChannelType:    req.ChannelType,
-		PlatformChatID: req.ChatID,
+		ChannelType:    m.ChannelType,
+		PlatformChatID: m.ChatID,
 		ChatKind:       chatKind,
 		Title:          title,
 	})
@@ -92,7 +97,7 @@ func (p *Plugin) registerChat(ctx context.Context, req model.CommandRequest) err
 		return err
 	}
 
-	return p.api.Reply(ctx, req, model.Message{
+	return p.api.Reply(ctx, m, model.Message{
 		Blocks: []model.ContentBlock{
 			model.TextBlock{Text: i18n.Get("project.chat_registered", locale), Style: model.StyleHeader},
 			model.TextBlock{Text: i18n.Get("project.id_label", locale, fmt.Sprintf("%d", chatRef.ID)), Style: model.StylePlain},
@@ -102,15 +107,15 @@ func (p *Plugin) registerChat(ctx context.Context, req model.CommandRequest) err
 	})
 }
 
-func (p *Plugin) createProject(ctx context.Context, req model.CommandRequest) error {
-	locale := req.Locale
-	name := req.Params.Get("project_name")
+func (p *Plugin) createProject(ctx context.Context, m *model.MessengerTriggerData) error {
+	locale := m.Locale
+	name := m.Params.Get("project_name")
 	if name == "" {
-		return p.api.Reply(ctx, req, model.NewTextMessage(i18n.Get("project.name_required", locale)))
+		return p.api.Reply(ctx, m, model.NewTextMessage(i18n.Get("project.name_required", locale)))
 	}
-	description := req.Params.Get("project_description")
+	description := m.Params.Get("project_description")
 	if description == "" {
-		return p.api.Reply(ctx, req, model.NewTextMessage(i18n.Get("project.description_required", locale)))
+		return p.api.Reply(ctx, m, model.NewTextMessage(i18n.Get("project.description_required", locale)))
 	}
 
 	proj, err := p.projects.SaveProject(ctx, name, description)
@@ -118,7 +123,7 @@ func (p *Plugin) createProject(ctx context.Context, req model.CommandRequest) er
 		return err
 	}
 
-	return p.api.Reply(ctx, req, model.Message{
+	return p.api.Reply(ctx, m, model.Message{
 		Blocks: []model.ContentBlock{
 			model.TextBlock{Text: i18n.Get("project.created", locale), Style: model.StyleHeader},
 			model.TextBlock{Text: i18n.Get("project.id_label", locale, fmt.Sprintf("%d", proj.ID)), Style: model.StylePlain},
@@ -128,23 +133,23 @@ func (p *Plugin) createProject(ctx context.Context, req model.CommandRequest) er
 	})
 }
 
-func (p *Plugin) bindChat(ctx context.Context, req model.CommandRequest) error {
-	locale := req.Locale
-	projectID, err1 := strconv.ParseInt(req.Params.Get("project_id"), 10, 64)
-	chatRefID, err2 := strconv.ParseInt(req.Params.Get("chat_ref_id"), 10, 64)
+func (p *Plugin) bindChat(ctx context.Context, m *model.MessengerTriggerData) error {
+	locale := m.Locale
+	projectID, err1 := strconv.ParseInt(m.Params.Get("project_id"), 10, 64)
+	chatRefID, err2 := strconv.ParseInt(m.Params.Get("chat_ref_id"), 10, 64)
 
 	if err1 != nil || err2 != nil {
-		return p.api.Reply(ctx, req, model.NewTextMessage(i18n.Get("project.invalid_ids", locale)))
+		return p.api.Reply(ctx, m, model.NewTextMessage(i18n.Get("project.invalid_ids", locale)))
 	}
 
 	proj, err := p.projects.FindProject(ctx, projectID)
 	if err != nil || proj == nil {
-		return p.api.Reply(ctx, req, model.NewTextMessage(i18n.Get("project.not_found", locale)))
+		return p.api.Reply(ctx, m, model.NewTextMessage(i18n.Get("project.not_found", locale)))
 	}
 
 	chatRef, err := p.chats.FindChatByID(ctx, chatRefID)
 	if err != nil || chatRef == nil {
-		return p.api.Reply(ctx, req, model.NewTextMessage(i18n.Get("project.chat_not_found", locale)))
+		return p.api.Reply(ctx, m, model.NewTextMessage(i18n.Get("project.chat_not_found", locale)))
 	}
 
 	if err := p.chats.BindChat(ctx, projectID, chatRefID); err != nil {
@@ -156,7 +161,7 @@ func (p *Plugin) bindChat(ctx context.Context, req model.CommandRequest) error {
 		chatTitle = chatRef.PlatformChatID
 	}
 
-	return p.api.Reply(ctx, req, model.Message{
+	return p.api.Reply(ctx, m, model.Message{
 		Blocks: []model.ContentBlock{
 			model.TextBlock{Text: i18n.Get("project.chat_bound", locale), Style: model.StyleHeader},
 			model.TextBlock{Text: i18n.Get("project.bound_project", locale, proj.Name), Style: model.StylePlain},
@@ -165,14 +170,14 @@ func (p *Plugin) bindChat(ctx context.Context, req model.CommandRequest) error {
 	})
 }
 
-func (p *Plugin) listProjects(ctx context.Context, req model.CommandRequest) error {
-	locale := req.Locale
+func (p *Plugin) listProjects(ctx context.Context, m *model.MessengerTriggerData) error {
+	locale := m.Locale
 	projs, err := p.projects.ListProjects()
 	if err != nil {
 		return err
 	}
 	if len(projs) == 0 {
-		return p.api.Reply(ctx, req, model.NewTextMessage(i18n.Get("project.no_projects", locale)))
+		return p.api.Reply(ctx, m, model.NewTextMessage(i18n.Get("project.no_projects", locale)))
 	}
 
 	blocks := []model.ContentBlock{
@@ -193,5 +198,5 @@ func (p *Plugin) listProjects(ctx context.Context, req model.CommandRequest) err
 		}
 	}
 
-	return p.api.Reply(ctx, req, model.Message{Blocks: blocks})
+	return p.api.Reply(ctx, m, model.Message{Blocks: blocks})
 }

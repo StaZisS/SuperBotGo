@@ -15,15 +15,12 @@ import (
 
 var _ plugin.Plugin = (*WasmPlugin)(nil)
 
-type ReplyFunc func(ctx context.Context, req model.CommandRequest, text string) error
-
 type SendFunc func(ctx context.Context, channelType model.ChannelType, chatID string, text string) error
 
 type WasmPlugin struct {
 	compiled *wasmrt.CompiledModule
 	meta     wasmrt.PluginMeta
 	config   json.RawMessage
-	reply    ReplyFunc
 	send     SendFunc
 }
 
@@ -464,61 +461,54 @@ func parseTextStyle(s string) model.TextStyle {
 	}
 }
 
-func (wp *WasmPlugin) HandleCommand(ctx context.Context, req model.CommandRequest) error {
-	reqJSON, err := json.Marshal(req)
+func (wp *WasmPlugin) HandleEvent(ctx context.Context, event model.Event) (*model.EventResponse, error) {
+	eventJSON, err := json.Marshal(event)
 	if err != nil {
-		return fmt.Errorf("wasm plugin %q command %q: marshal request: %w", wp.meta.ID, req.CommandName, err)
+		return nil, fmt.Errorf("wasm plugin %q: marshal event: %w", wp.meta.ID, err)
 	}
 
-	result, err := wp.compiled.CallHandleCommand(ctx, reqJSON, wp.config)
+	result, err := wp.compiled.CallHandleEvent(ctx, eventJSON, wp.config)
 	if err != nil {
-		return fmt.Errorf("wasm plugin %q command %q: handle_command: %w", wp.meta.ID, req.CommandName, err)
+		return nil, fmt.Errorf("wasm plugin %q handle_event: %w", wp.meta.ID, err)
 	}
 
+	var resp model.EventResponse
 	if len(result) > 0 {
-		var resp struct {
-			Error string `json:"error"`
-			Reply string `json:"reply"`
-			Logs  []struct {
-				Level string `json:"level"`
-				Msg   string `json:"msg"`
-			} `json:"logs"`
-			Messages []struct {
-				ChatID string `json:"chat_id"`
-				Text   string `json:"text"`
-			} `json:"messages"`
+		if err := json.Unmarshal(result, &resp); err != nil {
+			return nil, fmt.Errorf("wasm plugin %q handle_event: unmarshal response: %w", wp.meta.ID, err)
 		}
-		if json.Unmarshal(result, &resp) == nil {
-			for _, l := range resp.Logs {
-				if l.Level == "error" {
-					slog.Error("wasm plugin log", "plugin", wp.meta.ID, "message", l.Msg)
-				} else {
-					slog.Info("wasm plugin log", "plugin", wp.meta.ID, "message", l.Msg)
-				}
-			}
 
-			if resp.Error != "" {
-				return fmt.Errorf("wasm plugin %q command %q: %s", wp.meta.ID, req.CommandName, resp.Error)
+		for _, l := range resp.Logs {
+			if l.Level == "error" {
+				slog.Error("wasm plugin log", "plugin", wp.meta.ID, "message", l.Msg)
+			} else {
+				slog.Info("wasm plugin log", "plugin", wp.meta.ID, "message", l.Msg)
 			}
+		}
 
-			if resp.Reply != "" && wp.reply != nil {
-				if err := wp.reply(ctx, req, resp.Reply); err != nil {
-					return fmt.Errorf("wasm plugin %q command %q: send reply: %w", wp.meta.ID, req.CommandName, err)
-				}
-			}
-
-			if wp.send != nil {
-				for _, m := range resp.Messages {
-					if err := wp.send(ctx, req.ChannelType, m.ChatID, m.Text); err != nil {
-						slog.Error("wasm plugin send failed", "plugin", wp.meta.ID, "chat_id", m.ChatID, "error", err)
+		if wp.send != nil {
+			// For messenger events, send the reply back to the originating chat.
+			if resp.Reply != "" && event.TriggerType == model.TriggerMessenger {
+				if m, err := event.Messenger(); err == nil {
+					if sendErr := wp.send(ctx, m.ChannelType, m.ChatID, resp.Reply); sendErr != nil {
+						slog.Error("wasm plugin reply failed", "plugin", wp.meta.ID, "error", sendErr)
 					}
 				}
 			}
+
+			for _, m := range resp.Messages {
+				if err := wp.send(ctx, "", m.ChatID, m.Text); err != nil {
+					slog.Error("wasm plugin send failed", "plugin", wp.meta.ID, "chat_id", m.ChatID, "error", err)
+				}
+			}
 		}
 	}
 
-	slog.Debug("wasm: handle_command completed", "plugin", wp.meta.ID, "command", req.CommandName)
-	return nil
+	return &resp, nil
+}
+
+func (wp *WasmPlugin) Triggers() []wasmrt.TriggerDef {
+	return wp.meta.Triggers
 }
 
 func (wp *WasmPlugin) SetConfig(config json.RawMessage) {

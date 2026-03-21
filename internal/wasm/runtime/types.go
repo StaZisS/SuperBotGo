@@ -12,8 +12,20 @@ type PluginMeta struct {
 	Version      string          `json:"version"`
 	SDKVersion   int             `json:"sdk_version"`
 	Commands     []CommandDef    `json:"commands,omitempty"`
+	Triggers     []TriggerDef    `json:"triggers,omitempty"`
 	Permissions  []PermissionDef `json:"permissions,omitempty"`
 	ConfigSchema json.RawMessage `json:"config_schema,omitempty"`
+}
+
+// TriggerDef declares a trigger the plugin wants to handle.
+type TriggerDef struct {
+	Name        string   `json:"name"`
+	Type        string   `json:"type"` // "http", "cron", "event"
+	Description string   `json:"description,omitempty"`
+	Path        string   `json:"path,omitempty"`     // HTTP
+	Methods     []string `json:"methods,omitempty"`  // HTTP
+	Schedule    string   `json:"schedule,omitempty"` // Cron
+	Topic       string   `json:"topic,omitempty"`    // Event
 }
 
 type CommandDef struct {

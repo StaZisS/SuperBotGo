@@ -27,6 +27,7 @@ import (
 	"SuperBotGo/internal/plugin/settings"
 	"SuperBotGo/internal/role"
 	"SuperBotGo/internal/state"
+	"SuperBotGo/internal/trigger"
 	"SuperBotGo/internal/user"
 	"SuperBotGo/internal/wasm/adapter"
 	"SuperBotGo/internal/wasm/hostapi"
@@ -69,18 +70,6 @@ func main() {
 	}
 
 	var senderAPI *plugin.SenderAPI
-	wasmReplyFunc := adapter.ReplyFunc(func(ctx context.Context, req model.CommandRequest, text string) error {
-		if senderAPI == nil {
-			return fmt.Errorf("sender API not initialized")
-		}
-		msg := model.Message{
-			Blocks: []model.ContentBlock{
-				model.TextBlock{Text: text, Style: model.StylePlain},
-			},
-		}
-		return senderAPI.Reply(ctx, req, msg)
-	})
-
 	wasmSendFunc := adapter.SendFunc(func(ctx context.Context, channelType model.ChannelType, chatID string, text string) error {
 		if senderAPI == nil {
 			return fmt.Errorf("sender API not initialized")
@@ -93,7 +82,10 @@ func main() {
 		return senderAPI.ReplyToChat(ctx, channelType, chatID, msg)
 	})
 
-	wasmLoader := adapter.NewLoader(rt, hostAPI, wasmReplyFunc, wasmSendFunc)
+	wasmLoader := adapter.NewLoader(rt, hostAPI, wasmSendFunc)
+
+	triggerRegistry := trigger.NewRegistry()
+	wasmLoader.SetTriggerRegistry(triggerRegistry)
 
 	blobStore, err := adminapi.NewLocalFSBlobStore(cfg.Admin.ModulesDir)
 	if err != nil {
@@ -190,6 +182,10 @@ func main() {
 		ruleSchemaHandler = adminapi.NewRuleSchemaHandler(nil)
 	}
 	ruleSchemaHandler.RegisterRoutes(adminMux)
+	triggerRouter := trigger.NewRouter(triggerRegistry, pluginManager)
+	httpTrigger := trigger.NewHTTPTriggerHandler(triggerRouter, triggerRegistry)
+	adminMux.Handle("/api/triggers/http/", httpTrigger)
+
 	admin.RegisterStaticRoutes(adminMux)
 
 	adminServer := &http.Server{

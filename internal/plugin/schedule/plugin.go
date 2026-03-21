@@ -2,6 +2,7 @@ package schedule
 
 import (
 	"context"
+	"fmt"
 
 	"SuperBotGo/internal/i18n"
 	"SuperBotGo/internal/model"
@@ -33,11 +34,16 @@ func (p *Plugin) Version() string                      { return "1.0.0" }
 func (p *Plugin) SupportedRoles() []string             { return []string{"USER", "ADMIN"} }
 func (p *Plugin) Commands() []*state.CommandDefinition { return []*state.CommandDefinition{p.cmdDef} }
 
-func (p *Plugin) HandleCommand(ctx context.Context, req model.CommandRequest) error {
-	building := req.Params.GetOr("building", "?")
-	room := req.Params.GetOr("room", "?")
-	date := req.Params.GetOr("date", "?")
-	locale := req.Locale
+func (p *Plugin) HandleEvent(ctx context.Context, event model.Event) (*model.EventResponse, error) {
+	m, err := event.Messenger()
+	if err != nil {
+		return nil, fmt.Errorf("schedule: parse messenger data: %w", err)
+	}
+
+	building := m.Params.GetOr("building", "?")
+	room := m.Params.GetOr("room", "?")
+	date := m.Params.GetOr("date", "?")
+	locale := m.Locale
 
 	entries := generateMockSchedule(building, room)
 
@@ -56,7 +62,7 @@ func (p *Plugin) HandleCommand(ctx context.Context, req model.CommandRequest) er
 		})
 	}
 
-	return p.api.Reply(ctx, req, model.Message{Blocks: blocks})
+	return nil, p.api.Reply(ctx, m, model.Message{Blocks: blocks})
 }
 
 func generateMockSchedule(building, room string) []scheduleEntry {

@@ -8,17 +8,18 @@ import (
 	"os"
 	"sync"
 
+	"SuperBotGo/internal/trigger"
 	"SuperBotGo/internal/wasm/hostapi"
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 )
 
 type Loader struct {
-	mu      sync.RWMutex
-	rt      *wasmrt.Runtime
-	hostAPI *hostapi.HostAPI
-	reply   ReplyFunc
-	send    SendFunc
-	plugins map[string]*loadedPlugin
+	mu              sync.RWMutex
+	rt              *wasmrt.Runtime
+	hostAPI         *hostapi.HostAPI
+	send            SendFunc
+	plugins         map[string]*loadedPlugin
+	triggerRegistry *trigger.Registry
 }
 
 type loadedPlugin struct {
@@ -28,11 +29,10 @@ type loadedPlugin struct {
 	perms    []string
 }
 
-func NewLoader(rt *wasmrt.Runtime, hostAPI *hostapi.HostAPI, reply ReplyFunc, send SendFunc) *Loader {
+func NewLoader(rt *wasmrt.Runtime, hostAPI *hostapi.HostAPI, send SendFunc) *Loader {
 	return &Loader{
 		rt:      rt,
 		hostAPI: hostAPI,
-		reply:   reply,
 		send:    send,
 		plugins: make(map[string]*loadedPlugin),
 	}
@@ -80,7 +80,6 @@ func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, conf
 		compiled: compiled,
 		meta:     meta,
 		config:   config,
-		reply:    l.reply,
 		send:     l.send,
 	}
 
@@ -92,6 +91,11 @@ func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, conf
 		perms:    permissions,
 	}
 	l.mu.Unlock()
+
+	if l.triggerRegistry != nil && len(meta.Triggers) > 0 {
+		l.triggerRegistry.RegisterTriggers(meta.ID, meta.Triggers)
+		slog.Info("wasm: registered triggers", "plugin", meta.ID, "count", len(meta.Triggers))
+	}
 
 	slog.Info("wasm: plugin loaded", "id", meta.ID, "name", meta.Name, "version", meta.Version)
 	return wp, nil
@@ -109,12 +113,22 @@ func (l *Loader) UnloadPlugin(ctx context.Context, pluginID string) error {
 
 	l.hostAPI.RevokePermissions(pluginID)
 
+	if l.triggerRegistry != nil {
+		l.triggerRegistry.UnregisterTriggers(pluginID)
+	}
+
 	if err := lp.compiled.Close(ctx); err != nil {
 		slog.Error("wasm: error closing compiled module", "plugin", pluginID, "error", err)
 	}
 
 	slog.Info("wasm: plugin unloaded", "id", pluginID)
 	return nil
+}
+
+// SetTriggerRegistry sets the trigger registry for automatic trigger
+// registration/deregistration during plugin load/unload.
+func (l *Loader) SetTriggerRegistry(registry *trigger.Registry) {
+	l.triggerRegistry = registry
 }
 
 func (l *Loader) ReloadPlugin(ctx context.Context, pluginID string, newWasmPath string, newConfig json.RawMessage) error {

@@ -12,7 +12,7 @@ import (
 //	func main() { wasmplugin.Run(myPlugin) }
 //
 // Run reads PLUGIN_ACTION from the environment and dispatches to the
-// appropriate handler (meta / configure / handle_command).
+// appropriate handler (meta / configure / handle_event / step_callback).
 func Run(p Plugin) {
 	action := os.Getenv("PLUGIN_ACTION")
 	switch action {
@@ -20,12 +20,12 @@ func Run(p Plugin) {
 		handleMeta(p)
 	case "configure":
 		handleConfigure(p)
-	case "handle_command":
-		handleCommand(p)
+	case "handle_event":
+		handleEvent(p)
 	case "step_callback":
 		handleStepCallback(p)
 	default:
-		writeResponse(responseJSON{Error: "unknown action: " + action})
+		writeEventResponse(eventResponseJSON{Error: "unknown action: " + action})
 	}
 }
 
@@ -54,13 +54,11 @@ func handleMeta(p Plugin) {
 		}
 
 		if len(cmd.Nodes) > 0 {
-			// New node-based command flow.
 			reg := make(callbackMap)
 			for _, node := range cmd.Nodes {
 				cd.Nodes = append(cd.Nodes, node.toNodeDef(cmd.Name, reg))
 			}
 		} else {
-			// Legacy step-based command flow.
 			for _, s := range cmd.Steps {
 				sd := stepDef{
 					Param:      s.Param,
@@ -88,6 +86,18 @@ func handleMeta(p Plugin) {
 		})
 	}
 
+	for _, t := range p.Triggers {
+		meta.Triggers = append(meta.Triggers, triggerDef{
+			Name:        t.Name,
+			Type:        t.Type,
+			Description: t.Description,
+			Path:        t.Path,
+			Methods:     t.Methods,
+			Schedule:    t.Schedule,
+			Topic:       t.Topic,
+		})
+	}
+
 	data, _ := json.Marshal(meta)
 	os.Stdout.Write(data)
 }
@@ -99,47 +109,32 @@ func handleMeta(p Plugin) {
 func handleConfigure(p Plugin) {
 	config, _ := io.ReadAll(os.Stdin)
 
-	// Parse and store config for handler access.
 	if len(config) > 0 {
 		_ = json.Unmarshal(config, &configStore)
 	}
 
 	if p.OnConfigure != nil {
 		if err := p.OnConfigure(config); err != nil {
-			writeResponse(responseJSON{Error: err.Error()})
+			writeEventResponse(eventResponseJSON{Error: err.Error()})
 			return
 		}
 	}
-	// No error — silent success (host expects empty or no output).
 }
 
 // ---------------------------------------------------------------------------
-// action: handle_command
+// action: handle_event (unified handler for all trigger types)
 // ---------------------------------------------------------------------------
 
-func handleCommand(p Plugin) {
+func handleEvent(p Plugin) {
 	data, err := io.ReadAll(os.Stdin)
 	if err != nil {
-		writeResponse(responseJSON{Error: "failed to read stdin: " + err.Error()})
+		writeEventResponse(eventResponseJSON{Error: "failed to read stdin: " + err.Error()})
 		return
 	}
 
-	var req commandRequest
+	var req eventRequest
 	if err := json.Unmarshal(data, &req); err != nil {
-		writeResponse(responseJSON{Error: "failed to parse command request: " + err.Error()})
-		return
-	}
-
-	// Find the matching command handler.
-	var handler func(ctx *CommandContext) error
-	for i := range p.Commands {
-		if p.Commands[i].Name == req.CommandName {
-			handler = p.Commands[i].Handler
-			break
-		}
-	}
-	if handler == nil {
-		writeResponse(responseJSON{Error: "unknown command: " + req.CommandName})
+		writeEventResponse(eventResponseJSON{Error: "failed to parse event request: " + err.Error()})
 		return
 	}
 
@@ -149,22 +144,114 @@ func handleCommand(p Plugin) {
 		_ = json.Unmarshal([]byte(raw), &cfg)
 	}
 
-	ctx := &CommandContext{
-		UserID:      req.UserID,
-		ChannelType: req.ChannelType,
-		ChatID:      req.ChatID,
-		CommandName: req.CommandName,
-		Params:      req.Params,
-		Locale:      req.Locale,
+	ctx := &EventContext{
+		PluginID:    req.PluginID,
+		TriggerType: req.TriggerType,
+		TriggerName: req.TriggerName,
+		Timestamp:   req.Timestamp,
 		config:      cfg,
 	}
 
-	if err := handler(ctx); err != nil {
-		writeResponse(responseJSON{Error: err.Error(), Logs: ctx.logs})
+	// Find handler and parse trigger-specific data.
+	var handler func(ctx *EventContext) error
+
+	switch req.TriggerType {
+	case "messenger":
+		// Messenger command: find command handler by trigger name (= command name).
+		var m messengerTriggerData
+		if json.Unmarshal(req.Data, &m) == nil {
+			ctx.Messenger = &MessengerData{
+				UserID:      m.UserID,
+				ChannelType: m.ChannelType,
+				ChatID:      m.ChatID,
+				CommandName: m.CommandName,
+				Params:      m.Params,
+				Locale:      m.Locale,
+			}
+		}
+		for i := range p.Commands {
+			if p.Commands[i].Name == req.TriggerName {
+				handler = p.Commands[i].Handler
+				break
+			}
+		}
+
+	case TriggerHTTP:
+		var h httpTriggerData
+		if json.Unmarshal(req.Data, &h) == nil {
+			ctx.HTTP = &HTTPEventData{
+				Method:     h.Method,
+				Path:       h.Path,
+				Query:      h.Query,
+				Headers:    h.Headers,
+				Body:       h.Body,
+				RemoteAddr: h.RemoteAddr,
+			}
+		}
+		for i := range p.Triggers {
+			if p.Triggers[i].Name == req.TriggerName {
+				handler = p.Triggers[i].Handler
+				break
+			}
+		}
+
+	case TriggerCron:
+		var c cronTriggerData
+		if json.Unmarshal(req.Data, &c) == nil {
+			ctx.Cron = &CronEventData{
+				ScheduleName: c.ScheduleName,
+				FireTime:     c.FireTime,
+			}
+		}
+		for i := range p.Triggers {
+			if p.Triggers[i].Name == req.TriggerName {
+				handler = p.Triggers[i].Handler
+				break
+			}
+		}
+
+	case TriggerEvent:
+		var e eventTriggerData
+		if json.Unmarshal(req.Data, &e) == nil {
+			ctx.Event = &EventBusData{
+				Topic:   e.Topic,
+				Payload: e.Payload,
+				Source:  e.Source,
+			}
+		}
+		for i := range p.Triggers {
+			if p.Triggers[i].Name == req.TriggerName {
+				handler = p.Triggers[i].Handler
+				break
+			}
+		}
+	}
+
+	// Fall back to OnEvent if no specific handler found.
+	if handler == nil {
+		handler = p.OnEvent
+	}
+	if handler == nil {
+		writeEventResponse(eventResponseJSON{Error: "no handler for trigger: " + req.TriggerName})
 		return
 	}
 
-	writeResponse(responseJSON{Status: "ok", Reply: ctx.reply, Logs: ctx.logs, Messages: ctx.messages})
+	if err := handler(ctx); err != nil {
+		writeEventResponse(eventResponseJSON{Error: err.Error(), Logs: ctx.logs})
+		return
+	}
+
+	resp := eventResponseJSON{
+		Status:   "ok",
+		Reply:    ctx.reply,
+		Logs:     ctx.logs,
+		Messages: ctx.messages,
+	}
+	if ctx.httpResp != nil {
+		respData, _ := json.Marshal(ctx.httpResp)
+		resp.Data = respData
+	}
+	writeEventResponse(resp)
 }
 
 // ---------------------------------------------------------------------------
@@ -184,8 +271,6 @@ func handleStepCallback(p Plugin) {
 		return
 	}
 
-	// Rebuild the callback registry from the plugin definition.
-	// The traversal is deterministic, so callback names match those from meta.
 	reg := make(callbackMap)
 	for _, cmd := range p.Commands {
 		for _, node := range cmd.Nodes {
@@ -199,7 +284,6 @@ func handleStepCallback(p Plugin) {
 		return
 	}
 
-	// Load plugin config from PLUGIN_CONFIG env var.
 	var cfg map[string]interface{}
 	if raw := os.Getenv("PLUGIN_CONFIG"); raw != "" {
 		_ = json.Unmarshal([]byte(raw), &cfg)
@@ -241,7 +325,7 @@ func handleStepCallback(p Plugin) {
 // helpers
 // ---------------------------------------------------------------------------
 
-func writeResponse(v responseJSON) {
+func writeEventResponse(v eventResponseJSON) {
 	data, _ := json.Marshal(v)
 	os.Stdout.Write(data)
 }

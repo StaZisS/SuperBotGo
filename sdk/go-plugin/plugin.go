@@ -1,7 +1,7 @@
 // Package wasmplugin provides an SDK for writing WASM plugins for SuperBotGo.
 //
 // A plugin author fills in a [Plugin] struct and calls [Run] from main().
-// The SDK handles the one-shot protocol (meta / configure / handle_command),
+// The SDK handles the one-shot protocol (meta / configure / handle_event),
 // JSON serialisation, the bump allocator, and host-function imports.
 package wasmplugin
 
@@ -17,6 +17,7 @@ type Plugin struct {
 	Name        string
 	Version     string
 	Commands    []Command
+	Triggers    []Trigger
 	Permissions []Permission
 
 	// Config defines the plugin's configuration schema using the builder API.
@@ -35,6 +36,40 @@ type Plugin struct {
 	// Use [GetConfig] inside handlers to access the stored config.
 	// Return nil to indicate success.
 	OnConfigure func(config []byte) error
+
+	// OnEvent is the fallback event handler for triggers that don't have
+	// their own Handler. If a Trigger has a Handler, it takes priority.
+	OnEvent func(ctx *EventContext) error
+}
+
+// TriggerType identifies the kind of trigger.
+type TriggerType = string
+
+const (
+	TriggerHTTP  TriggerType = "http"
+	TriggerCron  TriggerType = "cron"
+	TriggerEvent TriggerType = "event"
+)
+
+// Trigger declares a trigger source this plugin responds to.
+type Trigger struct {
+	Name        string
+	Type        TriggerType
+	Description string
+
+	// HTTP-specific.
+	Path    string   // e.g. "/webhook"
+	Methods []string // e.g. ["POST"]
+
+	// Cron-specific.
+	Schedule string // cron expression, e.g. "0 */5 * * *"
+
+	// Event-specific.
+	Topic string // event topic to subscribe to
+
+	// Handler is called when this trigger fires.
+	// If nil, the plugin's OnEvent is used instead.
+	Handler func(ctx *EventContext) error
 }
 
 // Command describes a single slash-command the plugin provides.
@@ -47,7 +82,7 @@ type Command struct {
 	MinRole     string // optional: minimum role required
 	Steps       []Step // simple mode (flat list of steps)
 	Nodes       []Node // advanced mode (node tree)
-	Handler     func(ctx *CommandContext) error
+	Handler     func(ctx *EventContext) error
 }
 
 // Step describes one parameter-collection step in a multi-step command.
@@ -71,60 +106,6 @@ type Permission struct {
 	Key         string
 	Description string
 	Required    bool
-}
-
-// CommandContext holds everything a command handler needs.
-type CommandContext struct {
-	UserID      int64
-	ChannelType string
-	ChatID      string
-	CommandName string
-	Params      map[string]string
-	Locale      string
-
-	reply    string // set by Reply, read by the runtime
-	config   map[string]interface{}
-	logs     []logEntry     // collected by Log/LogError
-	messages []messageEntry // collected by SendMessage
-}
-
-// Reply sets the text that will be returned to the user via stdout.
-// Only the last call to Reply is used.
-func (ctx *CommandContext) Reply(text string) {
-	ctx.reply = text
-}
-
-// Log records an informational log message.
-// All collected logs are sent to the host after the handler completes.
-func (ctx *CommandContext) Log(msg string) {
-	ctx.logs = append(ctx.logs, logEntry{Level: "info", Msg: msg})
-}
-
-// LogError records an error log message.
-// All collected logs are sent to the host after the handler completes.
-func (ctx *CommandContext) LogError(msg string) {
-	ctx.logs = append(ctx.logs, logEntry{Level: "error", Msg: msg})
-}
-
-// SendMessage queues a message to be sent to the given chat.
-// Messages are delivered by the host after the handler completes.
-func (ctx *CommandContext) SendMessage(chatID string, text string) {
-	ctx.messages = append(ctx.messages, messageEntry{ChatID: chatID, Text: text})
-}
-
-// Config returns a config value by key, or the fallback if not set.
-func (ctx *CommandContext) Config(key string, fallback string) string {
-	if ctx.config == nil {
-		return fallback
-	}
-	v, ok := ctx.config[key]
-	if !ok {
-		return fallback
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return fallback
 }
 
 // configStore holds the parsed plugin configuration (set during configure action,
