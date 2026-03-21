@@ -7,8 +7,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// WriteTuples inserts multiple tuples within the given tx.
-// Existing tuples are silently skipped (ON CONFLICT DO NOTHING).
 func WriteTuples(ctx context.Context, tx pgx.Tx, tt []Tuple) error {
 	for _, t := range tt {
 		if _, err := tx.Exec(ctx, `
@@ -23,7 +21,6 @@ func WriteTuples(ctx context.Context, tx pgx.Tx, tt []Tuple) error {
 	return nil
 }
 
-// DeleteTuples removes exact tuples within tx.
 func DeleteTuples(ctx context.Context, tx pgx.Tx, tt []Tuple) error {
 	for _, t := range tt {
 		if _, err := tx.Exec(ctx, `
@@ -38,7 +35,6 @@ func DeleteTuples(ctx context.Context, tx pgx.Tx, tt []Tuple) error {
 	return nil
 }
 
-// DeleteByObject removes all tuples for a given object+relation within tx.
 func DeleteByObject(ctx context.Context, tx pgx.Tx, objectType, objectID, relation string) error {
 	_, err := tx.Exec(ctx, `
 		DELETE FROM authorization_tuples
@@ -47,7 +43,6 @@ func DeleteByObject(ctx context.Context, tx pgx.Tx, objectType, objectID, relati
 	return err
 }
 
-// DeleteBySubject removes all tuples for a given subject+relation within tx.
 func DeleteBySubject(ctx context.Context, tx pgx.Tx, subjectType, subjectID, relation string) error {
 	_, err := tx.Exec(ctx, `
 		DELETE FROM authorization_tuples
@@ -56,7 +51,6 @@ func DeleteBySubject(ctx context.Context, tx pgx.Tx, subjectType, subjectID, rel
 	return err
 }
 
-// ReplaceForObject atomically replaces all tuples for a given object+relation.
 func ReplaceForObject(ctx context.Context, tx pgx.Tx, objectType, objectID, relation string, newTuples []Tuple) error {
 	if err := DeleteByObject(ctx, tx, objectType, objectID, relation); err != nil {
 		return err

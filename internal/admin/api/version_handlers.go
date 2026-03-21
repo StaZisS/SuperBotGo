@@ -20,7 +20,6 @@ func (h *AdminHandler) handleListVersions(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Verify plugin exists
 	if _, err := h.store.GetPlugin(r.Context(), pluginID); err != nil {
 		writeError(w, http.StatusNotFound, "plugin not found")
 		return
@@ -72,7 +71,6 @@ func (h *AdminHandler) handleRollback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read the wasm binary from the version's blob key
 	rc, err := h.blobs.Get(r.Context(), ver.WasmKey)
 	if err != nil {
 		slog.Error("admin: rollback blob not found", "key", ver.WasmKey, "error", err)
@@ -86,7 +84,6 @@ func (h *AdminHandler) handleRollback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify hash
 	hash := sha256.Sum256(wasmBytes)
 	actualHash := hex.EncodeToString(hash[:])
 	if actualHash != ver.WasmHash {
@@ -95,7 +92,6 @@ func (h *AdminHandler) handleRollback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Capture old commands for sync
 	var oldCommands map[string]struct{}
 	if oldPlugin, ok := h.manager.Get(pluginID); ok {
 		oldCommands = make(map[string]struct{}, len(oldPlugin.Commands()))
@@ -104,14 +100,12 @@ func (h *AdminHandler) handleRollback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Reload plugin with the old version's binary
 	if err := h.loader.ReloadPluginFromBytes(r.Context(), pluginID, wasmBytes, ver.ConfigJSON); err != nil {
 		slog.Error("admin: failed to reload plugin on rollback", "id", pluginID, "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to load plugin from version")
 		return
 	}
 
-	// Update plugin record
 	record.WasmKey = ver.WasmKey
 	record.WasmHash = ver.WasmHash
 	record.ConfigJSON = ver.ConfigJSON
@@ -124,13 +118,11 @@ func (h *AdminHandler) handleRollback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Re-register plugin with manager
 	h.manager.Remove(pluginID)
 	if wp, ok := h.loader.GetPlugin(pluginID); ok {
 		h.manager.Register(wp)
 		h.syncCommandsOnUpdate(r.Context(), pluginID, oldCommands, wp)
 
-		// Update permissions
 		h.hostAPI.GrantPermissions(pluginID, ver.Permissions)
 		h.loader.UpdatePermissions(pluginID, ver.Permissions)
 	}
@@ -159,7 +151,6 @@ func (h *AdminHandler) handleDeleteVersion(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Verify plugin exists
 	record, err := h.store.GetPlugin(r.Context(), pluginID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "plugin not found")
@@ -177,13 +168,11 @@ func (h *AdminHandler) handleDeleteVersion(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Don't allow deleting the currently active version
 	if ver.WasmKey == record.WasmKey {
 		writeError(w, http.StatusConflict, "cannot delete the currently active version")
 		return
 	}
 
-	// Delete blob (if not used by another version)
 	blobInUse := false
 	if allVersions, listErr := h.versions.ListVersions(r.Context(), pluginID); listErr == nil {
 		for _, v := range allVersions {

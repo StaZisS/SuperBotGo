@@ -61,7 +61,6 @@ func (s *FileVersionStore) ListVersions(_ context.Context, pluginID string) ([]V
 	defer s.mu.RUnlock()
 
 	var result []VersionRecord
-	// Return in reverse order (newest first)
 	for i := len(s.data) - 1; i >= 0; i-- {
 		if s.data[i].PluginID == pluginID {
 			result = append(result, s.data[i])

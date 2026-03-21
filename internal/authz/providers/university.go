@@ -8,8 +8,6 @@ import (
 	"SuperBotGo/internal/authz"
 )
 
-// UniversityProvider loads student-specific attributes (nationality, funding, education form)
-// and contributes university-specific schema entries for the rule editor UI.
 type UniversityProvider struct {
 	pool *pgxpool.Pool
 }
@@ -18,7 +16,6 @@ func NewUniversityProvider(pool *pgxpool.Pool) *UniversityProvider {
 	return &UniversityProvider{pool: pool}
 }
 
-// LoadAttributes loads student_positions attributes into sc.Attrs.
 func (p *UniversityProvider) LoadAttributes(ctx context.Context, sc *authz.SubjectContext) error {
 	if sc.ExternalID == "" {
 		return nil
@@ -46,8 +43,6 @@ func (p *UniversityProvider) LoadAttributes(ctx context.Context, sc *authz.Subje
 	return nil
 }
 
-// ContributeConditions provides the attribute and graph condition types
-// for the admin rule editor UI.
 func (p *UniversityProvider) ContributeConditions(ctx context.Context) []authz.RuleConditionType {
 	return []authz.RuleConditionType{
 		p.buildAttributeType(),
@@ -55,7 +50,6 @@ func (p *UniversityProvider) ContributeConditions(ctx context.Context) []authz.R
 	}
 }
 
-// ContributeFieldValues provides dynamic option lists for the rule editor.
 func (p *UniversityProvider) ContributeFieldValues(ctx context.Context) map[string][]authz.RuleParamOption {
 	fv := map[string][]authz.RuleParamOption{
 		"nationality_type": {{Value: "domestic", Label: "domestic"}, {Value: "foreign", Label: "foreign"}},
@@ -276,7 +270,6 @@ func (p *UniversityProvider) loadDistinctObjectTypes(ctx context.Context) []auth
 	return opts
 }
 
-// Compile-time interface checks.
 var (
 	_ authz.AttributeProvider = (*UniversityProvider)(nil)
 	_ authz.SchemaContributor = (*UniversityProvider)(nil)

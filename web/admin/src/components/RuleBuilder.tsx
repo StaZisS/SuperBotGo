@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { api, RuleSchema, RuleParam, RuleParamOption } from '../api/client'
 
-// ── Модель ──
-
 interface Condition {
   kind: 'condition'
   id: string
@@ -21,8 +19,6 @@ type RuleItem = Condition | RuleGroup
 
 type Logic = 'AND' | 'OR'
 
-// ── ID генератор ──
-
 let idSeq = 0
 function newId() { return `r_${++idSeq}` }
 
@@ -36,8 +32,6 @@ function newCondition(schema: RuleSchema): Condition {
 function newGroup(schema: RuleSchema, logic: Logic = 'AND'): RuleGroup {
   return { kind: 'group', id: newId(), logic, items: [newCondition(schema)] }
 }
-
-// ── Генерация выражения ──
 
 function renderTemplate(template: string, values: Record<string, string>): string {
   let result = template
@@ -55,7 +49,6 @@ function itemToExpr(item: RuleItem, schema: RuleSchema): string {
     if (!ct) return ''
     return renderTemplate(ct.template, item.values)
   }
-  // group
   const parts = item.items.map((i) => itemToExpr(i, schema)).filter(Boolean)
   if (parts.length === 0) return ''
   if (parts.length === 1) return parts[0]
@@ -70,8 +63,6 @@ function buildExpression(root: RuleGroup, schema: RuleSchema): string {
   const sep = root.logic === 'AND' ? ' && ' : ' || '
   return parts.join(sep)
 }
-
-// ── Парсинг выражения обратно в конструктор ──
 
 function splitTopLevel(expr: string, op: string): string[] {
   let depth = 0
@@ -106,19 +97,16 @@ function stripOuterParens(expr: string): string {
 function tryParseCondition(expr: string): Condition | null {
   const s = expr.trim()
 
-  // user.{field} {operator} "{value}"
   const attr = s.match(/^user\.(\w+)\s*(==|!=)\s*"([^"]*)"$/)
   if (attr) {
     return { kind: 'condition', id: newId(), typeId: 'attribute', values: { field: attr[1], operator: attr[2], value: attr[3] } }
   }
 
-  // check("{relation}", "{objectType}", "{objectId}")
   const graph = s.match(/^check\("([^"]*)",\s*"([^"]*)",\s*"([^"]*)"\)$/)
   if (graph) {
     return { kind: 'condition', id: newId(), typeId: 'graph', values: { relation: graph[1], objectType: graph[2], objectId: graph[3] } }
   }
 
-  // has_role("{roleName}")
   const role = s.match(/^has_role\("([^"]*)"\)$/)
   if (role) {
     return { kind: 'condition', id: newId(), typeId: 'role', values: { roleName: role[1] } }
@@ -131,7 +119,6 @@ function parseExpr(expr: string): RuleItem | null {
   const trimmed = stripOuterParens(expr.trim())
   if (!trimmed) return null
 
-  // Попробовать разделить по || (низший приоритет)
   const orParts = splitTopLevel(trimmed, ' || ')
   if (orParts.length > 1) {
     const items: RuleItem[] = []
@@ -143,7 +130,6 @@ function parseExpr(expr: string): RuleItem | null {
     return { kind: 'group', id: newId(), logic: 'OR', items }
   }
 
-  // Попробовать разделить по &&
   const andParts = splitTopLevel(trimmed, ' && ')
   if (andParts.length > 1) {
     const items: RuleItem[] = []
@@ -155,7 +141,6 @@ function parseExpr(expr: string): RuleItem | null {
     return { kind: 'group', id: newId(), logic: 'AND', items }
   }
 
-  // Одиночное условие
   return tryParseCondition(trimmed)
 }
 
@@ -166,8 +151,6 @@ function parseExpression(expr: string): RuleGroup | null {
   if (item.kind === 'group') return item
   return { kind: 'group', id: newId(), logic: 'AND', items: [item] }
 }
-
-// ── Хелпер для options ──
 
 function getOptionsForParam(
   param: RuleParam,
@@ -184,8 +167,6 @@ function getOptionsForParam(
   return param.options ?? []
 }
 
-// ── Компонент ──
-
 export default function RuleBuilder({
   expression,
   onChange,
@@ -199,7 +180,6 @@ export default function RuleBuilder({
   const [rawExpr, setRawExpr] = useState(expression)
   const [fieldValueMap, setFieldValueMap] = useState<Map<string, RuleParamOption[]>>(new Map())
 
-  // Загрузка схемы
   useEffect(() => {
     api.getRuleSchema().then((s) => {
       setSchema(s)
@@ -215,29 +195,26 @@ export default function RuleBuilder({
     })
   }, [])
 
-  // Если выражение уже задано — raw mode
   useEffect(() => {
     if (expression && !root) {
       setRawExpr(expression)
       setRawMode(true)
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
-  // Генерация выражения из визуального билдера
   useEffect(() => {
     if (!rawMode && schema && root) {
       const expr = buildExpression(root, schema)
-      // Не затираем существующее выражение пустым результатом от незаполненного конструктора
       if (expr || !rawExpr) {
         setRawExpr(expr)
         onChange(expr)
       }
     }
-  }, [root, rawMode, schema]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [root, rawMode, schema])
 
   useEffect(() => {
     if (rawMode) onChange(rawExpr)
-  }, [rawExpr, rawMode]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rawExpr, rawMode])
 
   const switchToBuilder = useCallback(() => {
     setRawMode(false)
@@ -299,7 +276,7 @@ export default function RuleBuilder({
             isRoot
           />
 
-          {/* Превью */}
+          {}
           <div className="mt-3 p-2 bg-gray-50 rounded-lg">
             <div className="text-xs text-gray-400 mb-1">Сгенерированное выражение:</div>
             <code className="text-xs font-mono text-purple-700 break-all">
@@ -311,8 +288,6 @@ export default function RuleBuilder({
     </div>
   )
 }
-
-// ── Редактор группы ──
 
 function GroupEditor({
   group,
@@ -353,7 +328,7 @@ function GroupEditor({
 
   return (
     <div className={`border ${borderColor} ${bgColor} rounded-lg p-3 ${isRoot ? '' : 'ml-2'}`}>
-      {/* Заголовок группы */}
+      {}
       <div className="flex items-center gap-2 mb-2">
         <select
           value={group.logic}
@@ -373,7 +348,7 @@ function GroupEditor({
         )}
       </div>
 
-      {/* Элементы */}
+      {}
       <div className="space-y-1.5">
         {group.items.map((item, i) => (
           <div key={item.id}>
@@ -412,7 +387,7 @@ function GroupEditor({
         ))}
       </div>
 
-      {/* Кнопки добавления */}
+      {}
       <div className="flex gap-2 mt-2">
         <button
           onClick={addCondition}
@@ -430,8 +405,6 @@ function GroupEditor({
     </div>
   )
 }
-
-// ── Строка условия ──
 
 function ConditionRow({
   condition,
@@ -488,8 +461,6 @@ function ConditionRow({
     </div>
   )
 }
-
-// ── Поле параметра ──
 
 function ParamInput({
   param,
@@ -555,8 +526,6 @@ function ParamInput({
     />
   )
 }
-
-// ── Справка ──
 
 function HelpBlock() {
   return (

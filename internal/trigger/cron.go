@@ -14,21 +14,16 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-// cronEntry tracks a single cron job so it can be removed later.
 type cronEntry struct {
 	EntryID     cron.EntryID
 	TriggerName string
 	Schedule    string
 }
 
-// CronScheduler manages cron jobs for plugins and dispatches events
-// through the Router when they fire. When a Redis client is set,
-// it uses distributed locking (SET NX) so that only one instance
-// executes a given cron tick across a multi-instance deployment.
 type CronScheduler struct {
 	mu      sync.Mutex
 	cron    *cron.Cron
-	entries map[string][]cronEntry // pluginID -> entries
+	entries map[string][]cronEntry
 	router  *Router
 	redis   *redis.Client
 }
@@ -41,15 +36,12 @@ func NewCronScheduler(router *Router) *CronScheduler {
 	}
 }
 
-// SetRedis sets the Redis client used for distributed cron locking.
-// Without Redis every instance fires independently.
 func (cs *CronScheduler) SetRedis(rc *redis.Client) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	cs.redis = rc
 }
 
-// AddSchedule registers a cron trigger for a plugin.
 func (cs *CronScheduler) AddSchedule(pluginID, triggerName, schedule string) error {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
@@ -75,7 +67,6 @@ func (cs *CronScheduler) AddSchedule(pluginID, triggerName, schedule string) err
 	return nil
 }
 
-// RemoveAll removes all cron entries for a plugin.
 func (cs *CronScheduler) RemoveAll(pluginID string) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
@@ -86,39 +77,31 @@ func (cs *CronScheduler) RemoveAll(pluginID string) {
 	delete(cs.entries, pluginID)
 }
 
-// Start starts the cron scheduler.
 func (cs *CronScheduler) Start() {
 	cs.cron.Start()
 	slog.Info("cron: scheduler started")
 }
 
-// Stop stops the cron scheduler and waits for running jobs to finish.
 func (cs *CronScheduler) Stop() {
 	ctx := cs.cron.Stop()
 	<-ctx.Done()
 	slog.Info("cron: scheduler stopped")
 }
 
-// tryLock attempts to acquire a distributed lock for this cron tick.
-// The key encodes the plugin, trigger, and the minute the job fired
-// so that the same tick is only executed once across all instances.
-// Returns true if this instance won the lock (or Redis is unavailable).
 func (cs *CronScheduler) tryLock(pluginID, triggerName string, fireTime time.Time) bool {
 	cs.mu.Lock()
 	rc := cs.redis
 	cs.mu.Unlock()
 
 	if rc == nil {
-		return true // no Redis — single-instance mode
+		return true
 	}
 
-	// Key is unique per trigger per minute (cron granularity is 1 min).
 	key := fmt.Sprintf("cron_lock:%s:%s:%d", pluginID, triggerName, fireTime.Unix()/60)
-	ttl := 2 * time.Minute // hold slightly longer than the cron period
+	ttl := 2 * time.Minute
 
 	ok, err := rc.SetNX(context.Background(), key, 1, ttl).Result()
 	if err != nil {
-		// Redis failure — let this instance execute to avoid silent skips.
 		slog.Warn("cron: redis lock failed, executing anyway",
 			"plugin", pluginID,
 			"trigger", triggerName,
@@ -129,7 +112,6 @@ func (cs *CronScheduler) tryLock(pluginID, triggerName string, fireTime time.Tim
 	return ok
 }
 
-// fire builds a model.Event and dispatches it through the router.
 func (cs *CronScheduler) fire(pluginID, triggerName string) {
 	now := time.Now()
 

@@ -15,7 +15,7 @@ import (
 const (
 	codeLength = 6
 	codeTTL    = 5 * time.Minute
-	codeChars  = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // no 0/O/1/I to avoid confusion
+	codeChars  = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 )
 
 type linkEntry struct {
@@ -40,7 +40,6 @@ func (l *AccountLinkerImpl) InitiateLinking(_ context.Context, userID model.Glob
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	// Remove any existing code for this user
 	for code, entry := range l.codes {
 		if entry.UserID == userID {
 			delete(l.codes, code)
@@ -97,7 +96,6 @@ func (l *AccountLinkerImpl) CompleteLinking(ctx context.Context, userID model.Gl
 		}
 	}
 
-	// Move all accounts from sourceUser to targetUser (current user)
 	accounts, err := l.accountRepo.FindByGlobalUserID(ctx, sourceUserID)
 	if err != nil {
 		return pluginLink.LinkResult{

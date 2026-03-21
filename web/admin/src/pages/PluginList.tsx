@@ -42,7 +42,7 @@ export default function PluginList() {
         </Link>
       </div>
 
-      {/* Фильтры */}
+      {}
       <div className="flex flex-wrap gap-3 mb-4">
         <input
           type="text"
@@ -72,7 +72,7 @@ export default function PluginList() {
         </select>
       </div>
 
-      {/* Таблица */}
+      {}
       <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs uppercase">

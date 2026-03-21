@@ -7,8 +7,6 @@ import (
 	"SuperBotGo/internal/model"
 )
 
-// Authorizer is the unified authorization facade.
-// It replaces both RoleChecker and CommandAccessChecker with a single entry point.
 type Authorizer struct {
 	store     Store
 	providers []AttributeProvider
@@ -22,8 +20,6 @@ func NewAuthorizer(store Store, logger *slog.Logger, providers ...AttributeProvi
 	return &Authorizer{store: store, providers: providers, logger: logger}
 }
 
-// CheckCommand is the single entry point for command authorization.
-// It checks both static RoleRequirements and dynamic policy expressions.
 func (a *Authorizer) CheckCommand(
 	ctx context.Context,
 	userID model.GlobalUserID,
@@ -71,24 +67,20 @@ func (a *Authorizer) CheckCommand(
 	return true, nil
 }
 
-// CheckAccess satisfies the channel.RoleChecker interface for backward compatibility.
 func (a *Authorizer) CheckAccess(ctx context.Context, userID model.GlobalUserID, _ *model.GlobalUser, req *model.RoleRequirements) (bool, error) {
 	return a.checkRoles(ctx, userID, req)
 }
 
-// CanExecute satisfies the channel.CommandAccessChecker interface for backward compatibility.
 func (a *Authorizer) CanExecute(ctx context.Context, pluginID, commandName string, userID model.GlobalUserID) (bool, error) {
 	return a.CheckCommand(ctx, userID, pluginID, commandName, nil)
 }
 
-// EvalPolicy evaluates a raw policy expression against a user's context.
 func (a *Authorizer) EvalPolicy(ctx context.Context, expression string, userID model.GlobalUserID) (bool, error) {
 	sc, err := a.buildSubjectContext(ctx, userID)
 	if err != nil {
 		return false, err
 	}
 
-	// Prefetch all user relations in one query.
 	var relations []RelationEntry
 	if sc.ExternalID != "" {
 		relations, err = a.store.GetAllUserRelations(ctx, sc.ExternalID)

@@ -41,7 +41,6 @@ export default function PluginConfig() {
   const handleSave = async () => {
     if (!id) return
 
-    // Client-side validation
     if (hasSchema && schema) {
       const validationErrors = validateSchema(
         schema as Parameters<typeof validateSchema>[0],
@@ -92,7 +91,6 @@ export default function PluginConfig() {
             value={config}
             onChange={(v) => {
               setConfig(v)
-              // Clear errors on change for better UX
               if (Object.keys(errors).length > 0) setErrors({})
             }}
             errors={errors}

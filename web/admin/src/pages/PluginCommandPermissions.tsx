@@ -27,7 +27,7 @@ export default function PluginCommandPermissions() {
       let settings: CommandSetting[] = []
       try {
         settings = await api.listCommandSettings(id)
-      } catch { /* table may not exist */ }
+      } catch {}
 
       const settingMap = new Map(settings.map((s) => [s.command_name, s]))
       const commands = p.commands ?? p.meta?.commands ?? []
@@ -128,7 +128,7 @@ function CommandCard({
 
   return (
     <div className="bg-white rounded-xl border border-gray-200">
-      {/* Header */}
+      {}
       <div
         className="flex items-center justify-between p-5 cursor-pointer hover:bg-gray-50 rounded-t-xl"
         onClick={() => setExpanded(!expanded)}
@@ -158,7 +158,7 @@ function CommandCard({
         </div>
       </div>
 
-      {/* Expanded: Policy builder */}
+      {}
       {expanded && (
         <div className={`border-t border-gray-100 p-5 ${!row.enabled ? 'opacity-50 pointer-events-none' : ''}`}>
           <div className="flex items-center justify-between mb-3">

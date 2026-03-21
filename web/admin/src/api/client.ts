@@ -37,7 +37,6 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     if (!res.ok) {
       throw new ApiError(text || `HTTP ${res.status}`, res.status)
     }
-    // Try parsing as JSON anyway (some servers don't set content-type)
     try {
       data = JSON.parse(text)
     } catch {
@@ -91,7 +90,6 @@ export interface PluginDetail {
   updated_at?: string
 }
 
-// Настройка вкл/выкл команды
 export interface CommandSetting {
   id: number
   plugin_id: string

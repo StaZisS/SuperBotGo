@@ -28,8 +28,6 @@ type RuleSchema struct {
 	FieldValues    map[string][]RuleParamOption `json:"field_values"`
 }
 
-// RuleSchemaBuilder aggregates schema contributions from all registered
-// SchemaContributor instances plus a built-in role condition type.
 type RuleSchemaBuilder struct {
 	store        Store
 	contributors []SchemaContributor

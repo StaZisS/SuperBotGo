@@ -65,7 +65,7 @@ export default function PluginVersions() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {}
       <div className="min-w-0">
         <div className="flex items-center gap-3 mb-1">
           <Link to={`/admin/plugins/${id}`} className="text-gray-400 hover:text-gray-600 text-sm">
@@ -82,7 +82,7 @@ export default function PluginVersions() {
         <div className="text-gray-400 py-8 text-center">Нет сохранённых версий</div>
       )}
 
-      {/* Version list */}
+      {}
       <div className="space-y-3">
         {versions.map((ver) => {
           const active = isActive(ver)
@@ -93,7 +93,7 @@ export default function PluginVersions() {
                 active ? 'border-blue-300 ring-1 ring-blue-100' : 'border-gray-200'
               }`}
             >
-              {/* Version header */}
+              {}
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <span className="font-medium text-sm">
@@ -113,7 +113,7 @@ export default function PluginVersions() {
                 </span>
               </div>
 
-              {/* Version details */}
+              {}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
                 <div>
                   <span className="text-gray-500 block">Hash</span>
@@ -135,7 +135,7 @@ export default function PluginVersions() {
                 )}
               </div>
 
-              {/* Actions */}
+              {}
               {!active && (
                 <div className="flex gap-2 pt-1">
                   {confirmRollback === ver.id ? (

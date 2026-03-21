@@ -25,12 +25,10 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.ResponseWriter.WriteHeader(code)
 }
 
-// HTTPTriggerHandler serves incoming HTTP requests and dispatches them to plugins.
-// URL scheme: /api/triggers/http/{pluginID}/{triggerPath...}
 type HTTPTriggerHandler struct {
 	router   *Router
 	registry *Registry
-	basePath string // e.g. "/api/triggers/http/"
+	basePath string
 	metrics  *metrics.Metrics
 }
 
@@ -65,8 +63,6 @@ func (h *HTTPTriggerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		)
 	}()
 
-	// Parse pluginID and path from URL.
-	// URL: /api/triggers/http/{pluginID}/{path...}
 	remainder := strings.TrimPrefix(r.URL.Path, h.basePath)
 	remainder = strings.TrimPrefix(remainder, "/")
 	if remainder == "" {
@@ -81,14 +77,12 @@ func (h *HTTPTriggerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		triggerPath = parts[1]
 	}
 
-	// Lookup trigger in registry.
 	triggerName, err := h.registry.LookupHTTP(pluginID, triggerPath, r.Method)
 	if err != nil {
 		http.Error(rec, err.Error(), http.StatusNotFound)
 		return
 	}
 
-	// Check API key auth.
 	apiKey := h.registry.GetAPIKey(pluginID)
 	if apiKey != "" {
 		provided := r.Header.Get("X-Trigger-Key")
@@ -98,14 +92,12 @@ func (h *HTTPTriggerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Read body.
-	body, err := io.ReadAll(io.LimitReader(r.Body, 10<<20)) // 10MB limit
+	body, err := io.ReadAll(io.LimitReader(r.Body, 10<<20))
 	if err != nil {
 		http.Error(rec, "failed to read request body", http.StatusBadRequest)
 		return
 	}
 
-	// Build query map.
 	query := make(map[string]string, len(r.URL.Query()))
 	for k, v := range r.URL.Query() {
 		if len(v) > 0 {
@@ -113,7 +105,6 @@ func (h *HTTPTriggerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Build headers map.
 	headers := make(map[string]string, len(r.Header))
 	for k, v := range r.Header {
 		if len(v) > 0 {
@@ -121,7 +112,6 @@ func (h *HTTPTriggerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Build event.
 	triggerData := model.HTTPTriggerData{
 		Method:     r.Method,
 		Path:       "/" + triggerPath,
@@ -141,7 +131,6 @@ func (h *HTTPTriggerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Data:        dataJSON,
 	}
 
-	// Dispatch.
 	resp, err := h.router.RouteEvent(r.Context(), event)
 	if err != nil {
 		slog.Error("HTTP trigger dispatch failed", "plugin", pluginID, "trigger", triggerName, "error", err)
@@ -155,7 +144,6 @@ func (h *HTTPTriggerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse HTTP response data from plugin.
 	var httpResp model.HTTPResponseData
 	if len(resp.Data) > 0 {
 		if err := json.Unmarshal(resp.Data, &httpResp); err != nil {
@@ -165,7 +153,6 @@ func (h *HTTPTriggerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Write response.
 	for k, v := range httpResp.Headers {
 		rec.Header().Set(k, v)
 	}

@@ -17,15 +17,14 @@ type PluginMeta struct {
 	ConfigSchema json.RawMessage `json:"config_schema,omitempty"`
 }
 
-// TriggerDef declares a trigger the plugin wants to handle.
 type TriggerDef struct {
 	Name        string   `json:"name"`
-	Type        string   `json:"type"` // "http", "cron", "event"
+	Type        string   `json:"type"`
 	Description string   `json:"description,omitempty"`
-	Path        string   `json:"path,omitempty"`     // HTTP
-	Methods     []string `json:"methods,omitempty"`  // HTTP
-	Schedule    string   `json:"schedule,omitempty"` // Cron
-	Topic       string   `json:"topic,omitempty"`    // Event
+	Path        string   `json:"path,omitempty"`
+	Methods     []string `json:"methods,omitempty"`
+	Schedule    string   `json:"schedule,omitempty"`
+	Topic       string   `json:"topic,omitempty"`
 }
 
 type CommandDef struct {

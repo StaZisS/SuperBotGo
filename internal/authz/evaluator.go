@@ -6,10 +6,6 @@ import (
 	"github.com/expr-lang/expr"
 )
 
-// exprEnv is the struct exposed to expr-lang policy expressions.
-// Fields and functions are backward-compatible with existing expressions:
-//
-//	user.nationality_type, user.funding_type, check(), is_member(), has_role(), has_any_role()
 type exprEnv struct {
 	User map[string]any `expr:"user"`
 
@@ -19,16 +15,12 @@ type exprEnv struct {
 	HasAnyRole func(roleNames ...string) bool                   `expr:"has_any_role"`
 }
 
-// relationKey is a composite key for the in-memory relation set.
 type relationKey struct {
 	relation   string
 	objectType string
 	objectID   string
 }
 
-// buildExprEnv constructs the expr-lang environment from a SubjectContext
-// and a pre-loaded set of relations. All check()/is_member() calls are
-// in-memory lookups — zero DB queries during expression evaluation.
 func buildExprEnv(sc *SubjectContext, relations []RelationEntry) exprEnv {
 	userMap := map[string]any{
 		"id":              int64(sc.UserID),
@@ -43,7 +35,6 @@ func buildExprEnv(sc *SubjectContext, relations []RelationEntry) exprEnv {
 		userMap[k] = v
 	}
 
-	// Build in-memory set from prefetched relations.
 	relSet := make(map[relationKey]bool, len(relations))
 	for _, r := range relations {
 		relSet[relationKey{r.Relation, r.ObjectType, r.ObjectID}] = true

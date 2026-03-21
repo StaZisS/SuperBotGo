@@ -30,7 +30,6 @@ func NewSenderAPI(adapters *channel.AdapterRegistry, userService SenderUserServi
 	}
 }
 
-// Reply sends a message to the chat from the messenger event data.
 func (s *SenderAPI) Reply(ctx context.Context, m *model.MessengerTriggerData, msg model.Message) error {
 	return s.adapters.SendToChat(ctx, m.ChannelType, m.ChatID, msg)
 }

@@ -104,8 +104,6 @@ func main() {
 	triggerRegistry := trigger.NewRegistry()
 	wasmLoader.SetTriggerRegistry(triggerRegistry)
 
-	// Create trigger router and cron scheduler before autoload so that
-	// cron triggers declared by plugins get registered during load.
 	triggerRouter := trigger.NewRouter(triggerRegistry, pluginManager)
 	cronScheduler := trigger.NewCronScheduler(triggerRouter)
 	triggerRegistry.SetCronScheduler(cronScheduler)
@@ -137,7 +135,6 @@ func main() {
 		logger.Info("using local filesystem blob store", slog.String("dir", cfg.Admin.ModulesDir))
 	}
 
-	// Redis (dialog storage)
 	var redisClient *redis.Client
 	if cfg.Redis.Addr != "" {
 		rc, redisErr := database.NewRedisClient(wasmCtx, cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
@@ -150,7 +147,6 @@ func main() {
 		}
 	}
 
-	// PostgreSQL
 	var userRepo user.UserRepository
 	var accountRepo user.AccountRepository
 	var roleStore role.Store
@@ -343,7 +339,6 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Start pub/sub subscriber for cross-instance synchronization
 	if adminBus != nil {
 		pluginFetcher := func(fCtx context.Context, id string) (*pubsub.PluginData, error) {
 			rec, err := pluginStore.GetPlugin(fCtx, id)
@@ -437,7 +432,6 @@ func main() {
 
 	logger.Info("SuperBotGo stopped")
 
-	// roleManager is available for admin role CRUD operations
 	_ = roleManager
 }
 

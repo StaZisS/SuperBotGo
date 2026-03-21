@@ -487,7 +487,6 @@ func (wp *WasmPlugin) HandleEvent(ctx context.Context, event model.Event) (*mode
 		}
 
 		if wp.send != nil {
-			// For messenger events, send the reply back to the originating chat.
 			if resp.Reply != "" && event.TriggerType == model.TriggerMessenger {
 				if m, err := event.Messenger(); err == nil {
 					if sendErr := wp.send(ctx, m.ChannelType, m.ChatID, resp.Reply); sendErr != nil {

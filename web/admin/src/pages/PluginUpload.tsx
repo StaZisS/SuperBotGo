@@ -18,7 +18,6 @@ export default function PluginUpload() {
       const result = await api.uploadPlugin(file)
       result.commands = result.commands ?? []
       result.permissions = result.permissions ?? []
-      // Pre-select required permissions
       const required = result.permissions.filter((p) => p.required).map((p) => p.key)
       setSelectedPerms(required)
       setMeta(result)
@@ -61,7 +60,7 @@ export default function PluginUpload() {
 
       {meta && (
         <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
-          {/* Plugin info */}
+          {}
           <div>
             <h3 className="font-semibold text-lg">{meta.name}</h3>
             <p className="text-sm text-gray-500">
@@ -74,7 +73,7 @@ export default function PluginUpload() {
             )}
           </div>
 
-          {/* Commands */}
+          {}
           {meta.commands.length > 0 && (
             <div>
               <h4 className="text-sm font-medium text-gray-700 mb-2">
@@ -94,7 +93,7 @@ export default function PluginUpload() {
             </div>
           )}
 
-          {/* Permissions */}
+          {}
           {meta.permissions.length > 0 && (
             <PermissionsPanel
               permissions={meta.permissions}
@@ -103,14 +102,14 @@ export default function PluginUpload() {
             />
           )}
 
-          {/* Config schema hint */}
+          {}
           {meta.config_schema && Object.keys(meta.config_schema).length > 0 && (
             <p className="text-sm text-gray-500 bg-blue-50 border border-blue-100 rounded-lg p-3">
               У этого плагина есть параметры конфигурации. Вы можете настроить их после установки.
             </p>
           )}
 
-          {/* Actions */}
+          {}
           <div className="flex gap-3 pt-2">
             <button
               onClick={handleInstall}

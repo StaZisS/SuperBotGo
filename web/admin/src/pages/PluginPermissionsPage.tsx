@@ -122,7 +122,7 @@ export default function PluginPermissionsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {}
       <div>
         <div className="flex items-center gap-3 mb-1">
           <Link to={`/admin/plugins/${id}`} className="text-gray-400 hover:text-gray-600 text-sm">
@@ -139,7 +139,7 @@ export default function PluginPermissionsPage() {
         </div>
       )}
 
-      {/* Permission categories */}
+      {}
       <div className="space-y-6">
         {CATEGORY_ORDER.map((cat) => {
           const perms = byCategory.get(cat)
@@ -194,7 +194,7 @@ export default function PluginPermissionsPage() {
           )
         })}
 
-        {/* plugins:call:* — call other plugins */}
+        {}
         {callTargets.size > 0 && (
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <h3 className="text-sm font-semibold text-gray-700 mb-3">
@@ -244,7 +244,7 @@ export default function PluginPermissionsPage() {
         )}
       </div>
 
-      {/* Save button */}
+      {}
       <div className="flex gap-3">
         <button
           onClick={handleSave}

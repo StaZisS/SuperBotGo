@@ -15,11 +15,10 @@ type httpRoute struct {
 	Methods     map[string]bool
 }
 
-// Registry maps triggers to plugin IDs.
 type Registry struct {
 	mu            sync.RWMutex
-	httpRoutes    map[string]httpRoute // "pluginID/path" -> route
-	apiKeys       map[string]string    // "pluginID" -> API key (optional)
+	httpRoutes    map[string]httpRoute
+	apiKeys       map[string]string
 	cronScheduler *CronScheduler
 }
 
@@ -30,7 +29,6 @@ func NewRegistry() *Registry {
 	}
 }
 
-// SetCronScheduler sets the cron scheduler used for "cron" triggers.
 func (r *Registry) SetCronScheduler(cs *CronScheduler) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -42,7 +40,6 @@ func httpRouteKey(pluginID, path string) string {
 	return pluginID + "/" + path
 }
 
-// RegisterTriggers registers all triggers from a plugin's manifest.
 func (r *Registry) RegisterTriggers(pluginID string, triggers []wasmrt.TriggerDef) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -79,7 +76,6 @@ func (r *Registry) RegisterTriggers(pluginID string, triggers []wasmrt.TriggerDe
 	}
 }
 
-// UnregisterTriggers removes all triggers for a plugin.
 func (r *Registry) UnregisterTriggers(pluginID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -96,7 +92,6 @@ func (r *Registry) UnregisterTriggers(pluginID string) {
 	}
 }
 
-// LookupHTTP finds the plugin and trigger for an HTTP request.
 func (r *Registry) LookupHTTP(pluginID, path, method string) (triggerName string, err error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -112,21 +107,18 @@ func (r *Registry) LookupHTTP(pluginID, path, method string) (triggerName string
 	return route.TriggerName, nil
 }
 
-// SetAPIKey sets the API key for a plugin's HTTP triggers.
 func (r *Registry) SetAPIKey(pluginID, apiKey string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.apiKeys[pluginID] = apiKey
 }
 
-// GetAPIKey returns the API key for a plugin (empty if not set).
 func (r *Registry) GetAPIKey(pluginID string) string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.apiKeys[pluginID]
 }
 
-// ListHTTPRoutes returns all registered HTTP routes (for admin/debug).
 func (r *Registry) ListHTTPRoutes() map[string]httpRoute {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

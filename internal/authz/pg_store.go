@@ -59,9 +59,6 @@ func (s *PgStore) GetAllRoleNames(ctx context.Context, userID model.GlobalUserID
 	return names, rows.Err()
 }
 
-// allUserRelationsSQL returns every (relation, objectType, objectID) a user
-// has — including those inherited through the parent chain.
-// One query, no N+1.
 const allUserRelationsSQL = `
 WITH RECURSIVE
 direct AS (

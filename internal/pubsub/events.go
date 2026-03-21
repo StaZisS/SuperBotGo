@@ -10,9 +10,6 @@ const (
 	EventPermChanged       = "permissions_changed"
 )
 
-// AdminEvent is a lightweight notification sent via PG NOTIFY.
-// It carries only the event type and plugin ID; the receiver
-// reads full data from the shared PostgreSQL store.
 type AdminEvent struct {
 	Type       string `json:"type"`
 	PluginID   string `json:"plugin_id"`

@@ -40,8 +40,6 @@ type UpdateRouterIface interface {
 	Route(ctx context.Context, req model.CommandRequest) error
 }
 
-// Authorizer is the single authorization interface.
-// It checks both static RoleRequirements and dynamic policy expressions.
 type Authorizer interface {
 	CheckCommand(ctx context.Context, userID model.GlobalUserID, pluginID string, commandName string, requirements *model.RoleRequirements) (bool, error)
 }

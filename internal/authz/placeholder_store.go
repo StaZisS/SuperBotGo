@@ -6,8 +6,6 @@ import (
 	"SuperBotGo/internal/model"
 )
 
-// PlaceholderStore is an in-memory stub used when PostgreSQL is unavailable.
-// All checks return permissive defaults (no tuples, no policies).
 type PlaceholderStore struct{}
 
 func NewPlaceholderStore() *PlaceholderStore { return &PlaceholderStore{} }

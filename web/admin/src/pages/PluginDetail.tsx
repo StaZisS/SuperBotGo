@@ -29,7 +29,6 @@ export default function PluginDetail() {
   const handleToggle = async () => {
     if (!id || !plugin) return
     const wasActive = plugin.status === 'active'
-    // Optimistic update
     setPlugin((prev) => prev ? { ...prev, status: wasActive ? 'disabled' : 'active' } : prev)
     try {
       if (wasActive) {
@@ -41,7 +40,6 @@ export default function PluginDetail() {
       }
       load()
     } catch (e: unknown) {
-      // Revert optimistic update
       setPlugin((prev) => prev ? { ...prev, status: wasActive ? 'active' : 'disabled' } : prev)
       toast((e as Error).message, 'error')
     }
@@ -87,7 +85,7 @@ export default function PluginDetail() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {}
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-3 mb-1">
@@ -103,7 +101,7 @@ export default function PluginDetail() {
         <PluginStatusBadge status={plugin.status || 'disabled'} />
       </div>
 
-      {/* Info card */}
+      {}
       <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           <div>
@@ -136,7 +134,7 @@ export default function PluginDetail() {
           )}
         </div>
 
-        {/* Commands */}
+        {}
         {plugin.commands && plugin.commands.length > 0 && (
           <div>
             <h4 className="text-sm font-medium text-gray-700 mb-2">Команды ({plugin.commands.length})</h4>
@@ -154,7 +152,7 @@ export default function PluginDetail() {
           </div>
         )}
 
-        {/* Permissions */}
+        {}
         {plugin.permissions && plugin.permissions.length > 0 && (
           <div>
             <h4 className="text-sm font-medium text-gray-700 mb-2">Разрешения</h4>
@@ -169,7 +167,7 @@ export default function PluginDetail() {
         )}
       </div>
 
-      {/* Actions */}
+      {}
       <div className="flex flex-wrap gap-3">
         <button
           onClick={handleToggle}
@@ -216,7 +214,7 @@ export default function PluginDetail() {
         </button>
       </div>
 
-      {/* Update panel */}
+      {}
       {showUpdate && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h3 className="font-medium mb-4">Загрузить новый .wasm</h3>
@@ -230,7 +228,7 @@ export default function PluginDetail() {
         </div>
       )}
 
-      {/* Delete confirmation */}
+      {}
       {showDelete && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-6">
           <p className="text-sm text-red-800 mb-4">

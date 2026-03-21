@@ -152,7 +152,6 @@ func (h *AdminHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/plugins/{id}", h.handleGetPlugin)
 	mux.HandleFunc("GET /api/admin/plugins", h.handleListPlugins)
 
-	// Version management
 	mux.HandleFunc("GET /api/admin/plugins/{id}/versions", h.handleListVersions)
 	mux.HandleFunc("POST /api/admin/plugins/{id}/versions/{versionId}/rollback", h.handleRollback)
 	mux.HandleFunc("DELETE /api/admin/plugins/{id}/versions/{versionId}", h.handleDeleteVersion)

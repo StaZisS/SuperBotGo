@@ -4,7 +4,6 @@ import { toast } from './Toast'
 interface Props {
   onFile: (file: File) => void
   loading?: boolean
-  /** Optional accept hint, defaults to .wasm */
   accept?: string
 }
 
@@ -34,7 +33,6 @@ export default function WasmUploader({ onFile, loading, accept = '.wasm' }: Prop
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     validateAndSubmit(e.target.files?.[0])
-    // Reset so same file can be re-selected
     e.target.value = ''
   }
 

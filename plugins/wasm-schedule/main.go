@@ -31,7 +31,6 @@ func main() {
 	})
 }
 
-// handleScheduleHTTP serves GET /api/triggers/http/schedule/api/schedule?building=1&room=101
 func handleScheduleHTTP(ctx *wasmplugin.EventContext) error {
 	building := ctx.HTTP.Query["building"]
 	room := ctx.HTTP.Query["room"]

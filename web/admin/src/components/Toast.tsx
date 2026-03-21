@@ -8,7 +8,6 @@ interface ToastMessage {
 
 type ToastFn = (text: string, type: 'success' | 'error') => void
 
-// Subscribers pattern: supports unmount/remount without stale closures.
 const subscribers = new Set<ToastFn>()
 
 export function toast(text: string, type: 'success' | 'error' = 'success') {

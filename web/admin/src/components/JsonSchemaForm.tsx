@@ -24,21 +24,14 @@ interface Props {
   value: Record<string, unknown>
   onChange: (value: Record<string, unknown>) => void
   readOnly?: boolean
-  /** If provided, validation errors are written here (key -> error message). */
   errors?: Record<string, string>
 }
 
-/**
- * Validate a single field value against its schema property.
- * Returns an error string or null if valid.
- */
 export function validateField(key: string, prop: SchemaProperty, value: unknown, isRequired: boolean): string | null {
-  // Required check
   if (isRequired && (value === undefined || value === null || value === '')) {
     return `${key} is required`
   }
 
-  // Skip further checks if empty and optional
   if (value === undefined || value === null || value === '') return null
 
   if ((prop.type === 'number' || prop.type === 'integer') && typeof value === 'number') {
@@ -66,7 +59,6 @@ export function validateField(key: string, prop: SchemaProperty, value: unknown,
           return `Must match pattern: ${prop.pattern}`
         }
       } catch {
-        // Invalid regex in schema -- skip
       }
     }
   }
@@ -74,10 +66,6 @@ export function validateField(key: string, prop: SchemaProperty, value: unknown,
   return null
 }
 
-/**
- * Validate the entire form value against a schema.
- * Returns a map of field key -> error message. Empty map means valid.
- */
 export function validateSchema(schema: Schema, value: Record<string, unknown>): Record<string, string> {
   const errors: Record<string, string> = {}
   const properties = schema.properties ?? {}
@@ -87,7 +75,6 @@ export function validateSchema(schema: Schema, value: Record<string, unknown>): 
     const err = validateField(key, prop, value[key], required.includes(key))
     if (err) errors[key] = err
 
-    // Recursively validate nested objects
     if (prop.type === 'object' && prop.properties && value[key] && typeof value[key] === 'object') {
       const nested = validateSchema(prop as Schema, value[key] as Record<string, unknown>)
       for (const [nk, nv] of Object.entries(nested)) {
@@ -251,7 +238,6 @@ function FieldRenderer({
     )
   }
 
-  // Default: string / sensitive
   const isSensitive =
     /secret|password|token|api_key|apikey/i.test(name)
 

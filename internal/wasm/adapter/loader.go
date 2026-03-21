@@ -139,8 +139,6 @@ func (l *Loader) UnloadPlugin(ctx context.Context, pluginID string) error {
 	return nil
 }
 
-// SetTriggerRegistry sets the trigger registry for automatic trigger
-// registration/deregistration during plugin load/unload.
 func (l *Loader) SetTriggerRegistry(registry *trigger.Registry) {
 	l.triggerRegistry = registry
 }

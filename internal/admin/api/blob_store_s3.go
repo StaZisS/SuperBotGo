@@ -16,10 +16,10 @@ import (
 type S3BlobStoreConfig struct {
 	Bucket    string
 	Region    string
-	Endpoint  string // for S3-compatible services (MinIO, etc.)
+	Endpoint  string
 	AccessKey string
 	SecretKey string
-	Prefix    string // optional key prefix, e.g. "wasm_modules/"
+	Prefix    string
 }
 
 type S3BlobStore struct {

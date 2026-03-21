@@ -37,9 +37,6 @@ func (b *Bus) Publish(ctx context.Context, event AdminEvent) error {
 	return err
 }
 
-// Subscribe listens for notifications on the admin_events channel.
-// It uses a dedicated connection (not from the pool) and reconnects on failure.
-// Blocks until ctx is cancelled.
 func (b *Bus) Subscribe(ctx context.Context, handler func(AdminEvent)) error {
 	for {
 		if err := b.listenLoop(ctx, handler); err != nil {
