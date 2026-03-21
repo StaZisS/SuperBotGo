@@ -20,6 +20,8 @@ type StateManager interface {
 	StartCommand(ctx context.Context, userID model.GlobalUserID, channelType model.ChannelType, commandName string, locale string) (*StateResult, error)
 	ProcessInput(ctx context.Context, userID model.GlobalUserID, channelType model.ChannelType, input model.UserInput, locale string) (*StateResult, error)
 	CancelCommand(ctx context.Context, userID model.GlobalUserID, channelType model.ChannelType) error
+	IsPreservesDialog(commandName string) bool
+	GetCurrentStepMessage(ctx context.Context, userID model.GlobalUserID, locale string) (*model.Message, string, error)
 }
 
 type StateResult struct {
@@ -158,7 +160,9 @@ func (m *ChannelManager) handleCommand(
 		}
 	}
 
-	_ = m.state.CancelCommand(ctx, userID, channelType)
+	if !m.state.IsPreservesDialog(commandName) {
+		_ = m.state.CancelCommand(ctx, userID, channelType)
+	}
 
 	result, err := m.state.StartCommand(ctx, userID, channelType, commandName, locale)
 	if err != nil {

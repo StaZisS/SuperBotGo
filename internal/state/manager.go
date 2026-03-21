@@ -135,3 +135,38 @@ func (m *Manager) HasActiveDialog(ctx context.Context, userID model.GlobalUserID
 func (m *Manager) CancelCommand(ctx context.Context, userID model.GlobalUserID) error {
 	return m.storage.Delete(ctx, userID)
 }
+
+func (m *Manager) IsPreservesDialog(commandName string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	def, ok := m.commands[commandName]
+	if !ok {
+		return false
+	}
+	return def.PreservesDialog
+}
+
+func (m *Manager) GetCurrentStepMessage(ctx context.Context, userID model.GlobalUserID, locale string) (*model.Message, string, error) {
+	ds, err := m.storage.Load(ctx, userID)
+	if err != nil {
+		return nil, "", fmt.Errorf("loading state: %w", err)
+	}
+	if ds == nil {
+		return nil, "", nil
+	}
+
+	m.mu.RLock()
+	handler, ok := m.handlers[ds.CommandName]
+	m.mu.RUnlock()
+	if !ok {
+		return nil, "", fmt.Errorf("%w: %s", ErrCommandNotFound, ds.CommandName)
+	}
+
+	state, err := handler.RestoreState(*ds)
+	if err != nil {
+		return nil, "", fmt.Errorf("restoring state: %w", err)
+	}
+
+	msg := handler.BuildStepMessage(state, locale)
+	return &msg, ds.CommandName, nil
+}

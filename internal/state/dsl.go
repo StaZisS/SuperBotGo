@@ -48,10 +48,11 @@ type ConditionalBranchNode struct {
 func (ConditionalBranchNode) commandNode() {}
 
 type CommandDefinition struct {
-	Name         string
-	Description  string
-	Requirements *model.RoleRequirements
-	Nodes        []CommandNode
+	Name            string
+	Description     string
+	Requirements    *model.RoleRequirements
+	Nodes           []CommandNode
+	PreservesDialog bool
 }
 
 func (cd *CommandDefinition) ResolveActiveSteps(params model.OptionMap) []StepNode {

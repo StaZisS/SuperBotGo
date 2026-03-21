@@ -6,10 +6,11 @@ import (
 )
 
 type CommandBuilder struct {
-	name         string
-	description  string
-	requirements *model.RoleRequirements
-	nodes        []CommandNode
+	name            string
+	description     string
+	requirements    *model.RoleRequirements
+	nodes           []CommandNode
+	preservesDialog bool
 }
 
 func NewCommand(name string) *CommandBuilder {
@@ -18,6 +19,11 @@ func NewCommand(name string) *CommandBuilder {
 
 func (b *CommandBuilder) Description(d string) *CommandBuilder {
 	b.description = d
+	return b
+}
+
+func (b *CommandBuilder) PreservesDialog() *CommandBuilder {
+	b.preservesDialog = true
 	return b
 }
 
@@ -52,10 +58,11 @@ func (b *CommandBuilder) ConditionalBranch(configure func(*ConditionalBranchBuil
 
 func (b *CommandBuilder) Build() *CommandDefinition {
 	return &CommandDefinition{
-		Name:         b.name,
-		Description:  b.description,
-		Requirements: b.requirements,
-		Nodes:        b.nodes,
+		Name:            b.name,
+		Description:     b.description,
+		Requirements:    b.requirements,
+		Nodes:           b.nodes,
+		PreservesDialog: b.preservesDialog,
 	}
 }
 

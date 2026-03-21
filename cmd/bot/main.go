@@ -25,6 +25,7 @@ import (
 	"SuperBotGo/internal/plugin/broadcast"
 	pluginLink "SuperBotGo/internal/plugin/link"
 	"SuperBotGo/internal/plugin/project"
+	"SuperBotGo/internal/plugin/resume"
 	"SuperBotGo/internal/plugin/settings"
 	"SuperBotGo/internal/role"
 	"SuperBotGo/internal/state"
@@ -219,12 +220,13 @@ func main() {
 
 	projectStore := &placeholderProjectStore{}
 	chatStore := &placeholderChatStore{}
-	accountLinker := &placeholderAccountLinker{}
+	accountLinker := user.NewAccountLinker(accountRepo)
 
 	allPlugins := []plugin.Plugin{
 		broadcast.New(senderAPI, projectStore),
 		pluginLink.New(senderAPI, accountLinker),
 		project.New(senderAPI, projectStore, chatStore),
+		resume.New(senderAPI, stateMgr),
 		settings.New(senderAPI, userService),
 	}
 

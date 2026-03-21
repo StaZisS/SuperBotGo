@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"SuperBotGo/internal/model"
-	pluginLink "SuperBotGo/internal/plugin/link"
 	"SuperBotGo/internal/plugin/project"
 	"SuperBotGo/internal/state/storage"
 )
@@ -91,22 +90,3 @@ func (s *placeholderChatStore) BindChat(_ context.Context, _, _ int64) error {
 }
 
 var _ project.ChatStore = (*placeholderChatStore)(nil)
-
-type placeholderAccountLinker struct{}
-
-func (l *placeholderAccountLinker) InitiateLinking(_ context.Context, _ model.GlobalUserID) pluginLink.LinkResult {
-	return pluginLink.LinkResult{
-		Kind:    pluginLink.LinkCodeGenerated,
-		Code:    "PLACEHOLDER-CODE",
-		Message: "",
-	}
-}
-
-func (l *placeholderAccountLinker) CompleteLinking(_ context.Context, _ model.GlobalUserID, _ string) pluginLink.LinkResult {
-	return pluginLink.LinkResult{
-		Kind:    pluginLink.LinkError,
-		Message: "Account linking not yet implemented",
-	}
-}
-
-var _ pluginLink.AccountLinker = (*placeholderAccountLinker)(nil)

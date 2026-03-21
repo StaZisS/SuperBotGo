@@ -88,6 +88,10 @@
 "link.your_code" = "Your link code:"
 "link.code_expires" = "Send /link on your other platform and enter this code. It expires in 5 minutes."
 
+# Resume
+"resume.no_active_command" = "No active command to resume. Start a command first."
+"resume.continuing" = "Continuing /{{.V0}}:"
+
 # Settings
 "settings.title" = "Settings"
 "settings.action_prompt" = "Setting"

@@ -143,6 +143,27 @@ func (r *PgAccountRepo) FindByChannelAndPlatformID(ctx context.Context, ct model
 	return &acc, nil
 }
 
+func (r *PgAccountRepo) FindByGlobalUserID(ctx context.Context, globalUserID model.GlobalUserID) ([]model.ChannelAccount, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, channel_type, channel_user_id, global_user_id
+		FROM channel_accounts WHERE global_user_id = $1
+	`, globalUserID)
+	if err != nil {
+		return nil, fmt.Errorf("find accounts for user %d: %w", globalUserID, err)
+	}
+	defer rows.Close()
+
+	var result []model.ChannelAccount
+	for rows.Next() {
+		var acc model.ChannelAccount
+		if err := rows.Scan(&acc.ID, &acc.ChannelType, &acc.ChannelUserID, &acc.GlobalUserID); err != nil {
+			return nil, fmt.Errorf("scan account: %w", err)
+		}
+		result = append(result, acc)
+	}
+	return result, nil
+}
+
 func (r *PgAccountRepo) Save(ctx context.Context, account *model.ChannelAccount) (*model.ChannelAccount, error) {
 	if account.ID == 0 {
 		err := r.pool.QueryRow(ctx, `

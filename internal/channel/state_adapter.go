@@ -23,7 +23,9 @@ func (a *StateManagerAdapter) StartCommand(ctx context.Context, userID model.Glo
 
 	if a.mgr.IsCommandImmediate(commandName) {
 
-		_ = a.mgr.CancelCommand(ctx, userID)
+		if !a.mgr.IsPreservesDialog(commandName) {
+			_ = a.mgr.CancelCommand(ctx, userID)
+		}
 		return &StateResult{
 			Message:     model.Message{},
 			CommandName: commandName,
@@ -63,6 +65,14 @@ func (a *StateManagerAdapter) ProcessInput(ctx context.Context, userID model.Glo
 
 func (a *StateManagerAdapter) CancelCommand(ctx context.Context, userID model.GlobalUserID, _ model.ChannelType) error {
 	return a.mgr.CancelCommand(ctx, userID)
+}
+
+func (a *StateManagerAdapter) IsPreservesDialog(commandName string) bool {
+	return a.mgr.IsPreservesDialog(commandName)
+}
+
+func (a *StateManagerAdapter) GetCurrentStepMessage(ctx context.Context, userID model.GlobalUserID, locale string) (*model.Message, string, error) {
+	return a.mgr.GetCurrentStepMessage(ctx, userID, locale)
 }
 
 var _ StateManager = (*StateManagerAdapter)(nil)

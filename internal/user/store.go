@@ -17,6 +17,7 @@ type UserRepository interface {
 
 type AccountRepository interface {
 	FindByChannelAndPlatformID(ctx context.Context, ct model.ChannelType, platformID model.PlatformUserID) (*model.ChannelAccount, error)
+	FindByGlobalUserID(ctx context.Context, globalUserID model.GlobalUserID) ([]model.ChannelAccount, error)
 	Save(ctx context.Context, account *model.ChannelAccount) (*model.ChannelAccount, error)
 }
 
@@ -90,15 +91,35 @@ func (r *PlaceholderAccountRepo) FindByChannelAndPlatformID(_ context.Context, c
 	return nil, nil
 }
 
+func (r *PlaceholderAccountRepo) FindByGlobalUserID(_ context.Context, globalUserID model.GlobalUserID) ([]model.ChannelAccount, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var result []model.ChannelAccount
+	for _, acc := range r.accounts {
+		if acc.GlobalUserID == globalUserID {
+			result = append(result, *acc)
+		}
+	}
+	return result, nil
+}
+
 func (r *PlaceholderAccountRepo) Save(_ context.Context, account *model.ChannelAccount) (*model.ChannelAccount, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if account.ID == 0 {
 		account.ID = r.seq.Add(1)
+		stored := *account
+		r.accounts = append(r.accounts, &stored)
+	} else {
+		for i, acc := range r.accounts {
+			if acc.ID == account.ID {
+				stored := *account
+				r.accounts[i] = &stored
+				break
+			}
+		}
 	}
-	stored := *account
-	r.accounts = append(r.accounts, &stored)
-	result := stored
+	result := *account
 	return &result, nil
 }
 
