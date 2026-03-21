@@ -190,6 +190,12 @@ export default function PluginDetail() {
         >
           Права команд
         </Link>
+        <Link
+          to={`/admin/plugins/${id}/plugin-permissions`}
+          className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors"
+        >
+          Права плагина
+        </Link>
         <button
           onClick={() => setShowUpdate((v) => !v)}
           className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors"

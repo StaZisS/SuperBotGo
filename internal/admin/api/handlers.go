@@ -369,6 +369,7 @@ func (h *AdminHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	if wp, ok := h.loader.GetPlugin(pluginID); ok {
 		h.manager.Register(wp)
 		h.syncCommandsOnUpdate(r.Context(), pluginID, oldCommands, wp)
+		h.syncPermissionsOnUpdate(pluginID, record, wp)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
@@ -632,6 +633,41 @@ func (h *AdminHandler) handleGetPlugin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *AdminHandler) syncPermissionsOnUpdate(pluginID string, record PluginRecord, wp *adapter.WasmPlugin) {
+	meta := wp.Meta()
+
+	currentPerms := make(map[string]bool, len(record.Permissions))
+	for _, p := range record.Permissions {
+		currentPerms[p] = true
+	}
+
+	changed := false
+	for _, decl := range meta.Permissions {
+		if decl.Required && !currentPerms[decl.Key] {
+			currentPerms[decl.Key] = true
+			changed = true
+			slog.Info("admin: auto-granted new required permission on update",
+				"plugin", pluginID, "permission", decl.Key)
+		}
+	}
+
+	if changed {
+		newPerms := make([]string, 0, len(currentPerms))
+		for p := range currentPerms {
+			newPerms = append(newPerms, p)
+		}
+		record.Permissions = newPerms
+		record.UpdatedAt = time.Now()
+		ctx := context.Background()
+		if err := h.store.SavePlugin(ctx, record); err != nil {
+			slog.Error("admin: failed to save updated permissions", "plugin", pluginID, "error", err)
+			return
+		}
+		h.hostAPI.GrantPermissions(pluginID, newPerms)
+		h.loader.UpdatePermissions(pluginID, newPerms)
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {

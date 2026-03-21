@@ -60,6 +60,10 @@ func (h *HostAPI) ForPlugin(pluginID string, permissions []string) {
 	h.perms.Grant(pluginID, permissions)
 }
 
+func (h *HostAPI) GetGrantedPermissions(pluginID string) []string {
+	return h.perms.List(pluginID)
+}
+
 func pluginIDFromContext(ctx context.Context) string {
 	if id, ok := ctx.Value(wasmrt.PluginIDKey{}).(string); ok {
 		return id

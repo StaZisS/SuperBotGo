@@ -184,6 +184,8 @@ func main() {
 	adminHandler.RegisterRoutes(adminMux)
 	cmdPermHandler := adminapi.NewCommandPermHandler(cmdPermStore)
 	cmdPermHandler.RegisterRoutes(adminMux)
+	pluginPermHandler := adminapi.NewPluginPermHandler(pluginStore, wasmLoader, hostAPI)
+	pluginPermHandler.RegisterRoutes(adminMux)
 	if ruleSchemaHandler == nil {
 		ruleSchemaHandler = adminapi.NewRuleSchemaHandler(nil)
 	}

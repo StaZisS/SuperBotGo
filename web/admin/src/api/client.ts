@@ -128,6 +128,30 @@ export interface RuleSchema {
   field_values: Record<string, RuleParamOption[]>
 }
 
+export interface HostPermissionInfo {
+  key: string
+  description: string
+  category: string
+}
+
+export interface DeclaredPermission {
+  key: string
+  description: string
+  required: boolean
+}
+
+export interface CallablePlugin {
+  id: string
+  name: string
+}
+
+export interface PluginPermissionsDetail {
+  declared: DeclaredPermission[]
+  granted: string[]
+  all_available: HostPermissionInfo[]
+  callable_plugins: CallablePlugin[]
+}
+
 export const api = {
   listPlugins: () => request<PluginInfo[]>('/plugins'),
 
@@ -185,5 +209,17 @@ export const api = {
       `/plugins/${encodeURIComponent(pluginId)}/commands/${encodeURIComponent(commandName)}/policy`,
       { method: 'PUT', body: JSON.stringify({ expression }) },
     ),
+
+  listAvailablePermissions: () =>
+    request<HostPermissionInfo[]>('/plugin-permissions'),
+
+  getPluginPermissions: (id: string) =>
+    request<PluginPermissionsDetail>(`/plugins/${encodeURIComponent(id)}/plugin-permissions`),
+
+  updatePluginPermissions: (id: string, permissions: string[]) =>
+    request<{ status: string }>(`/plugins/${encodeURIComponent(id)}/plugin-permissions`, {
+      method: 'PUT',
+      body: JSON.stringify({ permissions }),
+    }),
 
 }

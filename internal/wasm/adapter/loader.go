@@ -180,6 +180,14 @@ func (l *Loader) AllPlugins() []*WasmPlugin {
 	return result
 }
 
+func (l *Loader) UpdatePermissions(pluginID string, permissions []string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if lp, ok := l.plugins[pluginID]; ok {
+		lp.perms = permissions
+	}
+}
+
 func (l *Loader) Close(ctx context.Context) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()

@@ -46,3 +46,17 @@ func (ps *permissionStore) CheckPermission(pluginID, requiredPermission string) 
 	}
 	return nil
 }
+
+func (ps *permissionStore) List(pluginID string) []string {
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
+	perms, ok := ps.perms[pluginID]
+	if !ok {
+		return nil
+	}
+	result := make([]string, 0, len(perms))
+	for p := range perms {
+		result = append(result, p)
+	}
+	return result
+}
