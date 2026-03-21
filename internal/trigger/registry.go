@@ -2,6 +2,7 @@ package trigger
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -16,9 +17,10 @@ type httpRoute struct {
 
 // Registry maps triggers to plugin IDs.
 type Registry struct {
-	mu         sync.RWMutex
-	httpRoutes map[string]httpRoute // "pluginID/path" -> route
-	apiKeys    map[string]string    // "pluginID" -> API key (optional)
+	mu            sync.RWMutex
+	httpRoutes    map[string]httpRoute // "pluginID/path" -> route
+	apiKeys       map[string]string    // "pluginID" -> API key (optional)
+	cronScheduler *CronScheduler
 }
 
 func NewRegistry() *Registry {
@@ -26,6 +28,13 @@ func NewRegistry() *Registry {
 		httpRoutes: make(map[string]httpRoute),
 		apiKeys:    make(map[string]string),
 	}
+}
+
+// SetCronScheduler sets the cron scheduler used for "cron" triggers.
+func (r *Registry) SetCronScheduler(cs *CronScheduler) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.cronScheduler = cs
 }
 
 func httpRouteKey(pluginID, path string) string {
@@ -55,6 +64,17 @@ func (r *Registry) RegisterTriggers(pluginID string, triggers []wasmrt.TriggerDe
 				TriggerName: t.Name,
 				Methods:     methods,
 			}
+		case "cron":
+			if r.cronScheduler != nil && t.Schedule != "" {
+				if err := r.cronScheduler.AddSchedule(pluginID, t.Name, t.Schedule); err != nil {
+					slog.Error("failed to register cron trigger",
+						"plugin", pluginID,
+						"trigger", t.Name,
+						"schedule", t.Schedule,
+						"error", err,
+					)
+				}
+			}
 		}
 	}
 }
@@ -70,6 +90,10 @@ func (r *Registry) UnregisterTriggers(pluginID string) {
 		}
 	}
 	delete(r.apiKeys, pluginID)
+
+	if r.cronScheduler != nil {
+		r.cronScheduler.RemoveAll(pluginID)
+	}
 }
 
 // LookupHTTP finds the plugin and trigger for an HTTP request.

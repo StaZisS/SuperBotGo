@@ -20,10 +20,20 @@ type Config struct {
 }
 
 type AdminConfig struct {
-	Port       int    `koanf:"port"`
-	ModulesDir string `koanf:"modules_dir"`
-	BlobStore  string `koanf:"blob_store"`
-	APIKey     string `koanf:"api_key"`
+	Port       int      `koanf:"port"`
+	ModulesDir string   `koanf:"modules_dir"`
+	BlobStore  string   `koanf:"blob_store"`
+	APIKey     string   `koanf:"api_key"`
+	S3         S3Config `koanf:"s3"`
+}
+
+type S3Config struct {
+	Bucket    string `koanf:"bucket"`
+	Region    string `koanf:"region"`
+	Endpoint  string `koanf:"endpoint"`
+	AccessKey string `koanf:"access_key"`
+	SecretKey string `koanf:"secret_key"`
+	Prefix    string `koanf:"prefix"`
 }
 
 type DatabaseConfig struct {

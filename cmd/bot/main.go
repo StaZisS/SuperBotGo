@@ -104,10 +104,37 @@ func main() {
 	triggerRegistry := trigger.NewRegistry()
 	wasmLoader.SetTriggerRegistry(triggerRegistry)
 
-	blobStore, err := adminapi.NewLocalFSBlobStore(cfg.Admin.ModulesDir)
-	if err != nil {
-		logger.Error("failed to create blob store", slog.Any("error", err))
-		os.Exit(1)
+	// Create trigger router and cron scheduler before autoload so that
+	// cron triggers declared by plugins get registered during load.
+	triggerRouter := trigger.NewRouter(triggerRegistry, pluginManager)
+	cronScheduler := trigger.NewCronScheduler(triggerRouter)
+	triggerRegistry.SetCronScheduler(cronScheduler)
+
+	var blobStore adminapi.BlobStore
+	switch cfg.Admin.BlobStore {
+	case "s3":
+		s3Store, s3Err := adminapi.NewS3BlobStore(wasmCtx, adminapi.S3BlobStoreConfig{
+			Bucket:    cfg.Admin.S3.Bucket,
+			Region:    cfg.Admin.S3.Region,
+			Endpoint:  cfg.Admin.S3.Endpoint,
+			AccessKey: cfg.Admin.S3.AccessKey,
+			SecretKey: cfg.Admin.S3.SecretKey,
+			Prefix:    cfg.Admin.S3.Prefix,
+		})
+		if s3Err != nil {
+			logger.Error("failed to create S3 blob store", slog.Any("error", s3Err))
+			os.Exit(1)
+		}
+		blobStore = s3Store
+		logger.Info("using S3 blob store", slog.String("bucket", cfg.Admin.S3.Bucket))
+	default:
+		fsStore, fsErr := adminapi.NewLocalFSBlobStore(cfg.Admin.ModulesDir)
+		if fsErr != nil {
+			logger.Error("failed to create blob store", slog.Any("error", fsErr))
+			os.Exit(1)
+		}
+		blobStore = fsStore
+		logger.Info("using local filesystem blob store", slog.String("dir", cfg.Admin.ModulesDir))
 	}
 
 	// Redis (dialog storage)
@@ -118,6 +145,7 @@ func main() {
 			logger.Warn("Redis not available, Redis dialog storage disabled", slog.Any("error", redisErr))
 		} else {
 			redisClient = rc
+			cronScheduler.SetRedis(rc)
 			logger.Info("connected to Redis", slog.String("addr", cfg.Redis.Addr))
 		}
 	}
@@ -233,7 +261,6 @@ func main() {
 	pluginPermHandler := adminapi.NewPluginPermHandler(pluginStore, wasmLoader, hostAPI, adminBus)
 	pluginPermHandler.RegisterRoutes(adminMux)
 	ruleSchemaHandler.RegisterRoutes(adminMux)
-	triggerRouter := trigger.NewRouter(triggerRegistry, pluginManager)
 	httpTrigger := trigger.NewHTTPTriggerHandler(triggerRouter, triggerRegistry)
 	httpTrigger.SetMetrics(m)
 	adminMux.Handle("/api/triggers/http/", httpTrigger)
@@ -286,6 +313,8 @@ func main() {
 	stateAdapter := channel.NewStateManagerAdapter(stateMgr)
 
 	pluginManager.Load(allPlugins)
+
+	cronScheduler.Start()
 
 	updateRouter := plugin.NewUpdateRouter(pluginManager)
 
@@ -384,6 +413,8 @@ func main() {
 	} else {
 		logger.Info("admin API server stopped")
 	}
+
+	cronScheduler.Stop()
 
 	if err := wasmLoader.Close(shutdownCtx); err != nil {
 		logger.Error("wasm loader close error", slog.Any("error", err))

@@ -27,4 +27,12 @@ discord:
 admin:
   port: 8080
   modules_dir: ./wasm_modules
+  blob_store: localfs  # "localfs" or "s3"
   api_key: "YOUR_ADMIN_API_KEY"  # required for admin API authentication
+  s3:
+    bucket: "wasm-plugins"
+    region: "us-east-1"
+    endpoint: "http://localhost:9000"  # MinIO from docker-compose; for AWS S3 leave empty
+    access_key: "minioadmin"
+    secret_key: "minioadmin"
+    prefix: ""                        # optional key prefix, e.g. "wasm_modules/"
