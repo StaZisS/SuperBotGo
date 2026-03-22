@@ -10,6 +10,16 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  AlertDialog,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+} from '@/components/ui/alert-dialog'
 import { ChevronRight, ArrowLeft, Shield } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -152,6 +162,8 @@ function CommandCard({
   const [toggling, setToggling] = useState(false)
   const [policyExpr, setPolicyExpr] = useState(row.policyExpression)
   const [savingPolicy, setSavingPolicy] = useState(false)
+  const [builderKey, setBuilderKey] = useState(0)
+  const [clearOpen, setClearOpen] = useState(false)
 
   useEffect(() => { setPolicyExpr(row.policyExpression) }, [row.policyExpression])
 
@@ -236,18 +248,39 @@ function CommandCard({
               </h4>
             </div>
 
-            <RuleBuilder expression={policyExpr} onChange={setPolicyExpr} />
+            <RuleBuilder key={builderKey} expression={policyExpr} onChange={setPolicyExpr} />
 
             <Separator className="my-3" />
             <div className="flex justify-end gap-2">
               {row.policyExpression && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPolicyExpr('')}
-                >
-                  Очистить
-                </Button>
+                <AlertDialog open={clearOpen} onOpenChange={setClearOpen}>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      Очистить
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Очистить политику?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Политика доступа будет удалена. Команда станет доступна всем пользователям.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Отмена</AlertDialogCancel>
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          setPolicyExpr('')
+                          setBuilderKey((k) => k + 1)
+                          setClearOpen(false)
+                        }}
+                      >
+                        Очистить
+                      </Button>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               )}
               <Button
                 size="sm"

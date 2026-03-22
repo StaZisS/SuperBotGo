@@ -58,11 +58,6 @@ export default function Layout() {
       <main className="max-w-6xl mx-auto w-full px-4 sm:px-6 py-8 flex-1">
         <Outlet />
       </main>
-      <footer className="border-t px-4 sm:px-6 py-4">
-        <div className="max-w-6xl mx-auto text-center">
-          <p className="text-xs text-muted-foreground">SuperBot Admin Panel</p>
-        </div>
-      </footer>
     </div>
   )
 }

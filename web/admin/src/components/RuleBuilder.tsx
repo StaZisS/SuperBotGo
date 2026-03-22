@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { api, RuleSchema, RuleParam, RuleParamOption } from '@/api/client'
 import { cn } from '@/lib/utils'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -8,7 +8,14 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible'
-import { X } from 'lucide-react'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { X, Copy, AlertTriangle, CheckCircle2, Zap } from 'lucide-react'
 
 interface Condition {
   kind: 'condition'
@@ -161,6 +168,24 @@ function parseExpression(expr: string): RuleGroup | null {
   return { kind: 'group', id: newId(), logic: 'AND', items: [item] }
 }
 
+function isConditionComplete(condition: Condition, schema: RuleSchema): boolean {
+  const ct = schema.condition_types.find((t) => t.id === condition.typeId)
+  if (!ct) return false
+  for (const p of ct.params) {
+    if (!condition.values[p.name]) return false
+  }
+  return true
+}
+
+function isGroupComplete(group: RuleGroup, schema: RuleSchema): boolean {
+  if (group.items.length === 0) return false
+  return group.items.every((item) =>
+    item.kind === 'condition'
+      ? isConditionComplete(item, schema)
+      : isGroupComplete(item, schema),
+  )
+}
+
 function getOptionsForParam(
   param: RuleParam,
   values: Record<string, string>,
@@ -188,6 +213,7 @@ export default function RuleBuilder({
   const [rawMode, setRawMode] = useState(false)
   const [rawExpr, setRawExpr] = useState(expression)
   const [fieldValueMap, setFieldValueMap] = useState<Map<string, RuleParamOption[]>>(new Map())
+  const [initialized, setInitialized] = useState(false)
 
   useEffect(() => {
     api.getRuleSchema().then((s) => {
@@ -204,37 +230,52 @@ export default function RuleBuilder({
     })
   }, [])
 
+  // Initialize: parse existing expression into builder, or start empty
   useEffect(() => {
-    if (expression && !root) {
-      setRawExpr(expression)
-      setRawMode(true)
-    }
-  }, [])
+    if (!schema || initialized) return
+    setInitialized(true)
 
-  useEffect(() => {
-    if (!rawMode && schema && root) {
-      const expr = buildExpression(root, schema)
-      if (expr || !rawExpr) {
-        setRawExpr(expr)
-        onChange(expr)
+    if (expression) {
+      const parsed = parseExpression(expression)
+      if (parsed) {
+        setRoot(parsed)
+        setRawExpr(expression)
+      } else {
+        setRawExpr(expression)
+        setRawMode(true)
       }
+    } else {
+      setRoot(newGroup(schema, 'AND'))
     }
-  }, [root, rawMode, schema])
+  }, [schema, initialized, expression])
 
+  // Builder -> expression sync
   useEffect(() => {
-    if (rawMode) onChange(rawExpr)
-  }, [rawExpr, rawMode])
+    if (!rawMode && schema && root && initialized) {
+      const expr = buildExpression(root, schema)
+      setRawExpr(expr)
+      onChange(expr)
+    }
+  }, [root, rawMode, schema, initialized, onChange])
+
+  // Raw -> expression sync
+  useEffect(() => {
+    if (rawMode && initialized) onChange(rawExpr)
+  }, [rawExpr, rawMode, initialized, onChange])
 
   const switchToBuilder = useCallback(() => {
     setRawMode(false)
-    if (schema && !root) {
-      if (rawExpr) {
-        const parsed = parseExpression(rawExpr)
-        if (parsed) {
-          setRoot(parsed)
-          return
-        }
+    if (!schema) return
+
+    if (rawExpr) {
+      const parsed = parseExpression(rawExpr)
+      if (parsed) {
+        setRoot(parsed)
+        return
       }
+    }
+
+    if (!root) {
       setRoot(newGroup(schema, 'AND'))
     }
   }, [schema, root, rawExpr])
@@ -243,7 +284,15 @@ export default function RuleBuilder({
     setRoot((prev) => prev ? updater(prev) : prev)
   }, [])
 
-  if (!schema) {
+  const applyPreset = useCallback((expr: string) => {
+    const parsed = parseExpression(expr)
+    if (parsed) {
+      setRoot(parsed)
+      setRawMode(false)
+    }
+  }, [])
+
+  if (!schema || !initialized) {
     return <div className="text-sm text-muted-foreground">Загрузка схемы...</div>
   }
 
@@ -279,6 +328,8 @@ export default function RuleBuilder({
       <TabsContent value="builder">
         {root ? (
           <div>
+            <PresetsBar schema={schema} onApply={applyPreset} />
+
             <GroupEditor
               group={root}
               schema={schema}
@@ -287,16 +338,85 @@ export default function RuleBuilder({
               isRoot
             />
 
-            <div className="mt-3 p-2 bg-muted rounded-lg">
-              <div className="text-xs text-muted-foreground mb-1">Сгенерированное выражение:</div>
-              <code className="text-xs font-mono text-primary break-all">
-                {buildExpression(root, schema) || '(пусто)'}
-              </code>
-            </div>
+            <ExpressionPreview root={root} schema={schema} />
           </div>
         ) : null}
       </TabsContent>
     </Tabs>
+  )
+}
+
+function PresetsBar({
+  schema,
+  onApply,
+}: {
+  schema: RuleSchema
+  onApply: (expr: string) => void
+}) {
+  const presets = useMemo(() => {
+    const list: { label: string; expr: string }[] = []
+    if (schema.condition_types.some((t) => t.id === 'role')) {
+      list.push({ label: 'Только админы', expr: 'has_role("ADMIN")' })
+    }
+    return list
+  }, [schema])
+
+  if (presets.length === 0) return null
+
+  return (
+    <div className="flex items-center gap-2 mb-3 flex-wrap">
+      <span className="text-xs text-muted-foreground flex items-center gap-1">
+        <Zap className="h-3 w-3" />
+        Шаблоны:
+      </span>
+      {presets.map((p) => (
+        <Button
+          key={p.label}
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs border-dashed"
+          onClick={() => onApply(p.expr)}
+        >
+          {p.label}
+        </Button>
+      ))}
+    </div>
+  )
+}
+
+function ExpressionPreview({
+  root,
+  schema,
+}: {
+  root: RuleGroup
+  schema: RuleSchema
+}) {
+  const expr = buildExpression(root, schema)
+  const complete = isGroupComplete(root, schema)
+
+  return (
+    <div
+      className={cn(
+        'mt-3 p-3 rounded-lg border-l-4',
+        complete
+          ? 'bg-green-50/50 border-l-green-500'
+          : 'bg-amber-50/50 border-l-amber-500',
+      )}
+    >
+      <div className="flex items-center gap-1.5 mb-1">
+        {complete ? (
+          <CheckCircle2 className="h-3.5 w-3.5 text-green-600 shrink-0" />
+        ) : (
+          <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+        )}
+        <span className={cn('text-xs font-medium', complete ? 'text-green-700' : 'text-amber-700')}>
+          {complete ? 'Выражение готово' : 'Заполните все поля условий'}
+        </span>
+      </div>
+      <code className="text-xs font-mono text-foreground/80 break-all">
+        {expr || '\u2014'}
+      </code>
+    </div>
   )
 }
 
@@ -324,6 +444,17 @@ function GroupEditor({
     onChange({ ...group, items: filtered })
   }
 
+  const duplicateItem = (id: string) => {
+    const idx = group.items.findIndex((i) => i.id === id)
+    if (idx === -1) return
+    const item = group.items[idx]
+    if (item.kind !== 'condition') return
+    const clone: Condition = { ...item, id: newId(), values: { ...item.values } }
+    const newItems = [...group.items]
+    newItems.splice(idx + 1, 0, clone)
+    onChange({ ...group, items: newItems })
+  }
+
   const addCondition = () => {
     onChange({ ...group, items: [...group.items, newCondition(schema)] })
   }
@@ -340,17 +471,18 @@ function GroupEditor({
   return (
     <Card className={cn('p-3', borderColor, bgColor, !isRoot && 'ml-2')}>
       <div className="flex items-center gap-2 mb-2">
-        <select
+        <Select
           value={group.logic}
-          onChange={(e) => onChange({ ...group, logic: e.target.value as Logic })}
-          className={cn(
-            'h-7 rounded-md border border-input bg-background px-2 text-xs font-semibold',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-          )}
+          onValueChange={(v) => onChange({ ...group, logic: v as Logic })}
         >
-          <option value="AND">И (AND)</option>
-          <option value="OR">ИЛИ (OR)</option>
-        </select>
+          <SelectTrigger className="h-7 w-auto min-w-[120px] text-xs font-semibold">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="AND" className="text-xs">И (AND)</SelectItem>
+            <SelectItem value="OR" className="text-xs">ИЛИ (OR)</SelectItem>
+          </SelectContent>
+        </Select>
         <span className="text-xs text-muted-foreground">
           {group.logic === 'AND' ? 'все условия должны выполняться' : 'хотя бы одно условие'}
         </span>
@@ -390,6 +522,7 @@ function GroupEditor({
                 }}
                 onChangeValues={(values) => updateItem(item.id, { ...item, values })}
                 onRemove={group.items.length > 1 ? () => removeItem(item.id) : undefined}
+                onDuplicate={() => duplicateItem(item.id)}
               />
             ) : (
               <GroupEditor
@@ -423,6 +556,7 @@ function ConditionRow({
   onChangeType,
   onChangeValues,
   onRemove,
+  onDuplicate,
 }: {
   condition: Condition
   schema: RuleSchema
@@ -430,27 +564,34 @@ function ConditionRow({
   onChangeType: (typeId: string) => void
   onChangeValues: (values: Record<string, string>) => void
   onRemove?: () => void
+  onDuplicate: () => void
 }) {
   const ct = schema.condition_types.find((t) => t.id === condition.typeId)
+  const complete = isConditionComplete(condition, schema)
 
   const setValue = (name: string, value: string) => {
     onChangeValues({ ...condition.values, [name]: value })
   }
 
   return (
-    <div className="flex items-center gap-2 p-2 bg-background rounded-md border border-border flex-wrap">
-      <select
-        value={condition.typeId}
-        onChange={(e) => onChangeType(e.target.value)}
-        className={cn(
-          'h-8 rounded-md border border-input bg-background px-2 text-xs shrink-0',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        )}
-      >
-        {schema.condition_types.map((t) => (
-          <option key={t.id} value={t.id}>{t.label}</option>
-        ))}
-      </select>
+    <div
+      className={cn(
+        'flex items-center gap-2 p-2 bg-background rounded-md border flex-wrap transition-colors',
+        complete ? 'border-border' : 'border-amber-300 ring-1 ring-amber-200',
+      )}
+    >
+      <Select value={condition.typeId} onValueChange={onChangeType}>
+        <SelectTrigger className="h-8 w-auto min-w-[130px] text-xs shrink-0">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {schema.condition_types.map((t) => (
+            <SelectItem key={t.id} value={t.id} className="text-xs">
+              {t.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
       {ct?.params.map((param) => (
         <ParamInput
@@ -463,16 +604,28 @@ function ConditionRow({
         />
       ))}
 
-      {onRemove && (
+      <div className="flex items-center gap-0.5 shrink-0 ml-auto">
         <Button
           variant="ghost"
           size="icon"
-          onClick={onRemove}
-          className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+          onClick={onDuplicate}
+          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+          title="Дублировать условие"
         >
-          <X className="h-3.5 w-3.5" />
+          <Copy className="h-3.5 w-3.5" />
         </Button>
-      )}
+        {onRemove && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onRemove}
+            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+            title="Удалить условие"
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
     </div>
   )
 }
@@ -494,43 +647,50 @@ function ParamInput({
 
   if (param.type === 'select') {
     return (
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={cn(
-          'h-8 rounded-md border border-input bg-background px-2 text-xs',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        )}
-      >
-        <option value="">— {param.label} —</option>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
+      <Select value={value || undefined} onValueChange={onChange}>
+        <SelectTrigger
+          className={cn(
+            'h-8 w-auto min-w-[100px] text-xs',
+            !value && 'text-muted-foreground',
+          )}
+        >
+          <SelectValue placeholder={`\u2014 ${param.label} \u2014`} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((o) => (
+            <SelectItem key={o.value} value={o.value} className="text-xs">
+              {o.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     )
   }
 
   if (param.type === 'text_or_select' && options.length > 0) {
     return (
-      <div className="flex gap-1 flex-1 min-w-0">
-        <select
-          value={options.some((o) => o.value === value) ? value : ''}
-          onChange={(e) => { if (e.target.value) onChange(e.target.value) }}
-          className={cn(
-            'h-8 rounded-md border border-input bg-background px-2 text-xs',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-          )}
+      <div className="flex items-center gap-1 flex-1 min-w-0">
+        <Select
+          value={options.some((o) => o.value === value) ? value : undefined}
+          onValueChange={onChange}
         >
-          <option value="">— {param.label} —</option>
-          {options.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
+          <SelectTrigger className="h-8 w-auto min-w-[100px] text-xs shrink-0">
+            <SelectValue placeholder={`\u2014 ${param.label} \u2014`} />
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((o) => (
+              <SelectItem key={o.value} value={o.value} className="text-xs">
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span className="text-xs text-muted-foreground shrink-0">или</span>
         <Input
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder={param.placeholder ?? ''}
+          placeholder={param.placeholder ?? 'своё значение'}
           className="h-8 text-xs flex-1 min-w-0"
         />
       </div>
@@ -543,7 +703,7 @@ function ParamInput({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={param.placeholder ?? param.label}
-      className="h-8 text-xs flex-1 min-w-0"
+      className={cn('h-8 text-xs flex-1 min-w-0', !value && 'border-amber-300')}
     />
   )
 }
