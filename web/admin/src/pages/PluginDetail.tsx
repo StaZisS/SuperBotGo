@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { api, PluginDetail as PluginDetailType } from '@/api/client'
+import { api, PluginDetail as PluginDetailType, PluginMeta } from '@/api/client'
 import {
   ArrowLeft,
   Settings,
@@ -12,6 +12,7 @@ import {
   Lock,
   Copy,
   Package,
+  TriangleAlert,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import PluginStatusBadge from '@/components/PluginStatusBadge'
@@ -46,6 +47,19 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
+
+function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map(Number)
+  const pb = b.split('.').map(Number)
+  const len = Math.max(pa.length, pb.length)
+  for (let i = 0; i < len; i++) {
+    const va = pa[i] || 0
+    const vb = pb[i] || 0
+    if (va < vb) return -1
+    if (va > vb) return 1
+  }
+  return 0
+}
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('ru-RU', {
@@ -107,6 +121,9 @@ export default function PluginDetail() {
   const [loading, setLoading] = useState(true)
   const [showUpdate, setShowUpdate] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
+  const [updateMeta, setUpdateMeta] = useState<PluginMeta | null>(null)
+  const [updateFile, setUpdateFile] = useState<File | null>(null)
+  const [showVersionConfirm, setShowVersionConfirm] = useState(false)
 
   const load = useCallback(() => {
     if (!id) return
@@ -159,13 +176,40 @@ export default function PluginDetail() {
     }
   }
 
-  const handleUpdate = async (file: File) => {
+  const handleUpdateFile = async (file: File) => {
+    if (!id) return
+    setActionLoading(true)
+    try {
+      const meta = await api.uploadPlugin(file)
+      setUpdateFile(file)
+      setUpdateMeta(meta)
+
+      const currentVersion = plugin?.version
+      if (currentVersion) {
+        const cmp = compareVersions(meta.version, currentVersion)
+        if (cmp <= 0) {
+          setShowVersionConfirm(true)
+          return
+        }
+      }
+
+      await doUpdate(file)
+    } catch (e: unknown) {
+      toast.error((e as Error).message)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const doUpdate = async (file: File) => {
     if (!id) return
     setActionLoading(true)
     try {
       await api.updatePlugin(id, file)
       toast.success('Плагин обновлён')
       setShowUpdate(false)
+      setUpdateMeta(null)
+      setUpdateFile(null)
       load()
     } catch (e: unknown) {
       toast.error((e as Error).message)
@@ -412,7 +456,13 @@ export default function PluginDetail() {
               </Button>
 
               {/* Update .wasm dialog */}
-              <Dialog open={showUpdate} onOpenChange={setShowUpdate}>
+              <Dialog open={showUpdate} onOpenChange={(open) => {
+                setShowUpdate(open)
+                if (!open) {
+                  setUpdateMeta(null)
+                  setUpdateFile(null)
+                }
+              }}>
                 <DialogTrigger asChild>
                   <Button variant="outline" size="sm">
                     <Upload className="mr-1.5 h-4 w-4" />
@@ -427,9 +477,49 @@ export default function PluginDetail() {
                       <strong>{plugin.name || plugin.id}</strong>.
                     </DialogDescription>
                   </DialogHeader>
-                  <WasmUploader onFile={handleUpdate} loading={actionLoading} />
+                  <WasmUploader onFile={handleUpdateFile} loading={actionLoading} />
                 </DialogContent>
               </Dialog>
+
+              {/* Version conflict confirmation */}
+              <AlertDialog open={showVersionConfirm} onOpenChange={setShowVersionConfirm}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="flex items-center gap-2">
+                      <TriangleAlert className="h-5 w-5 text-amber-500" />
+                      {updateMeta && plugin.version && compareVersions(updateMeta.version, plugin.version) === 0
+                        ? 'Такая версия уже установлена'
+                        : 'Откат на старую версию'}
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {updateMeta && plugin.version && compareVersions(updateMeta.version, plugin.version) === 0 ? (
+                        <>
+                          Плагин <strong>{plugin.name || plugin.id}</strong> версии{' '}
+                          <strong>v{plugin.version}</strong> уже установлен.
+                          Вы уверены, что хотите переустановить ту же версию?
+                        </>
+                      ) : (
+                        <>
+                          Сейчас установлена версия <strong>v{plugin.version}</strong>,
+                          а вы загружаете более старую — <strong>v{updateMeta?.version}</strong>.
+                          Продолжить?
+                        </>
+                      )}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Отмена</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => {
+                        setShowVersionConfirm(false)
+                        if (updateFile) doUpdate(updateFile)
+                      }}
+                    >
+                      Всё равно обновить
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
 
               {/* Delete alert dialog */}
               <AlertDialog>

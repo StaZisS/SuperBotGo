@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 
 	"SuperBotGo/internal/metrics"
@@ -69,6 +71,20 @@ func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, conf
 		_ = compiled.Close(ctx)
 		return nil, fmt.Errorf("call meta: %w", err)
 	}
+
+	l.mu.RLock()
+	if existing, ok := l.plugins[meta.ID]; ok {
+		oldVer := existing.plugin.Version()
+		newVer := meta.Version
+		if oldVer == newVer {
+			slog.Warn("wasm: plugin with the same version is already loaded",
+				"id", meta.ID, "version", newVer)
+		} else if compareVersions(newVer, oldVer) < 0 {
+			slog.Warn("wasm: loading older plugin version than currently loaded",
+				"id", meta.ID, "current_version", oldVer, "new_version", newVer)
+		}
+	}
+	l.mu.RUnlock()
 
 	l.hostAPI.ForPlugin(meta.ID, permissions)
 	compiled.ID = meta.ID
@@ -229,4 +245,32 @@ func (l *Loader) Close(ctx context.Context) error {
 		l.metrics.LoadedPluginsGauge.Set(0)
 	}
 	return firstErr
+}
+
+// compareVersions compares two semver-like version strings (e.g. "1.2.3").
+// Returns -1 if a < b, 0 if a == b, 1 if a > b.
+// Non-numeric or missing parts are treated as 0.
+func compareVersions(a, b string) int {
+	pa := strings.Split(a, ".")
+	pb := strings.Split(b, ".")
+	maxLen := len(pa)
+	if len(pb) > maxLen {
+		maxLen = len(pb)
+	}
+	for i := range maxLen {
+		var va, vb int
+		if i < len(pa) {
+			va, _ = strconv.Atoi(pa[i])
+		}
+		if i < len(pb) {
+			vb, _ = strconv.Atoi(pb[i])
+		}
+		if va < vb {
+			return -1
+		}
+		if va > vb {
+			return 1
+		}
+	}
+	return 0
 }

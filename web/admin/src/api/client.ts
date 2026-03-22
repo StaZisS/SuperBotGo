@@ -73,6 +73,7 @@ export interface PluginMeta {
   config_schema: Record<string, unknown> | null
   wasm_key: string
   wasm_hash: string
+  existing_version?: string
 }
 
 export interface PluginDetail {

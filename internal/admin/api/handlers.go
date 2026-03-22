@@ -27,14 +27,15 @@ const maxUploadSize = 50 << 20
 const maxRequestBodySize = 1 << 20
 
 type uploadResponse struct {
-	ID           string                 `json:"id"`
-	Name         string                 `json:"name"`
-	Version      string                 `json:"version"`
-	Commands     []wasmrt.CommandDef    `json:"commands"`
-	Permissions  []wasmrt.PermissionDef `json:"permissions"`
-	ConfigSchema json.RawMessage        `json:"config_schema"`
-	WasmKey      string                 `json:"wasm_key"`
-	WasmHash     string                 `json:"wasm_hash"`
+	ID              string                 `json:"id"`
+	Name            string                 `json:"name"`
+	Version         string                 `json:"version"`
+	Commands        []wasmrt.CommandDef    `json:"commands"`
+	Permissions     []wasmrt.PermissionDef `json:"permissions"`
+	ConfigSchema    json.RawMessage        `json:"config_schema"`
+	WasmKey         string                 `json:"wasm_key"`
+	WasmHash        string                 `json:"wasm_hash"`
+	ExistingVersion string                 `json:"existing_version,omitempty"`
 }
 
 type installResponse struct {
@@ -215,6 +216,15 @@ func (h *AdminHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var existingVersion string
+	if wp, ok := h.loader.GetPlugin(meta.ID); ok {
+		existingVersion = wp.Version()
+	} else if h.versions != nil {
+		if vv, err := h.versions.ListVersions(r.Context(), meta.ID); err == nil && len(vv) > 0 {
+			existingVersion = vv[0].Version
+		}
+	}
+
 	wasmKey := fmt.Sprintf("%s_%s.wasm", meta.ID, meta.Version)
 	if err := h.blobs.Put(r.Context(), wasmKey, bytes.NewReader(wasmBytes), int64(len(wasmBytes))); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to save wasm file")
@@ -224,14 +234,15 @@ func (h *AdminHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	hash := sha256.Sum256(wasmBytes)
 
 	writeJSON(w, http.StatusOK, uploadResponse{
-		ID:           meta.ID,
-		Name:         meta.Name,
-		Version:      meta.Version,
-		Commands:     meta.Commands,
-		Permissions:  meta.Permissions,
-		ConfigSchema: meta.ConfigSchema,
-		WasmKey:      wasmKey,
-		WasmHash:     hex.EncodeToString(hash[:]),
+		ID:              meta.ID,
+		Name:            meta.Name,
+		Version:         meta.Version,
+		Commands:        meta.Commands,
+		Permissions:     meta.Permissions,
+		ConfigSchema:    meta.ConfigSchema,
+		WasmKey:         wasmKey,
+		WasmHash:        hex.EncodeToString(hash[:]),
+		ExistingVersion: existingVersion,
 	})
 }
 

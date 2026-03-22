@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Info } from 'lucide-react'
+import { Info, TriangleAlert } from 'lucide-react'
 import { api, PluginMeta } from '@/api/client'
 import WasmUploader from '@/components/WasmUploader'
 import PermissionsPanel from '@/components/PermissionsPanel'
@@ -15,6 +15,16 @@ import {
   CardContent,
   CardFooter,
 } from '@/components/ui/card'
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
 
 const steps = [
@@ -22,6 +32,19 @@ const steps = [
   { num: 2, label: 'Проверка метаданных' },
   { num: 3, label: 'Установка' },
 ]
+
+function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map(Number)
+  const pb = b.split('.').map(Number)
+  const len = Math.max(pa.length, pb.length)
+  for (let i = 0; i < len; i++) {
+    const va = pa[i] || 0
+    const vb = pb[i] || 0
+    if (va < vb) return -1
+    if (va > vb) return 1
+  }
+  return 0
+}
 
 function StepIndicator({ current }: { current: number }) {
   return (
@@ -68,8 +91,13 @@ export default function PluginUpload() {
   const [installing, setInstalling] = useState(false)
   const [meta, setMeta] = useState<PluginMeta | null>(null)
   const [selectedPerms, setSelectedPerms] = useState<string[]>([])
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   const currentStep = installing ? 3 : meta ? 2 : 1
+
+  const versionConflict = meta?.existing_version
+    ? compareVersions(meta.version, meta.existing_version)
+    : null
 
   const handleFile = async (file: File) => {
     setUploading(true)
@@ -88,7 +116,7 @@ export default function PluginUpload() {
     }
   }
 
-  const handleInstall = async () => {
+  const doInstall = async () => {
     if (!meta) return
     setInstalling(true)
     try {
@@ -103,6 +131,14 @@ export default function PluginUpload() {
       toast.error((e as Error).message)
     } finally {
       setInstalling(false)
+    }
+  }
+
+  const handleInstall = () => {
+    if (meta?.existing_version) {
+      setConfirmOpen(true)
+    } else {
+      doInstall()
     }
   }
 
@@ -139,6 +175,29 @@ export default function PluginUpload() {
           </CardHeader>
 
           <CardContent className="space-y-6">
+            {meta.existing_version && (
+              <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-950/30">
+                <CardContent className="flex items-start gap-3 p-4">
+                  <TriangleAlert className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" />
+                  <div className="text-sm text-amber-700 dark:text-amber-400">
+                    {versionConflict === 0 ? (
+                      <p>
+                        Плагин <strong>{meta.id}</strong> версии <strong>v{meta.existing_version}</strong> уже установлен. Вы загружаете ту же версию.
+                      </p>
+                    ) : versionConflict !== null && versionConflict < 0 ? (
+                      <p>
+                        Установлена более новая версия <strong>v{meta.existing_version}</strong>. Вы загружаете более старую — <strong>v{meta.version}</strong>.
+                      </p>
+                    ) : (
+                      <p>
+                        Плагин <strong>{meta.id}</strong> уже установлен (v{meta.existing_version}). Будет обновлён до <strong>v{meta.version}</strong>.
+                      </p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {meta.commands.length > 0 && (
               <div>
                 <h4 className="text-sm font-medium text-muted-foreground mb-2">
@@ -196,6 +255,49 @@ export default function PluginUpload() {
           </CardFooter>
         </Card>
       )}
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {versionConflict === 0
+                ? 'Такая версия уже установлена'
+                : versionConflict !== null && versionConflict < 0
+                  ? 'Откат на старую версию'
+                  : 'Обновление плагина'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {versionConflict === 0 ? (
+                <>
+                  Плагин <strong>{meta?.id}</strong> версии <strong>v{meta?.existing_version}</strong> уже
+                  установлен. Вы уверены, что хотите переустановить ту же версию?
+                </>
+              ) : versionConflict !== null && versionConflict < 0 ? (
+                <>
+                  Сейчас установлена версия <strong>v{meta?.existing_version}</strong>, а вы устанавливаете
+                  более старую — <strong>v{meta?.version}</strong>. Продолжить?
+                </>
+              ) : (
+                <>
+                  Плагин <strong>{meta?.id}</strong> будет обновлён с <strong>v{meta?.existing_version}</strong> до{' '}
+                  <strong>v{meta?.version}</strong>. Продолжить?
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmOpen(false)
+                doInstall()
+              }}
+            >
+              {versionConflict !== null && versionConflict < 0 ? 'Всё равно установить' : 'Продолжить'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
