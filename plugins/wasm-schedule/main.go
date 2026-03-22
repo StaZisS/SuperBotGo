@@ -6,7 +6,7 @@ func main() {
 	wasmplugin.Run(wasmplugin.Plugin{
 		ID:      "schedule",
 		Name:    "University Schedule",
-		Version: "1.4.0",
+		Version: "1.5.0",
 		Config: wasmplugin.ConfigFields(
 			wasmplugin.String("greeting", "Message shown before the schedule").Default("Welcome! Here is your schedule:"),
 			wasmplugin.String("university_name", "University name shown in the header").Default("University"),
@@ -26,6 +26,13 @@ func main() {
 				Path:        "/api/schedule",
 				Methods:     []string{"GET"},
 				Handler:     handleScheduleHTTP,
+			},
+			{
+				Name:        "daily_reminder",
+				Type:        wasmplugin.TriggerCron,
+				Description: "Send daily schedule summary every morning",
+				Schedule:    "* * * * *",
+				Handler:     handleDailyReminder,
 			},
 		},
 	})
@@ -273,4 +280,35 @@ func findCommand() wasmplugin.Command {
 			return nil
 		},
 	}
+}
+
+func handleDailyReminder(ctx *wasmplugin.EventContext) error {
+	ctx.Log("cron: daily_reminder fired")
+
+	greeting := ctx.Config("greeting", "")
+	uniName := ctx.Config("university_name", "")
+
+	var text string
+	if greeting != "" {
+		text = greeting + "\n\n"
+	}
+	if uniName != "" {
+		text += uniName + "\n"
+	}
+	text += "Daily schedule summary:\n\n"
+
+	for _, bld := range []string{"1", "2", "3"} {
+		entries := schedule[bld]
+		if len(entries) == 0 {
+			continue
+		}
+		text += "Building " + bld + ":\n"
+		for _, e := range entries {
+			text += "  " + e.Time + "  " + e.Subject + " (" + e.Teacher + ")\n"
+		}
+		text += "\n"
+	}
+
+	ctx.Reply(text)
+	return nil
 }
