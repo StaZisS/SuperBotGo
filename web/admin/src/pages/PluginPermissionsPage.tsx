@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { api, PluginDetail as PluginDetailType, PluginPermissionsDetail, HostPermissionInfo, DeclaredPermission } from '@/api/client'
 import { toast } from 'sonner'
-import { ArrowLeft, Database, Globe, Puzzle, Search } from 'lucide-react'
+import { ArrowLeft, Database, Globe, Puzzle, Search, Timer } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
@@ -16,14 +16,16 @@ const CATEGORY_LABELS: Record<string, string> = {
   database: 'База данных',
   network: 'Сеть',
   plugins: 'Плагины',
+  triggers: 'Триггеры',
 }
 
-const CATEGORY_ORDER = ['database', 'network', 'plugins']
+const CATEGORY_ORDER = ['database', 'network', 'plugins', 'triggers']
 
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   database: <Database className="h-4 w-4" />,
   network: <Globe className="h-4 w-4" />,
   plugins: <Puzzle className="h-4 w-4" />,
+  triggers: <Timer className="h-4 w-4" />,
 }
 
 export default function PluginPermissionsPage() {

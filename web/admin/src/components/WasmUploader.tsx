@@ -67,7 +67,7 @@ export default function WasmUploader({ onFile, loading, accept = '.wasm' }: Prop
       <p className="text-muted-foreground mb-1 text-sm sm:text-base">
         {loading ? 'Загрузка...' : 'Перетащите .wasm файл сюда или нажмите для выбора'}
       </p>
-      <p className="text-xs text-muted-foreground/60 mb-4">Максимальный размер: .wasm файлы</p>
+      <p className="text-xs text-muted-foreground/60 mb-4">Максимальный размер: 50 МБ. Только .wasm файлы</p>
       <Button asChild size="sm">
         <label className="cursor-pointer">
           Выбрать файл
