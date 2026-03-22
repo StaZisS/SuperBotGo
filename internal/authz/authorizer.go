@@ -3,21 +3,63 @@ package authz
 import (
 	"context"
 	"log/slog"
+	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"SuperBotGo/internal/model"
 )
 
+const (
+	DefaultSubjectCacheTTL = 30 * time.Second
+	DefaultPolicyCacheTTL  = 60 * time.Second
+)
+
+type commandPolicyKey struct {
+	pluginID    string
+	commandName string
+}
+
+type commandPolicyValue struct {
+	enabled    bool
+	policyExpr string
+	found      bool
+}
+
 type Authorizer struct {
-	store     Store
-	providers []AttributeProvider
-	logger    *slog.Logger
+	store        Store
+	providers    []AttributeProvider
+	logger       *slog.Logger
+	subjectCache *TTLCache[model.GlobalUserID, *SubjectContext]
+	policyCache  *TTLCache[commandPolicyKey, commandPolicyValue]
 }
 
 func NewAuthorizer(store Store, logger *slog.Logger, providers ...AttributeProvider) *Authorizer {
+	return NewAuthorizerWithTTL(store, logger, DefaultSubjectCacheTTL, DefaultPolicyCacheTTL, providers...)
+}
+
+func NewAuthorizerWithTTL(store Store, logger *slog.Logger, subjectTTL, policyTTL time.Duration, providers ...AttributeProvider) *Authorizer {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Authorizer{store: store, providers: providers, logger: logger}
+
+	var sc *TTLCache[model.GlobalUserID, *SubjectContext]
+	if subjectTTL > 0 {
+		sc = NewTTLCache[model.GlobalUserID, *SubjectContext](subjectTTL)
+	}
+
+	var pc *TTLCache[commandPolicyKey, commandPolicyValue]
+	if policyTTL > 0 {
+		pc = NewTTLCache[commandPolicyKey, commandPolicyValue](policyTTL)
+	}
+
+	return &Authorizer{
+		store:        store,
+		providers:    providers,
+		logger:       logger,
+		subjectCache: sc,
+		policyCache:  pc,
+	}
 }
 
 func (a *Authorizer) CheckCommand(
@@ -41,7 +83,7 @@ func (a *Authorizer) CheckCommand(
 		return true, nil
 	}
 
-	enabled, policyExpr, found, err := a.store.GetCommandPolicy(ctx, pluginID, commandName)
+	enabled, policyExpr, found, err := a.getCommandPolicy(ctx, pluginID, commandName)
 	if err != nil {
 		return false, err
 	}
@@ -91,6 +133,50 @@ func (a *Authorizer) EvalPolicy(ctx context.Context, expression string, userID m
 
 	env := buildExprEnv(sc, relations)
 	return evaluate(expression, env)
+}
+
+// InvalidateUser удаляет кэшированный SubjectContext для пользователя.
+func (a *Authorizer) InvalidateUser(userID model.GlobalUserID) {
+	if a.subjectCache != nil {
+		a.subjectCache.Delete(userID)
+	}
+}
+
+// InvalidateCommandPolicy удаляет кэшированную политику команды.
+func (a *Authorizer) InvalidateCommandPolicy(pluginID, commandName string) {
+	if a.policyCache != nil {
+		a.policyCache.Delete(commandPolicyKey{pluginID, commandName})
+	}
+}
+
+// ClearCaches полностью очищает все кэши авторизации.
+func (a *Authorizer) ClearCaches() {
+	if a.subjectCache != nil {
+		a.subjectCache.Clear()
+	}
+	if a.policyCache != nil {
+		a.policyCache.Clear()
+	}
+}
+
+func (a *Authorizer) getCommandPolicy(ctx context.Context, pluginID, commandName string) (bool, string, bool, error) {
+	key := commandPolicyKey{pluginID, commandName}
+
+	if a.policyCache != nil {
+		if cached, ok := a.policyCache.Get(key); ok {
+			return cached.enabled, cached.policyExpr, cached.found, nil
+		}
+	}
+
+	enabled, policyExpr, found, err := a.store.GetCommandPolicy(ctx, pluginID, commandName)
+	if err != nil {
+		return false, "", false, err
+	}
+
+	if a.policyCache != nil {
+		a.policyCache.Set(key, commandPolicyValue{enabled, policyExpr, found})
+	}
+	return enabled, policyExpr, found, nil
 }
 
 func (a *Authorizer) checkRoles(ctx context.Context, userID model.GlobalUserID, req *model.RoleRequirements) (bool, error) {
@@ -146,42 +232,89 @@ func (a *Authorizer) checkRoles(ctx context.Context, userID model.GlobalUserID, 
 }
 
 func (a *Authorizer) buildSubjectContext(ctx context.Context, userID model.GlobalUserID) (*SubjectContext, error) {
+	if a.subjectCache != nil {
+		if cached, ok := a.subjectCache.Get(userID); ok {
+			return cached, nil
+		}
+	}
+
 	sc := &SubjectContext{
 		UserID: userID,
 		Attrs:  make(map[string]any),
 	}
 
-	extID, err := a.store.GetExternalID(ctx, userID)
-	if err != nil {
-		a.logger.Warn("failed to get external_id", slog.Any("error", err))
-	}
-	sc.ExternalID = extID
+	var (
+		extID   string
+		roles   []string
+		ch, loc string
+	)
 
-	roleNames, err := a.store.GetAllRoleNames(ctx, userID)
-	if err != nil {
-		a.logger.Warn("failed to get roles", slog.Any("error", err))
-	}
-	sc.Roles = roleNames
+	// Фаза 1: параллельно выполняем запросы, не зависящие друг от друга.
+	g1, ctx1 := errgroup.WithContext(ctx)
 
-	if sc.ExternalID != "" {
-		groups, err := a.store.GetMemberGroups(ctx, sc.ExternalID)
+	g1.Go(func() error {
+		var err error
+		extID, err = a.store.GetExternalID(ctx1, userID)
 		if err != nil {
-			a.logger.Warn("failed to get member groups", slog.Any("error", err))
+			a.logger.Warn("failed to get external_id", slog.Any("error", err))
 		}
-		sc.Groups = groups
-	}
+		return nil
+	})
 
-	ch, loc, err := a.store.GetUserChannelAndLocale(ctx, userID)
-	if err != nil {
-		a.logger.Warn("failed to get channel/locale", slog.Any("error", err))
-	}
+	g1.Go(func() error {
+		var err error
+		roles, err = a.store.GetAllRoleNames(ctx1, userID)
+		if err != nil {
+			a.logger.Warn("failed to get roles", slog.Any("error", err))
+		}
+		return nil
+	})
+
+	g1.Go(func() error {
+		var err error
+		ch, loc, err = a.store.GetUserChannelAndLocale(ctx1, userID)
+		if err != nil {
+			a.logger.Warn("failed to get channel/locale", slog.Any("error", err))
+		}
+		return nil
+	})
+
+	_ = g1.Wait()
+
+	sc.ExternalID = extID
+	sc.Roles = roles
 	sc.PrimaryChannel = ch
 	sc.Locale = loc
 
-	for _, p := range a.providers {
-		if err := p.LoadAttributes(ctx, sc); err != nil {
-			a.logger.Warn("attribute provider failed", slog.Any("error", err))
-		}
+	// Фаза 2: запросы, которым нужен ExternalID.
+	if sc.ExternalID != "" {
+		g2, ctx2 := errgroup.WithContext(ctx)
+
+		g2.Go(func() error {
+			groups, err := a.store.GetMemberGroups(ctx2, sc.ExternalID)
+			if err != nil {
+				a.logger.Warn("failed to get member groups", slog.Any("error", err))
+			}
+			sc.Groups = groups
+			return nil
+		})
+
+		// Провайдеры атрибутов выполняются последовательно в одной горутине,
+		// чтобы избежать гонки при записи в sc.Attrs.
+		g2.Go(func() error {
+			for _, p := range a.providers {
+				if err := p.LoadAttributes(ctx2, sc); err != nil {
+					a.logger.Warn("attribute provider failed", slog.Any("error", err))
+				}
+			}
+			return nil
+		})
+
+		_ = g2.Wait()
+	}
+
+	if a.subjectCache != nil {
+		a.subjectCache.Set(userID, sc)
 	}
 
 	return sc, nil

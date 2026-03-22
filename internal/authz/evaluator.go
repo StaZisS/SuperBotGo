@@ -2,8 +2,10 @@ package authz
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/expr-lang/expr"
+	"github.com/expr-lang/expr/vm"
 )
 
 type exprEnv struct {
@@ -71,10 +73,23 @@ func buildExprEnv(sc *SubjectContext, relations []RelationEntry) exprEnv {
 	}
 }
 
+// compiledExprs кэширует скомпилированные expr-lang программы.
+// Ключ — текст выражения. Выражения неизменяемы при одном и том же тексте,
+// поэтому TTL не нужен — записи живут до перезапуска процесса.
+var compiledExprs sync.Map // map[string]*vm.Program
+
 func evaluate(expression string, env exprEnv) (bool, error) {
-	program, err := expr.Compile(expression, expr.Env(env), expr.AsBool())
-	if err != nil {
-		return false, fmt.Errorf("compile expression: %w", err)
+	var program *vm.Program
+
+	if cached, ok := compiledExprs.Load(expression); ok {
+		program = cached.(*vm.Program)
+	} else {
+		compiled, err := expr.Compile(expression, expr.Env(env), expr.AsBool())
+		if err != nil {
+			return false, fmt.Errorf("compile expression: %w", err)
+		}
+		compiledExprs.Store(expression, compiled)
+		program = compiled
 	}
 
 	result, err := expr.Run(program, env)
