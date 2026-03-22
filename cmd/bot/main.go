@@ -153,6 +153,7 @@ func main() {
 	var pluginStore adminapi.PluginStore
 	var versionStore adminapi.VersionStore
 	var cmdPermStore adminapi.CommandPermStore
+	var adminChatStore adminapi.AdminChatStore
 	var authzStore authz.Store
 	var universityProvider *providers.UniversityProvider
 	var adminBus *pubsub.Bus
@@ -179,6 +180,7 @@ func main() {
 				pluginStore = adminapi.NewPgPluginStore(pool)
 				versionStore = adminapi.NewPgVersionStore(pool)
 				cmdPermStore = adminapi.NewPgCommandPermStore(pool)
+				adminChatStore = adminapi.NewPgAdminChatStore(pool)
 				authzStore = authz.NewPgStore(pool)
 				universityProvider = providers.NewUniversityProvider(pool)
 				adminBus = pubsub.NewBus(pool, connString, generateInstanceID())
@@ -268,6 +270,8 @@ func main() {
 	cmdPermHandler.RegisterRoutes(adminMux)
 	pluginPermHandler := adminapi.NewPluginPermHandler(pluginStore, wasmLoader, hostAPI, adminBus)
 	pluginPermHandler.RegisterRoutes(adminMux)
+	chatHandler := adminapi.NewChatHandler(adminChatStore, adapterRegistry)
+	chatHandler.RegisterRoutes(adminMux)
 	ruleSchemaHandler.RegisterRoutes(adminMux)
 	httpTrigger := trigger.NewHTTPTriggerHandler(triggerRouter, triggerRegistry)
 	httpTrigger.SetMetrics(m)

@@ -4,6 +4,7 @@ import ToastContainer from './Toast'
 const navItems = [
   { to: '/admin/plugins', label: 'Плагины', exact: true },
   { to: '/admin/plugins/upload', label: 'Загрузка', exact: true },
+  { to: '/admin/chats', label: 'Чаты', exact: true },
 ]
 
 export default function Layout() {

@@ -162,6 +162,21 @@ export interface VersionInfo {
   created_at: string
 }
 
+export interface ChatReference {
+  id: number
+  channel_type: string
+  platform_chat_id: string
+  chat_kind: string
+  title: string
+}
+
+export interface BroadcastResult {
+  chat_id: number
+  channel_type: string
+  status: 'sent' | 'error'
+  error?: string
+}
+
 export const api = {
   listPlugins: () => request<PluginInfo[]>('/plugins'),
 
@@ -243,5 +258,19 @@ export const api = {
       `/plugins/${encodeURIComponent(pluginId)}/versions/${versionId}`,
       { method: 'DELETE' },
     ),
+
+  listChats: (params?: { channel_type?: string; chat_kind?: string }) => {
+    const q = new URLSearchParams()
+    if (params?.channel_type) q.set('channel_type', params.channel_type)
+    if (params?.chat_kind) q.set('chat_kind', params.chat_kind)
+    const qs = q.toString()
+    return request<ChatReference[]>(`/chats${qs ? `?${qs}` : ''}`)
+  },
+
+  broadcast: (chatIds: number[], text: string) =>
+    request<BroadcastResult[]>('/broadcast', {
+      method: 'POST',
+      body: JSON.stringify({ chat_ids: chatIds, text }),
+    }),
 
 }
