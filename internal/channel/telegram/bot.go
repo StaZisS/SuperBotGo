@@ -14,12 +14,13 @@ import (
 )
 
 type Bot struct {
-	bot     *tele.Bot
-	handler channel.UpdateHandler
-	logger  *slog.Logger
+	bot         *tele.Bot
+	handler     channel.UpdateHandler
+	joinHandler channel.ChatJoinHandler
+	logger      *slog.Logger
 }
 
-func NewBot(token string, handler channel.UpdateHandler, logger *slog.Logger) (*Bot, error) {
+func NewBot(token string, handler channel.UpdateHandler, joinHandler channel.ChatJoinHandler, logger *slog.Logger) (*Bot, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -35,9 +36,10 @@ func NewBot(token string, handler channel.UpdateHandler, logger *slog.Logger) (*
 	}
 
 	tb := &Bot{
-		bot:     b,
-		handler: handler,
-		logger:  logger,
+		bot:         b,
+		handler:     handler,
+		joinHandler: joinHandler,
+		logger:      logger,
 	}
 
 	tb.registerHandlers()
@@ -94,10 +96,82 @@ func (b *Bot) handleTextMessage(c tele.Context) error {
 	return nil
 }
 
+func (b *Bot) handleMyChatMember(c tele.Context) error {
+	if b.joinHandler == nil {
+		return nil
+	}
+
+	update := c.ChatMember()
+	if update == nil {
+		return nil
+	}
+
+	chat := update.Chat
+	if chat == nil {
+		return nil
+	}
+
+	chatID := strconv.FormatInt(chat.ID, 10)
+	newStatus := update.NewChatMember.Role
+
+	if newStatus == tele.Left || newStatus == tele.Kicked {
+		b.logger.Info("telegram: bot removed from chat",
+			slog.String("chat_id", chatID),
+			slog.String("chat_type", string(chat.Type)),
+			slog.String("new_status", string(newStatus)))
+
+		ctx := context.Background()
+		if err := b.joinHandler.OnChatLeave(ctx, model.ChannelTelegram, chatID); err != nil {
+			b.logger.Error("telegram: failed to unregister chat on leave",
+				slog.String("chat_id", chatID),
+				slog.Any("error", err))
+		}
+		return nil
+	}
+
+	var chatKind model.ChatKind
+	switch chat.Type {
+	case tele.ChatGroup, tele.ChatSuperGroup:
+		chatKind = model.ChatKindGroup
+	case tele.ChatChannel:
+		chatKind = model.ChatKindChannel
+	case tele.ChatPrivate:
+		chatKind = model.ChatKindPrivate
+	default:
+		chatKind = model.ChatKindGroup
+	}
+
+	title := chat.Title
+	if title == "" && chat.Type == tele.ChatPrivate {
+		title = chat.FirstName
+		if chat.LastName != "" {
+			title += " " + chat.LastName
+		}
+	}
+
+	b.logger.Info("telegram: bot added to chat",
+		slog.String("chat_id", chatID),
+		slog.String("chat_type", string(chat.Type)),
+		slog.String("title", title),
+		slog.String("new_status", string(newStatus)))
+
+	ctx := context.Background()
+	if err := b.joinHandler.OnChatJoin(ctx, model.ChannelTelegram, chatID, chatKind, title); err != nil {
+		b.logger.Error("telegram: failed to register chat on join",
+			slog.String("chat_id", chatID),
+			slog.Any("error", err))
+	}
+	return nil
+}
+
 func (b *Bot) registerHandlers() {
 
 	b.bot.Handle(tele.OnText, func(c tele.Context) error {
 		return b.handleTextMessage(c)
+	})
+
+	b.bot.Handle(tele.OnMyChatMember, func(c tele.Context) error {
+		return b.handleMyChatMember(c)
 	})
 
 	b.bot.Handle(tele.OnCallback, func(c tele.Context) error {

@@ -1,0 +1,34 @@
+sequenceDiagram
+    title HTTP Trigger
+
+    participant HTTP as HTTPTriggerHandler<br/>(trigger/http.go)
+    participant Reg as TriggerRegistry<br/>(trigger/registry.go)
+    participant TR as TriggerRouter<br/>(trigger/router.go)
+    participant PM as PluginManager<br/>(plugin/manager.go)
+    participant Plugin as WasmPlugin<br/>(wasm/adapter/adapter.go)
+    participant WASM as WASM Module
+
+    Note over HTTP: POST /api/triggers/http/{pluginID}/{path}
+
+    HTTP->>HTTP: Parse URL → pluginID, path
+    HTTP->>Reg: LookupHTTP(pluginID, path, method)
+    Reg-->>HTTP: triggerName
+
+    HTTP->>HTTP: Build HTTPTriggerData{Method, Path, Query, Headers, Body, RemoteAddr}
+    HTTP->>HTTP: Create Event{TriggerType: TriggerHTTP, TriggerName, PluginID, Data}
+
+    HTTP->>TR: RouteEvent(ctx, event)
+    TR->>PM: All()
+    PM-->>TR: map[string]Plugin
+    TR->>Plugin: HandleEvent(ctx, event)
+
+    Plugin->>Plugin: json.Marshal(event) → eventJSON
+    Plugin->>WASM: CallHandleEvent(ctx, eventJSON, config)
+    Note over WASM: Plugin processes request
+
+    WASM-->>Plugin: resultJSON
+    Plugin->>Plugin: json.Unmarshal → EventResponse
+    Plugin-->>TR: EventResponse
+    TR-->>HTTP: EventResponse
+
+    HTTP-->>HTTP: Write HTTP response

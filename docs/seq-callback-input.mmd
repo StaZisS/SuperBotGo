@@ -1,0 +1,43 @@
+sequenceDiagram
+    title Callback Input (button click during active dialog)
+
+    participant CM as ChannelManager<br/>(channel/manager.go)
+    participant SM as StateManager<br/>(state/manager.go)
+    participant Store as DialogStorage<br/>(Redis)
+    participant UR as UpdateRouter<br/>(plugin/router.go)
+    participant PM as PluginManager
+    participant Plugin as Plugin
+    participant Sender as SenderAPI
+    participant AR as AdapterRegistry<br/>(channel/registry.go)
+
+    Note over CM: OnUpdate: CallbackInput{Data: "option_a"}
+    CM->>CM: processUpdate() → IsCommand() == false
+    CM->>CM: handleInput()
+
+    CM->>SM: ProcessInput(ctx, userID, CallbackInput{"option_a"}, locale)
+    SM->>Store: Load(ctx, userID)
+    Store-->>SM: DialogState{Command: "settings", Step: "language", Params: {}}
+
+    SM->>SM: handler.RestoreState(dialogState)
+    SM->>SM: handler.ProcessInput(state, "option_a")
+    SM->>SM: Validate "option_a" against step options
+
+    alt More steps remain
+        SM->>SM: handler.BuildStepMessage(nextState, locale)
+        SM->>Store: Save(ctx, userID, updatedState)
+        SM-->>CM: StateResult{IsComplete: false, Message: nextPrompt}
+
+        CM->>AR: SendToChat(ctx, channelType, chatID, nextPrompt)
+    else Dialog complete
+        SM->>Store: Delete(ctx, userID)
+        SM-->>CM: StateResult{IsComplete: true, Params: {language: "option_a"}}
+
+        CM->>UR: Route(ctx, CommandRequest{CommandName: "settings", Params})
+        UR->>PM: GetByCommand("settings")
+        PM-->>UR: Plugin
+        UR->>Plugin: HandleEvent(ctx, messengerEvent)
+
+        Plugin->>Sender: Reply(ctx, triggerData, responseMsg)
+        Sender->>AR: SendToChat(ctx, channelType, chatID, responseMsg)
+        Plugin-->>UR: EventResponse{Status: "ok"}
+    end

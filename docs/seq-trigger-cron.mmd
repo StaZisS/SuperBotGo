@@ -1,0 +1,40 @@
+sequenceDiagram
+    title Cron Trigger
+
+    participant Cron as CronScheduler<br/>(trigger/cron.go)
+    participant Redis as Redis<br/>(distributed lock)
+    participant TR as TriggerRouter<br/>(trigger/router.go)
+    participant PM as PluginManager
+    participant Plugin as WasmPlugin
+    participant WASM as WASM Module
+    participant Sender as SenderAPI<br/>(plugin/sender.go)
+    participant AR as AdapterRegistry<br/>(channel/registry.go)
+
+    Note over Cron: Schedule fires: "0 9 * * *"
+
+    Cron->>Cron: fire(pluginID, triggerName)
+    Cron->>Redis: tryLock(pluginID, triggerName, fireTime)
+
+    alt Lock acquired
+        Redis-->>Cron: true
+    else Lock held by another instance
+        Redis-->>Cron: false
+        Note over Cron: Skip (another instance handles it)
+    end
+
+    Cron->>Cron: Build Event{TriggerType: TriggerCron,<br/>TriggerName, PluginID, Data: CronTriggerData}
+
+    Cron->>TR: RouteEvent(ctx, event)
+    TR->>PM: All()
+    TR->>Plugin: HandleEvent(ctx, event)
+    Plugin->>WASM: CallHandleEvent(ctx, eventJSON, config)
+
+    WASM-->>Plugin: EventResponse{Messages: [{ChatID, Text}]}
+
+    loop For each message in response
+        Plugin->>Sender: SendToChat(ctx, channelType, chatID, msg)
+        Sender->>AR: SendToChat(ctx, channelType, chatID, msg)
+    end
+
+    Plugin-->>TR: EventResponse{Status: "ok"}
+    TR-->>Cron: EventResponse

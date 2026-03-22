@@ -14,6 +14,7 @@ type Registry interface {
 	FindChatsByProject(ctx context.Context, projectID int64) ([]model.ChatReference, error)
 	RegisterChat(ctx context.Context, ref model.ChatReference) (*model.ChatReference, error)
 	UnregisterChat(ctx context.Context, chatRefID int64) error
+	UnregisterChatByPlatformID(ctx context.Context, channelType model.ChannelType, platformChatID string) error
 }
 
 type PlaceholderRegistry struct {
@@ -76,6 +77,14 @@ func (r *PlaceholderRegistry) UnregisterChat(_ context.Context, chatRefID int64)
 		}
 	}
 	return nil
+}
+
+func (r *PlaceholderRegistry) UnregisterChatByPlatformID(ctx context.Context, channelType model.ChannelType, platformChatID string) error {
+	ref, _ := r.FindChat(ctx, channelType, platformChatID)
+	if ref == nil {
+		return nil
+	}
+	return r.UnregisterChat(ctx, ref.ID)
 }
 
 var _ Registry = (*PlaceholderRegistry)(nil)

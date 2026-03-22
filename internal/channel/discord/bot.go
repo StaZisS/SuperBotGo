@@ -12,12 +12,13 @@ import (
 )
 
 type Bot struct {
-	session *discordgo.Session
-	handler channel.UpdateHandler
-	logger  *slog.Logger
+	session     *discordgo.Session
+	handler     channel.UpdateHandler
+	joinHandler channel.ChatJoinHandler
+	logger      *slog.Logger
 }
 
-func NewBot(token string, handler channel.UpdateHandler, logger *slog.Logger) (*Bot, error) {
+func NewBot(token string, handler channel.UpdateHandler, joinHandler channel.ChatJoinHandler, logger *slog.Logger) (*Bot, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -33,9 +34,10 @@ func NewBot(token string, handler channel.UpdateHandler, logger *slog.Logger) (*
 		discordgo.IntentsMessageContent
 
 	b := &Bot{
-		session: session,
-		handler: handler,
-		logger:  logger,
+		session:     session,
+		handler:     handler,
+		joinHandler: joinHandler,
+		logger:      logger,
 	}
 
 	b.registerHandlers()
@@ -64,6 +66,69 @@ func (b *Bot) Stop() error {
 }
 
 func (b *Bot) registerHandlers() {
+
+	b.session.AddHandler(func(s *discordgo.Session, g *discordgo.GuildCreate) {
+		if b.joinHandler == nil || g.Guild == nil {
+			return
+		}
+
+		b.logger.Info("discord: bot joined guild",
+			slog.String("guild_id", g.ID),
+			slog.String("guild_name", g.Name))
+
+		ctx := context.Background()
+
+		for _, ch := range g.Channels {
+			if ch.Type != discordgo.ChannelTypeGuildText {
+				continue
+			}
+
+			b.logger.Info("discord: registering channel",
+				slog.String("channel_id", ch.ID),
+				slog.String("channel_name", ch.Name),
+				slog.String("guild_name", g.Name))
+
+			title := g.Name + " / " + ch.Name
+			if err := b.joinHandler.OnChatJoin(ctx, model.ChannelDiscord, ch.ID, model.ChatKindGroup, title); err != nil {
+				b.logger.Error("discord: failed to register channel on guild join",
+					slog.String("channel_id", ch.ID),
+					slog.Any("error", err))
+			}
+		}
+	})
+
+	b.session.AddHandler(func(s *discordgo.Session, g *discordgo.GuildDelete) {
+		if b.joinHandler == nil || g.Guild == nil {
+			return
+		}
+
+		b.logger.Info("discord: bot removed from guild",
+			slog.String("guild_id", g.ID))
+
+		ctx := context.Background()
+
+		var channels []*discordgo.Channel
+		if g.BeforeDelete != nil {
+			channels = g.BeforeDelete.Channels
+		}
+
+		if len(channels) == 0 {
+			b.logger.Warn("discord: guild channels not available in cache, cannot unregister",
+				slog.String("guild_id", g.ID))
+			return
+		}
+
+		for _, ch := range channels {
+			if ch.Type != discordgo.ChannelTypeGuildText {
+				continue
+			}
+			if err := b.joinHandler.OnChatLeave(ctx, model.ChannelDiscord, ch.ID); err != nil {
+				b.logger.Error("discord: failed to unregister channel on guild leave",
+					slog.String("channel_id", ch.ID),
+					slog.Any("error", err))
+			}
+		}
+	})
 
 	b.session.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
 

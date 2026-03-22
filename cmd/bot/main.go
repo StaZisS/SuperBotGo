@@ -59,7 +59,7 @@ func main() {
 		logger.Warn("i18n initialization failed, continuing with fallback keys", slog.Any("error", err))
 	}
 
-	chatRegistry := chat.NewPlaceholderRegistry()
+	var chatRegistry chat.Registry
 	adapterRegistry := channel.NewAdapterRegistry()
 	pluginManager := plugin.NewManager()
 
@@ -184,6 +184,7 @@ func main() {
 				authzStore = authz.NewPgStore(pool)
 				universityProvider = providers.NewUniversityProvider(pool)
 				adminBus = pubsub.NewBus(pool, connString, generateInstanceID())
+				chatRegistry = chat.NewPgRegistry(pool)
 				logger.Info("using PostgreSQL stores")
 			}
 		}
@@ -197,6 +198,10 @@ func main() {
 	if roleStore == nil {
 		roleStore = role.NewPlaceholderStore()
 		logger.Warn("using in-memory role store (data will be lost on restart)")
+	}
+	if chatRegistry == nil {
+		chatRegistry = chat.NewPlaceholderRegistry()
+		logger.Warn("using in-memory chat registry (data will be lost on restart)")
 	}
 	if authzStore == nil {
 		authzStore = authz.NewPlaceholderStore()
@@ -376,9 +381,11 @@ func main() {
 		}
 	}
 
+	joinHandler := newChatJoinHandler(chatRegistry, logger)
+
 	if cfg.Telegram.Token != "" {
 		logger.Info("starting Telegram bot")
-		tgBot, err := telegram.NewBot(cfg.Telegram.Token, channelMgr, logger)
+		tgBot, err := telegram.NewBot(cfg.Telegram.Token, channelMgr, joinHandler, logger)
 		if err != nil {
 			logger.Error("failed to create Telegram bot", slog.Any("error", err))
 		} else {
@@ -396,7 +403,7 @@ func main() {
 
 	if cfg.Discord.Token != "" {
 		logger.Info("starting Discord bot")
-		dcBot, err := discord.NewBot(cfg.Discord.Token, channelMgr, logger)
+		dcBot, err := discord.NewBot(cfg.Discord.Token, channelMgr, joinHandler, logger)
 		if err != nil {
 			logger.Error("failed to create Discord bot", slog.Any("error", err))
 		} else {

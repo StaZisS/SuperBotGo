@@ -1,0 +1,71 @@
+sequenceDiagram
+    title WASM Plugin Execution with Host API Calls
+
+    participant TR as TriggerRouter
+    participant WP as WasmPlugin<br/>(wasm/adapter/adapter.go)
+    participant RT as WASM Runtime<br/>(wasm/runtime/module.go)
+    participant WASM as WASM Module<br/>(plugin code)
+    participant HostAPI as Host API Functions<br/>(hostapi/)
+    participant Perms as Permissions
+    participant DB as Database
+    participant Net as HTTP Client
+    participant Sender as SenderAPI
+
+    TR->>WP: HandleEvent(ctx, event)
+    WP->>WP: json.Marshal(event) -> eventJSON
+    WP->>RT: CallHandleEvent(ctx, eventJSON, configJSON)
+
+    RT->>RT: Instantiate WASM module with host functions
+    RT->>WASM: Call export "handle_event"(eventPtr, eventLen, configPtr, configLen)
+
+    Note over WASM: Plugin starts processing event
+
+    rect rgb(240, 248, 255)
+        Note over WASM, DB: Host API call: db_query
+        WASM->>HostAPI: db_query(querySpecPtr, querySpecLen)
+        HostAPI->>Perms: CheckPermission(pluginID, "db:read")
+        Perms-->>HostAPI: ok
+        HostAPI->>DB: Execute query
+        DB-->>HostAPI: rows
+        HostAPI->>HostAPI: writeModMemory(mod, resultJSON)
+        HostAPI-->>WASM: (resultPtr, resultLen)
+    end
+
+    rect rgb(255, 248, 240)
+        Note over WASM, Net: Host API call: http_request
+        WASM->>HostAPI: http_request(requestPtr, requestLen)
+        HostAPI->>Perms: CheckPermission(pluginID, "network:read")
+        Perms-->>HostAPI: ok
+        HostAPI->>Net: HTTP GET https://api.example.com/data
+        Net-->>HostAPI: response
+        HostAPI->>HostAPI: writeModMemory(mod, responseJSON)
+        HostAPI-->>WASM: (resultPtr, resultLen)
+    end
+
+    rect rgb(240, 255, 240)
+        Note over WASM, DB: Host API call: db_save
+        WASM->>HostAPI: db_save(recordPtr, recordLen)
+        HostAPI->>Perms: CheckPermission(pluginID, "db:write")
+        Perms-->>HostAPI: ok
+        HostAPI->>DB: Upsert record
+        DB-->>HostAPI: ok
+        HostAPI-->>WASM: (resultPtr, resultLen)
+    end
+
+    Note over WASM: Plugin finishes processing
+
+    WASM-->>RT: Return resultPtr, resultLen
+    RT->>RT: readModMemory -> resultJSON
+    RT-->>WP: resultJSON
+
+    WP->>WP: json.Unmarshal -> EventResponse
+
+    alt TriggerMessenger and Reply non-empty
+        WP->>Sender: SendToChat(ctx, channelType, chatID, reply)
+    end
+
+    loop For each message in EventResponse.Messages
+        WP->>Sender: SendToChat(ctx, msg.ChannelType, msg.ChatID, msg.Text)
+    end
+
+    WP-->>TR: EventResponse

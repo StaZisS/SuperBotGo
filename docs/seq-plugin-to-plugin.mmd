@@ -1,0 +1,47 @@
+sequenceDiagram
+    title Plugin-to-Plugin Communication
+
+    participant PluginA as WASM Plugin A<br/>("notifications")
+    participant HostAPI as Host API<br/>(hostapi/host_plugins.go)
+    participant Perms as Permissions<br/>(hostapi/permissions.go)
+    participant PM as PluginManager
+    participant PluginB as WASM Plugin B<br/>("analytics")
+    participant Bus as EventBus<br/>(pubsub/bus.go)
+    participant PG as PostgreSQL<br/>(LISTEN/NOTIFY)
+
+    Note over PluginA: During HandleEvent execution,<br/>Plugin A needs to call Plugin B
+
+    rect rgb(230, 245, 255)
+        Note over PluginA, PluginB: Path 1: Direct call via call_plugin
+
+        PluginA->>HostAPI: call_plugin({Target: "analytics", Method: "track", Params: {...}})
+        HostAPI->>Perms: CheckPermission("notifications", "plugins:call:analytics")
+        Perms-->>HostAPI: ok
+
+        HostAPI->>PM: CallPlugin(ctx, "analytics", "track", params)
+        PM->>PluginB: HandleEvent(ctx, Event{TriggerType: TriggerEvent, Data: callData})
+        PluginB-->>PM: EventResponse{Data: result}
+        PM-->>HostAPI: result
+        HostAPI-->>PluginA: result (written to WASM memory)
+    end
+
+    rect rgb(255, 245, 230)
+        Note over PluginA, PG: Path 2: Async event via publish_event
+
+        PluginA->>HostAPI: publish_event({Topic: "user.action", Payload: {...}})
+        HostAPI->>Perms: CheckPermission("notifications", "plugins:events")
+        Perms-->>HostAPI: ok
+
+        HostAPI->>Bus: Publish(ctx, "user.action", payload)
+        Bus->>PG: NOTIFY "user.action", payload
+
+        Note over HostAPI,PluginA: Returns immediately (fire & forget)
+        HostAPI-->>PluginA: ok
+
+        Note over PG,PluginB: Async delivery to all subscribers
+
+        PG-->>Bus: LISTEN notification received
+        Bus->>Bus: Find subscribers for "user.action"
+        Bus->>PluginB: HandleEvent(ctx, Event{TriggerType: TriggerEvent,<br/>Topic: "user.action", Data: payload})
+        PluginB-->>Bus: EventResponse
+    end

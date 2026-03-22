@@ -1,0 +1,42 @@
+sequenceDiagram
+    title Simple Command (no steps)
+
+    participant CM as ChannelManager<br/>(channel/manager.go)
+    participant Auth as Authorizer
+    participant SM as StateManager<br/>(state/manager.go)
+    participant PM as PluginManager<br/>(plugin/manager.go)
+    participant UR as UpdateRouter<br/>(plugin/router.go)
+    participant Plugin as Plugin
+    participant Sender as SenderAPI<br/>(plugin/sender.go)
+    participant AR as AdapterRegistry<br/>(channel/registry.go)
+
+    Note over CM: OnUpdate(ctx, channelType, platformUserID,<br/>TextInput{"/help"}, chatID)
+    CM->>CM: FindOrCreateUser(channelType, platformUserID)
+    CM->>CM: processUpdate() → input.IsCommand() == true
+    CM->>CM: handleCommand()
+
+    CM->>PM: GetCommandDefinition("help")
+    PM-->>CM: CommandDefinition
+
+    CM->>Auth: CheckCommand(userID, commandDef)
+    Auth-->>CM: ok
+
+    CM->>SM: CancelCommand(ctx, userID)
+    Note over SM: Deletes any active dialog state
+
+    CM->>SM: StartCommand(ctx, userID, "help", locale)
+    Note over SM: No steps → immediately complete
+    SM-->>CM: StateResult{IsComplete: true, Params: {}}
+
+    CM->>UR: Route(ctx, CommandRequest{CommandName, Params, UserID, ChatID})
+    UR->>PM: GetByCommand("help")
+    PM-->>UR: Plugin
+
+    UR->>UR: NewMessengerEvent(req, pluginID)
+    UR->>Plugin: HandleEvent(ctx, Event{TriggerType: TriggerMessenger})
+
+    Plugin->>Sender: Reply(ctx, triggerData, Message)
+    Sender->>AR: SendToChat(ctx, channelType, chatID, Message)
+
+    Plugin-->>UR: EventResponse{Status: "ok"}
+    UR-->>CM: nil
