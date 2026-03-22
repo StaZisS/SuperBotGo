@@ -1,3 +1,8 @@
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
+
 interface Permission {
   key: string
   description: string
@@ -28,37 +33,43 @@ export default function PermissionsPanel({ permissions, selected, onChange, read
     <div className="space-y-2">
       <h3 className="text-sm font-medium text-gray-700">Разрешения</h3>
       {permissions.length === 0 && (
-        <p className="text-sm text-gray-400">Разрешения не требуются.</p>
+        <p className="text-sm text-muted-foreground">Разрешения не требуются.</p>
       )}
       {permissions.map((p) => (
-        <label
+        <Label
           key={p.key}
-          className={`flex items-start gap-3 p-2 rounded ${
-            readOnly || p.required ? 'opacity-75' : 'hover:bg-gray-50 cursor-pointer'
-          }`}
+          htmlFor={`perm-${p.key}`}
+          className={cn(
+            'flex items-start gap-3 p-2 rounded font-normal',
+            readOnly || p.required ? 'opacity-75' : 'hover:bg-gray-50 cursor-pointer',
+          )}
         >
-          <input
-            type="checkbox"
+          <Checkbox
+            id={`perm-${p.key}`}
             checked={isChecked(p.key, p.required)}
             disabled={p.required || readOnly}
-            onChange={() => toggle(p.key, p.required)}
-            className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            onCheckedChange={() => toggle(p.key, p.required)}
+            className="mt-0.5"
           />
           <div className="min-w-0">
             <div className="text-sm font-mono break-all">
               {p.key}
               {p.required && (
-                <span className="ml-2 text-xs text-red-600 font-medium font-sans">Обязательно</span>
+                <Badge variant="destructive" className="ml-2 font-sans text-xs">
+                  Обязательно
+                </Badge>
               )}
               {!p.required && (
-                <span className="ml-2 text-xs text-gray-400 font-sans">Опционально</span>
+                <Badge variant="secondary" className="ml-2 font-sans text-xs">
+                  Опционально
+                </Badge>
               )}
             </div>
             {p.description && (
-              <div className="text-xs text-gray-500 mt-0.5">{p.description}</div>
+              <div className="text-xs text-muted-foreground mt-0.5">{p.description}</div>
             )}
           </div>
-        </label>
+        </Label>
       ))}
     </div>
   )

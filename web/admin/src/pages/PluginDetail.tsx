@@ -1,16 +1,110 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { api, PluginDetail as PluginDetailType } from '../api/client'
-import PluginStatusBadge from '../components/PluginStatusBadge'
-import WasmUploader from '../components/WasmUploader'
-import { toast } from '../components/Toast'
+import { api, PluginDetail as PluginDetailType } from '@/api/client'
+import {
+  ArrowLeft,
+  Settings,
+  Shield,
+  History,
+  Upload,
+  Trash2,
+  Power,
+  Lock,
+  Copy,
+  Package,
+} from 'lucide-react'
+import { toast } from 'sonner'
+import PluginStatusBadge from '@/components/PluginStatusBadge'
+import WasmUploader from '@/components/WasmUploader'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from '@/components/ui/card'
+import { Separator } from '@/components/ui/separator'
+import {
+  AlertDialog,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from '@/components/ui/alert-dialog'
+import {
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog'
+
+function formatDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+function LoadingSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 space-y-2">
+          <Skeleton className="h-8 w-20" />
+          <Skeleton className="h-6 w-48" />
+          <Skeleton className="h-4 w-32" />
+        </div>
+        <Skeleton className="h-6 w-24 rounded-full" />
+      </div>
+
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-5 w-32" />
+          <Skeleton className="h-4 w-48" />
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="space-y-1.5">
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="h-5 w-24" />
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-5 w-24" />
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-3">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-8 w-28 rounded-md" />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
 
 export default function PluginDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [plugin, setPlugin] = useState<PluginDetailType | null>(null)
   const [loading, setLoading] = useState(true)
-  const [showDelete, setShowDelete] = useState(false)
   const [showUpdate, setShowUpdate] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
 
@@ -20,28 +114,34 @@ export default function PluginDetail() {
     api
       .getPlugin(id)
       .then(setPlugin)
-      .catch((e: Error) => toast(e.message, 'error'))
+      .catch((e: Error) => toast.error(e.message))
       .finally(() => setLoading(false))
   }, [id])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    load()
+  }, [load])
 
   const handleToggle = async () => {
     if (!id || !plugin) return
     const wasActive = plugin.status === 'active'
-    setPlugin((prev) => prev ? { ...prev, status: wasActive ? 'disabled' : 'active' } : prev)
+    setPlugin((prev) =>
+      prev ? { ...prev, status: wasActive ? 'disabled' : 'active' } : prev,
+    )
     try {
       if (wasActive) {
         await api.disablePlugin(id)
-        toast('Плагин отключён')
+        toast.success('Плагин отключён')
       } else {
         await api.enablePlugin(id)
-        toast('Плагин включён')
+        toast.success('Плагин включён')
       }
       load()
     } catch (e: unknown) {
-      setPlugin((prev) => prev ? { ...prev, status: wasActive ? 'active' : 'disabled' } : prev)
-      toast((e as Error).message, 'error')
+      setPlugin((prev) =>
+        prev ? { ...prev, status: wasActive ? 'active' : 'disabled' } : prev,
+      )
+      toast.error((e as Error).message)
     }
   }
 
@@ -50,13 +150,12 @@ export default function PluginDetail() {
     setActionLoading(true)
     try {
       await api.deletePlugin(id)
-      toast('Плагин удалён')
+      toast.success('Плагин удалён')
       navigate('/admin/plugins')
     } catch (e: unknown) {
-      toast((e as Error).message, 'error')
+      toast.error((e as Error).message)
     } finally {
       setActionLoading(false)
-      setShowDelete(false)
     }
   }
 
@@ -65,193 +164,308 @@ export default function PluginDetail() {
     setActionLoading(true)
     try {
       await api.updatePlugin(id, file)
-      toast('Плагин обновлён')
+      toast.success('Плагин обновлён')
       setShowUpdate(false)
       load()
     } catch (e: unknown) {
-      toast((e as Error).message, 'error')
+      toast.error((e as Error).message)
     } finally {
       setActionLoading(false)
     }
   }
 
+  const handleCopyHash = () => {
+    if (!plugin?.wasm_hash) return
+    navigator.clipboard.writeText(plugin.wasm_hash).then(
+      () => toast.success('Hash скопирован'),
+      () => toast.error('Не удалось скопировать'),
+    )
+  }
+
   if (loading && !plugin) {
-    return <div className="text-gray-400 py-8 text-center">Загрузка...</div>
+    return <LoadingSkeleton />
   }
 
   if (!plugin) {
-    return <div className="text-gray-400 py-8 text-center">Плагин не найден</div>
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <Package className="h-12 w-12 text-muted-foreground/50 mb-4" />
+        <h3 className="text-lg font-semibold mb-1">Плагин не найден</h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Плагин не существует или был удалён
+        </p>
+        <Button variant="outline" asChild>
+          <Link to="/admin/plugins">
+            <ArrowLeft className="mr-1.5 h-4 w-4" />
+            Вернуться к списку
+          </Link>
+        </Button>
+      </div>
+    )
   }
+
+  const statusBorderColor =
+    plugin.status === 'active'
+      ? 'border-l-green-500'
+      : plugin.status === 'error'
+        ? 'border-l-red-500'
+        : 'border-l-muted-foreground/40'
 
   return (
     <div className="space-y-6">
-      {}
+      {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <div className="flex items-center gap-3 mb-1">
-            <Link to="/admin/plugins" className="text-gray-400 hover:text-gray-600 text-sm">
-              &larr; Назад
+          <Button variant="ghost" size="sm" asChild className="mb-2 -ml-2">
+            <Link to="/admin/plugins">
+              <ArrowLeft className="mr-1 h-4 w-4" />
+              Назад
             </Link>
-          </div>
-          <h2 className="text-lg font-semibold truncate">{plugin.name || plugin.id}</h2>
-          <p className="text-sm text-gray-500">
-            {plugin.id} {plugin.version && <span>&middot; v{plugin.version}</span>}
+          </Button>
+          <h2 className="text-lg font-semibold truncate">
+            {plugin.name || plugin.id}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {plugin.id}
+            {plugin.version && <span> &middot; v{plugin.version}</span>}
           </p>
         </div>
         <PluginStatusBadge status={plugin.status || 'disabled'} />
       </div>
 
-      {}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-          <div>
-            <span className="text-gray-500 block text-xs uppercase tracking-wide">Тип</span>
-            <div className="font-medium mt-0.5">{plugin.type || 'wasm'}</div>
-          </div>
-          <div>
-            <span className="text-gray-500 block text-xs uppercase tracking-wide">Версия</span>
-            <div className="font-medium mt-0.5">{plugin.version || '-'}</div>
-          </div>
-          {plugin.wasm_hash && (
-            <div className="col-span-2 md:col-span-1">
-              <span className="text-gray-500 block text-xs uppercase tracking-wide">Hash</span>
-              <div className="font-mono text-xs mt-0.5 truncate" title={plugin.wasm_hash}>
-                {plugin.wasm_hash}
+      {/* Plugin info card */}
+      <Card className={`border-l-4 ${statusBorderColor}`}>
+        <CardHeader>
+          <CardTitle className="text-base">Информация</CardTitle>
+          <CardDescription>Основные параметры плагина</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div>
+              <span className="text-muted-foreground block text-xs uppercase tracking-wide">
+                Тип
+              </span>
+              <div className="font-medium mt-0.5">{plugin.type || 'wasm'}</div>
+            </div>
+            <div>
+              <span className="text-muted-foreground block text-xs uppercase tracking-wide">
+                Версия
+              </span>
+              <div className="font-medium mt-0.5">
+                {plugin.version || '-'}
               </div>
             </div>
-          )}
-          {plugin.installed_at && (
-            <div>
-              <span className="text-gray-500 block text-xs uppercase tracking-wide">Установлен</span>
-              <div className="font-medium mt-0.5">{new Date(plugin.installed_at).toLocaleDateString()}</div>
-            </div>
-          )}
-          {plugin.updated_at && (
-            <div>
-              <span className="text-gray-500 block text-xs uppercase tracking-wide">Обновлён</span>
-              <div className="font-medium mt-0.5">{new Date(plugin.updated_at).toLocaleDateString()}</div>
-            </div>
-          )}
-        </div>
-
-        {}
-        {plugin.commands && plugin.commands.length > 0 && (
-          <div>
-            <h4 className="text-sm font-medium text-gray-700 mb-2">Команды ({plugin.commands.length})</h4>
-            <div className="space-y-1">
-              {plugin.commands.map((cmd) => (
-                <div key={cmd.name} className="flex items-center gap-3 text-sm p-2 bg-gray-50 rounded">
-                  <span className="font-mono text-blue-600 shrink-0">/{cmd.name}</span>
-                  <span className="text-gray-500 min-w-0 truncate">{cmd.description}</span>
-                  {cmd.min_role && (
-                    <span className="ml-auto text-xs text-gray-400 shrink-0">{cmd.min_role}</span>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {}
-        {plugin.permissions && plugin.permissions.length > 0 && (
-          <div>
-            <h4 className="text-sm font-medium text-gray-700 mb-2">Разрешения</h4>
-            <div className="flex flex-wrap gap-2">
-              {plugin.permissions.map((p) => (
-                <span key={p} className="px-2 py-1 bg-gray-100 rounded text-xs font-mono">
-                  {p}
+            {plugin.wasm_hash && (
+              <div className="col-span-2 md:col-span-1">
+                <span className="text-muted-foreground block text-xs uppercase tracking-wide">
+                  Hash
                 </span>
-              ))}
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span
+                    className="font-mono text-xs truncate"
+                    title={plugin.wasm_hash}
+                  >
+                    {plugin.wasm_hash}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-5 w-5 shrink-0"
+                    onClick={handleCopyHash}
+                  >
+                    <Copy className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            )}
+            {plugin.installed_at && (
+              <div>
+                <span className="text-muted-foreground block text-xs uppercase tracking-wide">
+                  Установлен
+                </span>
+                <div className="font-medium mt-0.5">
+                  {formatDate(plugin.installed_at)}
+                </div>
+              </div>
+            )}
+            {plugin.updated_at && (
+              <div>
+                <span className="text-muted-foreground block text-xs uppercase tracking-wide">
+                  Обновлён
+                </span>
+                <div className="font-medium mt-0.5">
+                  {formatDate(plugin.updated_at)}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Commands */}
+          {plugin.commands && plugin.commands.length > 0 && (
+            <>
+              <Separator />
+              <div>
+                <h4 className="text-sm font-medium mb-2">
+                  Команды ({plugin.commands.length})
+                </h4>
+                <div className="space-y-1">
+                  {plugin.commands.map((cmd) => (
+                    <div
+                      key={cmd.name}
+                      className="flex items-center gap-3 text-sm p-2 bg-muted/50 rounded-md"
+                    >
+                      <span className="font-mono text-primary shrink-0">
+                        /{cmd.name}
+                      </span>
+                      <span className="text-muted-foreground min-w-0 truncate">
+                        {cmd.description}
+                      </span>
+                      {cmd.min_role && (
+                        <Badge variant="outline" className="ml-auto shrink-0">
+                          {cmd.min_role}
+                        </Badge>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Permissions */}
+          {plugin.permissions && plugin.permissions.length > 0 && (
+            <>
+              <Separator />
+              <div>
+                <h4 className="text-sm font-medium mb-2">Разрешения</h4>
+                <div className="flex flex-wrap gap-2">
+                  {plugin.permissions.map((p) => (
+                    <Badge key={p} variant="secondary" className="font-mono">
+                      {p}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Actions */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Действия</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Navigation group */}
+          <div>
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Навигация
+            </span>
+            <div className="flex flex-wrap gap-3 mt-2">
+              <Button variant="outline" size="sm" asChild>
+                <Link to={`/admin/plugins/${id}/config`}>
+                  <Settings className="mr-1.5 h-4 w-4" />
+                  Настроить
+                </Link>
+              </Button>
+
+              <Button variant="outline" size="sm" asChild>
+                <Link to={`/admin/plugins/${id}/permissions`}>
+                  <Shield className="mr-1.5 h-4 w-4" />
+                  Права команд
+                </Link>
+              </Button>
+
+              <Button variant="outline" size="sm" asChild>
+                <Link to={`/admin/plugins/${id}/plugin-permissions`}>
+                  <Lock className="mr-1.5 h-4 w-4" />
+                  Права плагина
+                </Link>
+              </Button>
+
+              <Button variant="outline" size="sm" asChild>
+                <Link to={`/admin/plugins/${id}/versions`}>
+                  <History className="mr-1.5 h-4 w-4" />
+                  Версии
+                </Link>
+              </Button>
             </div>
           </div>
-        )}
-      </div>
 
-      {}
-      <div className="flex flex-wrap gap-3">
-        <button
-          onClick={handleToggle}
-          disabled={actionLoading}
-          className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50 transition-colors"
-        >
-          {plugin.status === 'active' ? 'Отключить' : 'Включить'}
-        </button>
-        <Link
-          to={`/admin/plugins/${id}/config`}
-          className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors"
-        >
-          Настроить
-        </Link>
-        <Link
-          to={`/admin/plugins/${id}/permissions`}
-          className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors"
-        >
-          Права команд
-        </Link>
-        <Link
-          to={`/admin/plugins/${id}/plugin-permissions`}
-          className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors"
-        >
-          Права плагина
-        </Link>
-        <Link
-          to={`/admin/plugins/${id}/versions`}
-          className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors"
-        >
-          Версии
-        </Link>
-        <button
-          onClick={() => setShowUpdate((v) => !v)}
-          className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors"
-        >
-          Обновить .wasm
-        </button>
-        <button
-          onClick={() => setShowDelete(true)}
-          className="px-4 py-2 border border-red-300 text-red-600 rounded-lg text-sm hover:bg-red-50 transition-colors"
-        >
-          Удалить
-        </button>
-      </div>
+          <Separator />
 
-      {}
-      {showUpdate && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="font-medium mb-4">Загрузить новый .wasm</h3>
-          <WasmUploader onFile={handleUpdate} loading={actionLoading} />
-          <button
-            onClick={() => setShowUpdate(false)}
-            className="mt-3 text-sm text-gray-500 hover:text-gray-700"
-          >
-            Отмена
-          </button>
-        </div>
-      )}
+          {/* Management group */}
+          <div>
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Управление
+            </span>
+            <div className="flex flex-wrap gap-3 mt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleToggle}
+                disabled={actionLoading}
+              >
+                <Power className="mr-1.5 h-4 w-4" />
+                {plugin.status === 'active' ? 'Отключить' : 'Включить'}
+              </Button>
 
-      {}
-      {showDelete && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-6">
-          <p className="text-sm text-red-800 mb-4">
-            Вы уверены, что хотите удалить <strong>{plugin.name || plugin.id}</strong>? Это действие нельзя отменить.
-          </p>
-          <div className="flex gap-3">
-            <button
-              onClick={handleDelete}
-              disabled={actionLoading}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 disabled:opacity-50 transition-colors"
-            >
-              {actionLoading ? 'Удаление...' : 'Подтвердить удаление'}
-            </button>
-            <button
-              onClick={() => setShowDelete(false)}
-              disabled={actionLoading}
-              className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-white transition-colors"
-            >
-              Отмена
-            </button>
+              {/* Update .wasm dialog */}
+              <Dialog open={showUpdate} onOpenChange={setShowUpdate}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <Upload className="mr-1.5 h-4 w-4" />
+                    Обновить .wasm
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Загрузить новый .wasm</DialogTitle>
+                    <DialogDescription>
+                      Выберите файл .wasm для обновления плагина{' '}
+                      <strong>{plugin.name || plugin.id}</strong>.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <WasmUploader onFile={handleUpdate} loading={actionLoading} />
+                </DialogContent>
+              </Dialog>
+
+              {/* Delete alert dialog */}
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" size="sm">
+                    <Trash2 className="mr-1.5 h-4 w-4" />
+                    Удалить
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Удалить плагин</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Вы уверены, что хотите удалить{' '}
+                      <strong>{plugin.name || plugin.id}</strong>? Это действие
+                      нельзя отменить.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={actionLoading}>
+                      Отмена
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleDelete}
+                      disabled={actionLoading}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      {actionLoading ? 'Удаление...' : 'Подтвердить удаление'}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
           </div>
-        </div>
-      )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

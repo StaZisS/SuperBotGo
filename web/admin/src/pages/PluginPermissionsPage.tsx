@@ -1,7 +1,16 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { api, PluginDetail as PluginDetailType, PluginPermissionsDetail, HostPermissionInfo, DeclaredPermission } from '../api/client'
-import { toast } from '../components/Toast'
+import { api, PluginDetail as PluginDetailType, PluginPermissionsDetail, HostPermissionInfo, DeclaredPermission } from '@/api/client'
+import { toast } from 'sonner'
+import { ArrowLeft, Database, Globe, Puzzle, Search } from 'lucide-react'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
 
 const CATEGORY_LABELS: Record<string, string> = {
   database: 'База данных',
@@ -11,6 +20,12 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 const CATEGORY_ORDER = ['database', 'network', 'plugins']
 
+const CATEGORY_ICONS: Record<string, React.ReactNode> = {
+  database: <Database className="h-4 w-4" />,
+  network: <Globe className="h-4 w-4" />,
+  plugins: <Puzzle className="h-4 w-4" />,
+}
+
 export default function PluginPermissionsPage() {
   const { id } = useParams<{ id: string }>()
   const [plugin, setPlugin] = useState<PluginDetailType | null>(null)
@@ -19,6 +34,7 @@ export default function PluginPermissionsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
 
   const load = useCallback(() => {
     if (!id) return
@@ -30,7 +46,7 @@ export default function PluginPermissionsPage() {
         setSelected(new Set(perms.granted))
         setDirty(false)
       })
-      .catch((e: Error) => toast(e.message, 'error'))
+      .catch((e: Error) => toast.error(e.message))
       .finally(() => setLoading(false))
   }, [id])
 
@@ -70,24 +86,71 @@ export default function PluginPermissionsPage() {
     setSaving(true)
     try {
       await api.updatePluginPermissions(id, Array.from(selected))
-      toast('Права сохранены')
+      toast.success('Права сохранены')
       setDirty(false)
     } catch (e: unknown) {
-      toast((e as Error).message, 'error')
+      toast.error((e as Error).message)
     } finally {
       setSaving(false)
     }
   }
 
+  const totalPermissions = useMemo(() => {
+    if (!permDetail) return 0
+    return permDetail.all_available.length + (permDetail.callable_plugins?.length ?? 0)
+  }, [permDetail])
+
+  const grantedCount = selected.size
+
+  const matchesSearch = useCallback(
+    (key: string, description?: string) => {
+      if (!searchQuery) return true
+      const q = searchQuery.toLowerCase()
+      return (
+        key.toLowerCase().includes(q) ||
+        (description?.toLowerCase().includes(q) ?? false)
+      )
+    },
+    [searchQuery],
+  )
+
   if (loading && !permDetail) {
-    return <div className="text-gray-400 py-8 text-center">Загрузка...</div>
+    return (
+      <div className="space-y-6">
+        <div>
+          <Skeleton className="h-4 w-20 mb-3" />
+          <Skeleton className="h-6 w-40 mb-1" />
+          <Skeleton className="h-4 w-32" />
+        </div>
+        <div className="space-y-6">
+          {[1, 2, 3].map((i) => (
+            <Card key={i}>
+              <CardHeader>
+                <Skeleton className="h-4 w-28" />
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {[1, 2].map((j) => (
+                  <div key={j} className="flex items-start gap-3 p-2">
+                    <Skeleton className="h-4 w-4 mt-0.5 shrink-0" />
+                    <div className="space-y-1.5 flex-1">
+                      <Skeleton className="h-4 w-48" />
+                      <Skeleton className="h-3 w-64" />
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    )
   }
 
   if (!permDetail) {
-    return <div className="text-gray-400 py-8 text-center">Плагин не найден</div>
+    return <div className="text-muted-foreground py-8 text-center">Плагин не найден</div>
   }
 
-  const byCategory = useMemo(() => {
+  const byCategory = (() => {
     const map = new Map<string, HostPermissionInfo[]>()
     for (const p of permDetail.all_available) {
       const list = map.get(p.category) || []
@@ -95,9 +158,9 @@ export default function PluginPermissionsPage() {
       map.set(p.category, list)
     }
     return map
-  }, [permDetail])
+  })()
 
-  const callTargets = useMemo(() => {
+  const callTargets = (() => {
     const map = new Map<string, { id: string; name: string; declared?: DeclaredPermission }>()
     for (const cp of permDetail.callable_plugins) {
       const key = `plugins:call:${cp.id}`
@@ -116,151 +179,196 @@ export default function PluginPermissionsPage() {
       }
     }
     return map
-  }, [permDetail, declaredMap])
+  })()
 
   const isDisabled = plugin?.status === 'disabled'
+  const showSearch = totalPermissions >= 6
 
   return (
     <div className="space-y-6">
-      {}
+      {/* Header */}
       <div>
         <div className="flex items-center gap-3 mb-1">
-          <Link to={`/admin/plugins/${id}`} className="text-gray-400 hover:text-gray-600 text-sm">
-            &larr; Назад
+          <Link
+            to={`/admin/plugins/${id}`}
+            className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground text-sm transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Назад
           </Link>
         </div>
-        <h2 className="text-lg font-semibold">Права плагина</h2>
-        <p className="text-sm text-gray-500">{plugin?.name || id}</p>
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-semibold">Права плагина</h2>
+          <Badge variant="secondary" className="font-normal">
+            Выдано {grantedCount} из {totalPermissions} разрешений
+          </Badge>
+        </div>
+        <p className="text-sm text-muted-foreground">{plugin?.name || id}</p>
       </div>
 
+      {/* Search */}
+      {showSearch && (
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Поиск разрешений..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      )}
+
+      {/* Disabled plugin warning */}
       {isDisabled && permDetail.declared.length === 0 && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-sm text-yellow-800">
+        <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800">
           Плагин отключён. Объявленные разрешения недоступны.
         </div>
       )}
 
-      {}
+      {/* Permission categories */}
       <div className="space-y-6">
         {CATEGORY_ORDER.map((cat) => {
           const perms = byCategory.get(cat)
           if (!perms || perms.length === 0) return null
+
+          const filteredPerms = perms.filter((p) => {
+            const decl = declaredMap.get(p.key)
+            return matchesSearch(p.key, decl?.description || p.description)
+          })
+
+          if (filteredPerms.length === 0) return null
+
           return (
-            <div key={cat} className="bg-white rounded-xl border border-gray-200 p-6">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">
-                {CATEGORY_LABELS[cat] || cat}
-              </h3>
-              <div className="space-y-2">
-                {perms.map((p) => {
-                  const decl = declaredMap.get(p.key)
-                  const required = decl?.required === true
-                  const checked = required || selected.has(p.key)
-                  return (
-                    <label
-                      key={p.key}
-                      className={`flex items-start gap-3 p-2 rounded ${
-                        required ? 'opacity-75' : 'hover:bg-gray-50 cursor-pointer'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        disabled={required}
-                        onChange={() => toggle(p.key)}
-                        className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <div className="min-w-0">
-                        <div className="text-sm font-mono break-all">
-                          {p.key}
-                          {required && (
-                            <span className="ml-2 text-xs text-red-600 font-medium font-sans">
-                              Обязательно
-                            </span>
-                          )}
-                          {decl && !required && (
-                            <span className="ml-2 text-xs text-gray-400 font-sans">
-                              Опционально
-                            </span>
-                          )}
+            <Card key={cat}>
+              <CardHeader>
+                <CardTitle className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+                  {CATEGORY_ICONS[cat]}
+                  {CATEGORY_LABELS[cat] || cat}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {filteredPerms.map((p) => {
+                    const decl = declaredMap.get(p.key)
+                    const required = decl?.required === true
+                    const checked = required || selected.has(p.key)
+                    return (
+                      <Label
+                        key={p.key}
+                        htmlFor={`perm-page-${p.key}`}
+                        className={cn(
+                          'flex items-start gap-3 p-2 rounded font-normal',
+                          required ? 'opacity-75' : 'hover:bg-accent cursor-pointer',
+                        )}
+                      >
+                        <Checkbox
+                          id={`perm-page-${p.key}`}
+                          checked={checked}
+                          disabled={required}
+                          onCheckedChange={() => toggle(p.key)}
+                          className="mt-0.5"
+                        />
+                        <div className="min-w-0">
+                          <div className="text-sm font-mono break-all">
+                            {p.key}
+                            {required && (
+                              <Badge variant="destructive" className="ml-2 font-sans text-xs">
+                                Обязательно
+                              </Badge>
+                            )}
+                            {decl && !required && (
+                              <Badge variant="secondary" className="ml-2 font-sans text-xs">
+                                Опционально
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {decl?.description || p.description}
+                          </div>
                         </div>
-                        <div className="text-xs text-gray-500 mt-0.5">
-                          {decl?.description || p.description}
-                        </div>
-                      </div>
-                    </label>
-                  )
-                })}
-              </div>
-            </div>
+                      </Label>
+                    )
+                  })}
+                </div>
+              </CardContent>
+            </Card>
           )
         })}
 
-        {}
-        {callTargets.size > 0 && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">
-              Вызов других плагинов
-            </h3>
-            <div className="space-y-2">
-              {Array.from(callTargets.entries()).map(([permKey, target]) => {
-                const required = target.declared?.required === true
-                const checked = required || selected.has(permKey)
-                return (
-                  <label
-                    key={permKey}
-                    className={`flex items-start gap-3 p-2 rounded ${
-                      required ? 'opacity-75' : 'hover:bg-gray-50 cursor-pointer'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      disabled={required}
-                      onChange={() => toggle(permKey)}
-                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <div className="min-w-0">
-                      <div className="text-sm font-mono break-all">
-                        {permKey}
-                        {required && (
-                          <span className="ml-2 text-xs text-red-600 font-medium font-sans">
-                            Обязательно
-                          </span>
+        {/* Call targets */}
+        {callTargets.size > 0 && (() => {
+          const filteredTargets = Array.from(callTargets.entries()).filter(
+            ([permKey, target]) =>
+              matchesSearch(permKey, target.declared?.description || `Вызов плагина ${target.name}`),
+          )
+          if (filteredTargets.length === 0) return null
+          return (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+                  <Puzzle className="h-4 w-4" />
+                  Вызов других плагинов
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {filteredTargets.map(([permKey, target]) => {
+                    const required = target.declared?.required === true
+                    const checked = required || selected.has(permKey)
+                    return (
+                      <Label
+                        key={permKey}
+                        htmlFor={`perm-page-${permKey}`}
+                        className={cn(
+                          'flex items-start gap-3 p-2 rounded font-normal',
+                          required ? 'opacity-75' : 'hover:bg-accent cursor-pointer',
                         )}
-                        {target.declared && !required && (
-                          <span className="ml-2 text-xs text-gray-400 font-sans">
-                            Опционально
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        {target.declared?.description || `Вызов плагина ${target.name}`}
-                      </div>
-                    </div>
-                  </label>
-                )
-              })}
-            </div>
-          </div>
-        )}
+                      >
+                        <Checkbox
+                          id={`perm-page-${permKey}`}
+                          checked={checked}
+                          disabled={required}
+                          onCheckedChange={() => toggle(permKey)}
+                          className="mt-0.5"
+                        />
+                        <div className="min-w-0">
+                          <div className="text-sm font-mono break-all">
+                            {permKey}
+                            {required && (
+                              <Badge variant="destructive" className="ml-2 font-sans text-xs">
+                                Обязательно
+                              </Badge>
+                            )}
+                            {target.declared && !required && (
+                              <Badge variant="secondary" className="ml-2 font-sans text-xs">
+                                Опционально
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {target.declared?.description || `Вызов плагина ${target.name}`}
+                          </div>
+                        </div>
+                      </Label>
+                    )
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })()}
       </div>
 
-      {}
+      {/* Actions */}
       <div className="flex gap-3">
-        <button
-          onClick={handleSave}
-          disabled={saving || !dirty}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50 transition-colors"
-        >
+        <Button onClick={handleSave} disabled={saving || !dirty}>
           {saving ? 'Сохранение...' : 'Сохранить'}
-        </button>
+        </Button>
         {dirty && (
-          <button
-            onClick={load}
-            disabled={saving}
-            className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors"
-          >
+          <Button variant="outline" onClick={load} disabled={saving}>
             Отменить изменения
-          </button>
+          </Button>
         )}
       </div>
     </div>

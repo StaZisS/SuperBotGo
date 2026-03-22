@@ -1,5 +1,8 @@
 import { useState, useCallback, type DragEvent } from 'react'
-import { toast } from './Toast'
+import { toast } from 'sonner'
+import { Upload } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 interface Props {
   onFile: (file: File) => void
@@ -14,7 +17,7 @@ export default function WasmUploader({ onFile, loading, accept = '.wasm' }: Prop
     (file: File | undefined) => {
       if (!file) return
       if (!file.name.endsWith('.wasm')) {
-        toast('Поддерживаются только .wasm файлы', 'error')
+        toast.error('Поддерживаются только .wasm файлы')
         return
       }
       onFile(file)
@@ -44,22 +47,33 @@ export default function WasmUploader({ onFile, loading, accept = '.wasm' }: Prop
       }}
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
-      className={`border-2 border-dashed rounded-xl p-8 sm:p-12 text-center transition-colors ${
-        dragOver ? 'border-blue-400 bg-blue-50' : 'border-gray-300 bg-white'
-      } ${loading ? 'opacity-50 pointer-events-none' : ''}`}
+      className={cn(
+        'border-2 border-dashed rounded-xl p-8 sm:p-12 text-center transition-all duration-200',
+        dragOver
+          ? 'border-primary bg-primary/5 ring-4 ring-primary/20 shadow-lg'
+          : 'border-muted-foreground/25 bg-muted/30 hover:border-muted-foreground/40',
+        loading && 'opacity-50 pointer-events-none',
+      )}
     >
-      <div className="text-gray-400 mb-3">
-        <svg className="mx-auto h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 16V4m0 0l-4 4m4-4l4 4M4 20h16" />
-        </svg>
+      <div className="text-muted-foreground mb-3">
+        <Upload
+          className={cn(
+            'mx-auto h-10 w-10 transition-transform duration-200',
+            dragOver && 'scale-125 text-primary',
+          )}
+          strokeWidth={1.5}
+        />
       </div>
-      <p className="text-gray-500 mb-4 text-sm sm:text-base">
+      <p className="text-muted-foreground mb-1 text-sm sm:text-base">
         {loading ? 'Загрузка...' : 'Перетащите .wasm файл сюда или нажмите для выбора'}
       </p>
-      <label className="inline-block px-4 py-2 bg-blue-600 text-white rounded-lg cursor-pointer hover:bg-blue-700 text-sm transition-colors">
-        Выбрать файл
-        <input type="file" accept={accept} onChange={handleChange} className="hidden" />
-      </label>
+      <p className="text-xs text-muted-foreground/60 mb-4">Максимальный размер: .wasm файлы</p>
+      <Button asChild size="sm">
+        <label className="cursor-pointer">
+          Выбрать файл
+          <input type="file" accept={accept} onChange={handleChange} className="hidden" />
+        </label>
+      </Button>
     </div>
   )
 }

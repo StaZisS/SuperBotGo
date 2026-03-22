@@ -1,4 +1,12 @@
 import { useState, type ReactNode } from 'react'
+import { X } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 interface SchemaProperty {
   type?: string
@@ -125,22 +133,18 @@ function FieldRenderer({
   onChange: (v: unknown) => void
   error?: string
 }) {
+  const fieldId = `field-${name}`
+
   const label = (
-    <label className="block text-sm font-medium text-gray-700 mb-1">
+    <Label htmlFor={fieldId} className="mb-1 block">
       {name}
-      {required && <span className="text-red-500 ml-1">*</span>}
-      {prop.description && <span className="text-xs text-gray-400 ml-2">{prop.description}</span>}
-    </label>
+      {required && <span className="text-destructive ml-1">*</span>}
+      {prop.description && <span className="text-xs text-muted-foreground ml-2">{prop.description}</span>}
+    </Label>
   )
 
-  const inputBase =
-    'w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
-  const inputClass = error
-    ? `${inputBase} border-red-400 focus:ring-red-500`
-    : `${inputBase} border-gray-300`
-
   const errorHint = error ? (
-    <p className="mt-1 text-xs text-red-600">{error}</p>
+    <p className="mt-1 text-xs text-destructive">{error}</p>
   ) : null
 
   if (prop.enum) {
@@ -148,10 +152,14 @@ function FieldRenderer({
       <div>
         {label}
         <select
+          id={fieldId}
           value={(value as string) ?? ''}
           onChange={(e) => onChange(e.target.value)}
           disabled={readOnly}
-          className={inputClass}
+          className={cn(
+            'flex h-10 w-full rounded-md border bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+            error ? 'border-destructive focus-visible:ring-destructive' : 'border-input',
+          )}
         >
           <option value="">Select...</option>
           {prop.enum.map((opt) => (
@@ -168,26 +176,16 @@ function FieldRenderer({
   if (prop.type === 'boolean') {
     return (
       <div className="flex items-center gap-3">
-        <button
-          type="button"
-          role="switch"
-          aria-checked={!!value}
+        <Switch
+          id={fieldId}
+          checked={!!value}
+          onCheckedChange={(checked) => onChange(checked)}
           disabled={readOnly}
-          onClick={() => onChange(!value)}
-          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-            value ? 'bg-blue-600' : 'bg-gray-300'
-          } ${readOnly ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-        >
-          <span
-            className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
-              value ? 'translate-x-6' : 'translate-x-1'
-            }`}
-          />
-        </button>
-        <span className="text-sm text-gray-700">
+        />
+        <Label htmlFor={fieldId} className="cursor-pointer">
           {name}
-          {prop.description && <span className="text-xs text-gray-400 ml-2">{prop.description}</span>}
-        </span>
+          {prop.description && <span className="text-xs text-muted-foreground ml-2">{prop.description}</span>}
+        </Label>
       </div>
     )
   }
@@ -196,7 +194,8 @@ function FieldRenderer({
     return (
       <div>
         {label}
-        <input
+        <Input
+          id={fieldId}
           type="number"
           value={(value as number) ?? prop.default ?? ''}
           min={prop.minimum}
@@ -204,7 +203,7 @@ function FieldRenderer({
           step={prop.type === 'integer' ? 1 : undefined}
           disabled={readOnly}
           onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))}
-          className={inputClass}
+          className={cn(error && 'border-destructive focus-visible:ring-destructive')}
         />
         {errorHint}
       </div>
@@ -213,15 +212,19 @@ function FieldRenderer({
 
   if (prop.type === 'object' && prop.properties) {
     return (
-      <fieldset className="border border-gray-200 rounded-lg p-4">
-        <legend className="text-sm font-medium text-gray-700 px-2">{name}</legend>
-        <JsonSchemaForm
-          schema={prop as Schema}
-          value={(value as Record<string, unknown>) ?? {}}
-          onChange={(v) => onChange(v)}
-          readOnly={readOnly}
-        />
-      </fieldset>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium">{name}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <JsonSchemaForm
+            schema={prop as Schema}
+            value={(value as Record<string, unknown>) ?? {}}
+            onChange={(v) => onChange(v)}
+            readOnly={readOnly}
+          />
+        </CardContent>
+      </Card>
     )
   }
 
@@ -244,12 +247,13 @@ function FieldRenderer({
   return (
     <div>
       {label}
-      <input
+      <Input
+        id={fieldId}
         type={isSensitive ? 'password' : 'text'}
         value={(value as string) ?? ''}
         disabled={readOnly}
         onChange={(e) => onChange(e.target.value)}
-        className={inputClass}
+        className={cn(error && 'border-destructive focus-visible:ring-destructive')}
         autoComplete={isSensitive ? 'off' : undefined}
       />
       {errorHint}
@@ -287,24 +291,26 @@ function ArrayStringField({
       {label}
       <div className="flex flex-wrap gap-2 mb-2">
         {arr.map((item, i) => (
-          <span key={i} className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded text-sm">
+          <Badge key={i} variant="secondary" className="gap-1">
             {item}
             {!readOnly && (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon"
+                className="h-4 w-4 p-0 hover:bg-transparent hover:text-destructive"
                 onClick={() => onChange(arr.filter((_, j) => j !== i))}
-                className="text-gray-400 hover:text-red-500 leading-none"
                 aria-label={`Remove ${item}`}
               >
-                &times;
-              </button>
+                <X className="h-3 w-3" />
+              </Button>
             )}
-          </span>
+          </Badge>
         ))}
       </div>
       {!readOnly && (
         <div className="flex gap-2">
-          <input
+          <Input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -314,16 +320,17 @@ function ArrayStringField({
                 addItem()
               }
             }}
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1"
             placeholder="Add item and press Enter"
           />
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             onClick={addItem}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
           >
             Add
-          </button>
+          </Button>
         </div>
       )}
       {error}

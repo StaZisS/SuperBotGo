@@ -1,5 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
-import { api, RuleSchema, RuleParam, RuleParamOption } from '../api/client'
+import { api, RuleSchema, RuleParam, RuleParamOption } from '@/api/client'
+import { cn } from '@/lib/utils'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { Card } from '@/components/ui/card'
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible'
+import { X } from 'lucide-react'
 
 interface Condition {
   kind: 'condition'
@@ -235,57 +244,59 @@ export default function RuleBuilder({
   }, [])
 
   if (!schema) {
-    return <div className="text-sm text-gray-400">Загрузка схемы...</div>
+    return <div className="text-sm text-muted-foreground">Загрузка схемы...</div>
   }
 
+  const activeTab = rawMode ? 'expression' : 'builder'
+
   return (
-    <div>
-      <div className="flex gap-2 mb-3">
-        <button
-          onClick={switchToBuilder}
-          className={`px-3 py-1 text-xs rounded-lg border ${!rawMode ? 'bg-purple-50 border-purple-300 text-purple-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}
-        >
-          Конструктор
-        </button>
-        <button
-          onClick={() => setRawMode(true)}
-          className={`px-3 py-1 text-xs rounded-lg border ${rawMode ? 'bg-purple-50 border-purple-300 text-purple-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}
-        >
-          Выражение
-        </button>
-      </div>
+    <Tabs
+      value={activeTab}
+      onValueChange={(val) => {
+        if (val === 'builder') {
+          switchToBuilder()
+        } else {
+          setRawMode(true)
+        }
+      }}
+    >
+      <TabsList className="mb-3">
+        <TabsTrigger value="builder">Конструктор</TabsTrigger>
+        <TabsTrigger value="expression">Выражение</TabsTrigger>
+      </TabsList>
 
-      {rawMode ? (
-        <div>
-          <textarea
-            value={rawExpr}
-            onChange={(e) => setRawExpr(e.target.value)}
-            placeholder='напр. check("member", "faculty", "engineering") || has_role("ADMIN")'
-            rows={3}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-purple-500 resize-y"
-          />
-          <HelpBlock />
-        </div>
-      ) : root ? (
-        <div>
-          <GroupEditor
-            group={root}
-            schema={schema}
-            fieldValueMap={fieldValueMap}
-            onChange={(g) => updateRoot(() => g)}
-            isRoot
-          />
+      <TabsContent value="expression">
+        <Textarea
+          value={rawExpr}
+          onChange={(e) => setRawExpr(e.target.value)}
+          placeholder='напр. check("member", "faculty", "engineering") || has_role("ADMIN")'
+          rows={3}
+          className="font-mono resize-y"
+        />
+        <HelpBlock />
+      </TabsContent>
 
-          {}
-          <div className="mt-3 p-2 bg-gray-50 rounded-lg">
-            <div className="text-xs text-gray-400 mb-1">Сгенерированное выражение:</div>
-            <code className="text-xs font-mono text-purple-700 break-all">
-              {buildExpression(root, schema) || '(пусто)'}
-            </code>
+      <TabsContent value="builder">
+        {root ? (
+          <div>
+            <GroupEditor
+              group={root}
+              schema={schema}
+              fieldValueMap={fieldValueMap}
+              onChange={(g) => updateRoot(() => g)}
+              isRoot
+            />
+
+            <div className="mt-3 p-2 bg-muted rounded-lg">
+              <div className="text-xs text-muted-foreground mb-1">Сгенерированное выражение:</div>
+              <code className="text-xs font-mono text-primary break-all">
+                {buildExpression(root, schema) || '(пусто)'}
+              </code>
+            </div>
           </div>
-        </div>
-      ) : null}
-    </div>
+        ) : null}
+      </TabsContent>
+    </Tabs>
   )
 }
 
@@ -324,39 +335,45 @@ function GroupEditor({
 
   const borderColor = group.logic === 'AND' ? 'border-blue-200' : 'border-orange-200'
   const bgColor = group.logic === 'AND' ? 'bg-blue-50/30' : 'bg-orange-50/30'
-  const badgeColor = group.logic === 'AND' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'
+  const badgeVariant = group.logic === 'AND' ? 'default' : 'warning'
 
   return (
-    <div className={`border ${borderColor} ${bgColor} rounded-lg p-3 ${isRoot ? '' : 'ml-2'}`}>
-      {}
+    <Card className={cn('p-3', borderColor, bgColor, !isRoot && 'ml-2')}>
       <div className="flex items-center gap-2 mb-2">
         <select
           value={group.logic}
           onChange={(e) => onChange({ ...group, logic: e.target.value as Logic })}
-          className={`px-2 py-0.5 rounded text-xs font-semibold border-0 ${badgeColor}`}
+          className={cn(
+            'h-7 rounded-md border border-input bg-background px-2 text-xs font-semibold',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          )}
         >
           <option value="AND">И (AND)</option>
           <option value="OR">ИЛИ (OR)</option>
         </select>
-        <span className="text-xs text-gray-400">
+        <span className="text-xs text-muted-foreground">
           {group.logic === 'AND' ? 'все условия должны выполняться' : 'хотя бы одно условие'}
         </span>
         {!isRoot && onRemove && (
-          <button onClick={onRemove} className="ml-auto text-gray-300 hover:text-red-500 text-sm">
-            &times;
-          </button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onRemove}
+            className="ml-auto h-6 w-6 text-muted-foreground hover:text-destructive"
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
         )}
       </div>
 
-      {}
       <div className="space-y-1.5">
         {group.items.map((item, i) => (
           <div key={item.id}>
             {i > 0 && (
               <div className="text-center py-0.5">
-                <span className={`text-xs px-1.5 py-0.5 rounded ${badgeColor}`}>
+                <Badge variant={badgeVariant} className="text-xs">
                   {group.logic === 'AND' ? 'И' : 'ИЛИ'}
-                </span>
+                </Badge>
               </div>
             )}
             {item.kind === 'condition' ? (
@@ -387,22 +404,15 @@ function GroupEditor({
         ))}
       </div>
 
-      {}
       <div className="flex gap-2 mt-2">
-        <button
-          onClick={addCondition}
-          className="px-2.5 py-1 text-xs border border-dashed border-gray-300 text-gray-500 rounded hover:border-gray-400 hover:text-gray-700"
-        >
+        <Button variant="outline" size="sm" onClick={addCondition} className="border-dashed text-xs">
           + Условие
-        </button>
-        <button
-          onClick={addSubGroup}
-          className="px-2.5 py-1 text-xs border border-dashed border-gray-300 text-gray-500 rounded hover:border-gray-400 hover:text-gray-700"
-        >
+        </Button>
+        <Button variant="outline" size="sm" onClick={addSubGroup} className="border-dashed text-xs">
           + Группа ({group.logic === 'AND' ? 'ИЛИ' : 'И'})
-        </button>
+        </Button>
       </div>
-    </div>
+    </Card>
   )
 }
 
@@ -428,11 +438,14 @@ function ConditionRow({
   }
 
   return (
-    <div className="flex items-center gap-2 p-2 bg-white rounded border border-gray-200 flex-wrap">
+    <div className="flex items-center gap-2 p-2 bg-background rounded-md border border-border flex-wrap">
       <select
         value={condition.typeId}
         onChange={(e) => onChangeType(e.target.value)}
-        className="px-2 py-1.5 border border-gray-300 rounded text-xs bg-white shrink-0"
+        className={cn(
+          'h-8 rounded-md border border-input bg-background px-2 text-xs shrink-0',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        )}
       >
         {schema.condition_types.map((t) => (
           <option key={t.id} value={t.id}>{t.label}</option>
@@ -451,12 +464,14 @@ function ConditionRow({
       ))}
 
       {onRemove && (
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={onRemove}
-          className="text-gray-300 hover:text-red-500 text-lg leading-none shrink-0 px-1"
+          className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
         >
-          &times;
-        </button>
+          <X className="h-3.5 w-3.5" />
+        </Button>
       )}
     </div>
   )
@@ -482,7 +497,10 @@ function ParamInput({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="px-2 py-1.5 border border-gray-300 rounded text-xs bg-white"
+        className={cn(
+          'h-8 rounded-md border border-input bg-background px-2 text-xs',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        )}
       >
         <option value="">— {param.label} —</option>
         {options.map((o) => (
@@ -498,48 +516,57 @@ function ParamInput({
         <select
           value={options.some((o) => o.value === value) ? value : ''}
           onChange={(e) => { if (e.target.value) onChange(e.target.value) }}
-          className="px-2 py-1.5 border border-gray-300 rounded text-xs bg-white"
+          className={cn(
+            'h-8 rounded-md border border-input bg-background px-2 text-xs',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          )}
         >
           <option value="">— {param.label} —</option>
           {options.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
-        <input
+        <Input
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={param.placeholder ?? ''}
-          className="px-2 py-1.5 border border-gray-300 rounded text-xs flex-1 min-w-0"
+          className="h-8 text-xs flex-1 min-w-0"
         />
       </div>
     )
   }
 
   return (
-    <input
+    <Input
       type="text"
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={param.placeholder ?? param.label}
-      className="px-2 py-1.5 border border-gray-300 rounded text-xs flex-1 min-w-0"
+      className="h-8 text-xs flex-1 min-w-0"
     />
   )
 }
 
 function HelpBlock() {
+  const [open, setOpen] = useState(false)
+
   return (
-    <details className="text-xs text-gray-400 mt-2">
-      <summary className="cursor-pointer hover:text-gray-600">Справка по синтаксису</summary>
-      <div className="mt-2 p-3 bg-gray-50 rounded-lg space-y-1 font-mono text-xs">
-        <div><span className="text-purple-600">user.nationality_type</span>, <span className="text-purple-600">user.funding_type</span>, <span className="text-purple-600">user.education_form</span></div>
-        <div><span className="text-purple-600">user.groups</span>, <span className="text-purple-600">user.roles</span>, <span className="text-purple-600">user.external_id</span></div>
-        <div><span className="text-blue-600">check(relation, obj_type, obj_id)</span> — обход графа</div>
-        <div><span className="text-blue-600">is_member(obj_type, obj_id)</span> — проверка членства</div>
-        <div><span className="text-blue-600">has_role(name)</span>, <span className="text-blue-600">has_any_role(n1, n2)</span></div>
-        <div className="text-gray-500">Операторы: &amp;&amp;, ||, !, ==, !=, in</div>
-        <div className="text-gray-500">Скобки для приоритета: (A &amp;&amp; B) || C</div>
-      </div>
-    </details>
+    <Collapsible open={open} onOpenChange={setOpen} className="mt-2">
+      <CollapsibleTrigger className="text-xs text-muted-foreground hover:text-foreground cursor-pointer">
+        {open ? '- ' : '+ '}Справка по синтаксису
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="mt-2 p-3 bg-muted rounded-lg space-y-1 font-mono text-xs">
+          <div><span className="text-primary">user.nationality_type</span>, <span className="text-primary">user.funding_type</span>, <span className="text-primary">user.education_form</span></div>
+          <div><span className="text-primary">user.groups</span>, <span className="text-primary">user.roles</span>, <span className="text-primary">user.external_id</span></div>
+          <div><span className="text-blue-600">check(relation, obj_type, obj_id)</span> — обход графа</div>
+          <div><span className="text-blue-600">is_member(obj_type, obj_id)</span> — проверка членства</div>
+          <div><span className="text-blue-600">has_role(name)</span>, <span className="text-blue-600">has_any_role(n1, n2)</span></div>
+          <div className="text-muted-foreground">Операторы: &amp;&amp;, ||, !, ==, !=, in</div>
+          <div className="text-muted-foreground">Скобки для приоритета: (A &amp;&amp; B) || C</div>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   )
 }

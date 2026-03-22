@@ -1,8 +1,29 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { api, PluginInfo } from '../api/client'
-import PluginStatusBadge from '../components/PluginStatusBadge'
-import { toast } from '../components/Toast'
+import { api, PluginInfo } from '@/api/client'
+import PluginStatusBadge from '@/components/PluginStatusBadge'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from '@/components/ui/select'
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '@/components/ui/table'
+import { Search, Package, Upload, FilterX } from 'lucide-react'
 
 export default function PluginList() {
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
@@ -16,7 +37,7 @@ export default function PluginList() {
     api
       .listPlugins()
       .then(setPlugins)
-      .catch((e: Error) => toast(e.message, 'error'))
+      .catch((e: Error) => toast.error(e.message))
       .finally(() => setLoading(false))
   }, [])
 
@@ -30,102 +51,206 @@ export default function PluginList() {
     })
   }, [plugins, typeFilter, statusFilter, search])
 
+  const filtersActive = search !== '' || typeFilter !== 'all' || statusFilter !== 'all'
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-lg font-semibold">Плагины</h2>
-        <Link
-          to="/admin/plugins/upload"
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors"
-        >
-          Загрузить плагин
-        </Link>
+      {/* Page header */}
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Плагины</h1>
+          <p className="text-muted-foreground mt-1">
+            Управление установленными плагинами бота
+          </p>
+        </div>
+        <Button asChild>
+          <Link to="/admin/plugins/upload">
+            <Upload className="h-4 w-4 mr-2" />
+            Загрузить плагин
+          </Link>
+        </Button>
       </div>
 
-      {}
-      <div className="flex flex-wrap gap-3 mb-4">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Поиск по названию или ID..."
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm w-full sm:w-64 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <select
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
-        >
-          <option value="all">Все типы</option>
-          <option value="go">Go</option>
-          <option value="wasm">Wasm</option>
-        </select>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
-        >
-          <option value="all">Все статусы</option>
-          <option value="active">Активные</option>
-          <option value="disabled">Отключённые</option>
-          <option value="error">С ошибкой</option>
-        </select>
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3 mb-2">
+        <div className="relative w-full sm:w-64">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Поиск по названию или ID..."
+            className="pl-9"
+          />
+        </div>
+
+        <Select value={typeFilter} onValueChange={setTypeFilter}>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder="Все типы" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Все типы</SelectItem>
+            <SelectItem value="go">Go</SelectItem>
+            <SelectItem value="wasm">Wasm</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[170px]">
+            <SelectValue placeholder="Все статусы" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Все статусы</SelectItem>
+            <SelectItem value="active">Активные</SelectItem>
+            <SelectItem value="disabled">Отключённые</SelectItem>
+            <SelectItem value="error">С ошибкой</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
-      {}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
-            <tr>
-              <th className="px-4 py-3 text-left">Название</th>
-              <th className="px-4 py-3 text-left hidden sm:table-cell">Версия</th>
-              <th className="px-4 py-3 text-left">Тип</th>
-              <th className="px-4 py-3 text-left">Статус</th>
-              <th className="px-4 py-3 text-right hidden sm:table-cell">Команды</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {loading && (
-              <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
-                  Загрузка...
-                </td>
-              </tr>
-            )}
-            {!loading && filtered.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
-                  {plugins.length === 0 ? 'Плагины не установлены' : 'Нет плагинов, подходящих под фильтры'}
-                </td>
-              </tr>
-            )}
-            {!loading &&
-              filtered.map((p) => (
-                <tr key={p.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-4 py-3">
-                    <Link to={`/admin/plugins/${p.id}`} className="text-blue-600 hover:underline font-medium">
+      {/* Result count when filters are active */}
+      {!loading && filtersActive && (
+        <p className="text-sm text-muted-foreground mb-4">
+          Найдено: {filtered.length} из {plugins.length}
+        </p>
+      )}
+      {!loading && !filtersActive && <div className="mb-4" />}
+
+      {/* Loading skeleton */}
+      {loading && (
+        <Card>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Название</TableHead>
+                <TableHead className="hidden sm:table-cell">Версия</TableHead>
+                <TableHead>Тип</TableHead>
+                <TableHead>Статус</TableHead>
+                <TableHead className="text-right hidden sm:table-cell">Команды</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <TableRow key={i}>
+                  <TableCell>
+                    <Skeleton className="h-4 w-32" />
+                  </TableCell>
+                  <TableCell className="hidden sm:table-cell">
+                    <Skeleton className="h-4 w-12" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-5 w-14 rounded-full" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-5 w-20 rounded-full" />
+                  </TableCell>
+                  <TableCell className="text-right hidden sm:table-cell">
+                    <Skeleton className="h-4 w-6 ml-auto" />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
+
+      {/* Empty state: no plugins installed at all */}
+      {!loading && plugins.length === 0 && (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-16">
+            <div className="rounded-full bg-muted p-4 mb-4">
+              <Package className="h-8 w-8 text-muted-foreground" />
+            </div>
+            <h3 className="text-lg font-semibold mb-1">Плагины не установлены</h3>
+            <p className="text-sm text-muted-foreground mb-4 text-center max-w-sm">
+              Загрузите первый плагин, чтобы расширить возможности бота
+            </p>
+            <Button asChild>
+              <Link to="/admin/plugins/upload">
+                <Upload className="h-4 w-4 mr-2" />
+                Загрузить плагин
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Empty state: filters match nothing */}
+      {!loading && plugins.length > 0 && filtered.length === 0 && (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-16">
+            <div className="rounded-full bg-muted p-4 mb-4">
+              <FilterX className="h-8 w-8 text-muted-foreground" />
+            </div>
+            <h3 className="text-lg font-semibold mb-1">Ничего не найдено</h3>
+            <p className="text-sm text-muted-foreground mb-4 text-center max-w-sm">
+              Нет плагинов, подходящих под текущие фильтры. Попробуйте изменить параметры поиска.
+            </p>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSearch('')
+                setTypeFilter('all')
+                setStatusFilter('all')
+              }}
+            >
+              Сбросить фильтры
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Plugin table */}
+      {!loading && filtered.length > 0 && (
+        <Card>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Название</TableHead>
+                <TableHead className="hidden sm:table-cell">Версия</TableHead>
+                <TableHead>Тип</TableHead>
+                <TableHead>Статус</TableHead>
+                <TableHead className="text-right hidden sm:table-cell">Команды</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map((p) => (
+                <TableRow key={p.id}>
+                  <TableCell>
+                    <Link
+                      to={`/admin/plugins/${p.id}`}
+                      className="text-primary hover:underline font-medium"
+                    >
                       {p.name || p.id}
                     </Link>
-                  </td>
-                  <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{p.version || '-'}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`px-2 py-0.5 rounded text-xs font-medium ${
-                        p.type === 'wasm' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
-                      }`}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground hidden sm:table-cell">
+                    {p.version || '-'}
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={p.type === 'wasm' ? 'secondary' : 'default'}
+                      className={
+                        p.type === 'wasm'
+                          ? 'bg-purple-100 text-purple-700 hover:bg-purple-100'
+                          : 'bg-blue-100 text-blue-700 hover:bg-blue-100'
+                      }
                     >
                       {p.type}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
                     <PluginStatusBadge status={p.status} />
-                  </td>
-                  <td className="px-4 py-3 text-right text-gray-500 hidden sm:table-cell">{p.commands}</td>
-                </tr>
+                  </TableCell>
+                  <TableCell className="text-right text-muted-foreground hidden sm:table-cell">
+                    {p.commands}
+                  </TableCell>
+                </TableRow>
               ))}
-          </tbody>
-        </table>
-      </div>
+            </TableBody>
+          </Table>
+        </Card>
+      )}
     </div>
   )
 }

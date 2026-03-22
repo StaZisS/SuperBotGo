@@ -1,8 +1,17 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { api, CommandSetting, PluginDetail } from '../api/client'
-import { toast } from '../components/Toast'
-import RuleBuilder from '../components/RuleBuilder'
+import { api, CommandSetting, PluginDetail } from '@/api/client'
+import { toast } from 'sonner'
+import RuleBuilder from '@/components/RuleBuilder'
+import { Card, CardContent } from '@/components/ui/card'
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible'
+import { Switch } from '@/components/ui/switch'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
+import { ChevronRight, ArrowLeft, Shield } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 interface CommandRow {
   name: string
@@ -45,7 +54,7 @@ export default function PluginCommandPermissions() {
         }),
       )
     } catch {
-      toast('Не удалось загрузить плагин', 'error')
+      toast.error('Не удалось загрузить плагин')
     } finally {
       setLoading(false)
     }
@@ -53,25 +62,72 @@ export default function PluginCommandPermissions() {
 
   useEffect(() => { loadData() }, [loadData])
 
-  if (loading) return <div className="text-gray-500 text-sm">Загрузка...</div>
-  if (!plugin) return <div className="text-red-600 text-sm">Плагин не найден</div>
+  const enabledCount = rows.filter((r) => r.enabled).length
+
+  if (loading) {
+    return (
+      <div>
+        <div className="mb-6">
+          <Skeleton className="h-4 w-32 mb-2" />
+          <Skeleton className="h-8 w-64 mb-1" />
+          <Skeleton className="h-4 w-80" />
+        </div>
+        <div className="space-y-4">
+          {[1, 2, 3].map((i) => (
+            <Card key={i}>
+              <div className="flex items-center justify-between p-5">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="h-4 w-4" />
+                  <Skeleton className="h-4 w-28" />
+                  <Skeleton className="h-4 w-48" />
+                </div>
+                <Skeleton className="h-5 w-10 rounded-full" />
+              </div>
+            </Card>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  if (!plugin) return <div className="text-destructive text-sm">Плагин не найден</div>
 
   return (
     <div>
       <div className="mb-6">
-        <Link to={`/admin/plugins/${id}`} className="text-sm text-blue-600 hover:underline">
-          &larr; Назад к {plugin.name || id}
-        </Link>
-        <h1 className="text-2xl font-semibold text-gray-900 mt-2">Права доступа к командам</h1>
-        <p className="text-sm text-gray-500 mt-1">
+        <Button variant="link" asChild className="p-0 h-auto text-sm">
+          <Link to={`/admin/plugins/${id}`}>
+            <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+            Назад к {plugin.name || id}
+          </Link>
+        </Button>
+        <div className="flex items-center gap-3 mt-2">
+          <h1 className="text-2xl font-semibold">Права доступа к командам</h1>
+          {rows.length > 0 && (
+            <Badge variant="secondary" className="font-normal">
+              {enabledCount} из {rows.length} включены
+            </Badge>
+          )}
+        </div>
+        <p className="text-sm text-muted-foreground mt-1">
           Управление доступом к командам <strong>{plugin.name || id}</strong> через политики доступа.
         </p>
       </div>
 
       {rows.length === 0 ? (
-        <div className="bg-white rounded-xl border border-gray-200 p-6 text-center text-gray-500">
-          У этого плагина нет команд.
-        </div>
+        <Card className="p-10">
+          <div className="flex flex-col items-center justify-center text-center">
+            <div className="rounded-full bg-muted p-4 mb-4">
+              <Shield className="h-8 w-8 text-muted-foreground" />
+            </div>
+            <p className="text-sm font-medium text-muted-foreground mb-1">
+              Нет команд
+            </p>
+            <p className="text-xs text-muted-foreground">
+              У этого плагина нет команд
+            </p>
+          </div>
+        </Card>
       ) : (
         <div className="space-y-4">
           {rows.map((row) => (
@@ -105,7 +161,7 @@ function CommandCard({
       await api.setCommandEnabled(pluginId, row.name, !row.enabled)
       onUpdate()
     } catch {
-      toast('Не удалось переключить команду', 'error')
+      toast.error('Не удалось переключить команду')
     } finally {
       setToggling(false)
     }
@@ -116,9 +172,9 @@ function CommandCard({
     try {
       await api.setCommandPolicy(pluginId, row.name, policyExpr)
       onUpdate()
-      toast('Политика сохранена', 'success')
+      toast.success('Политика сохранена')
     } catch {
-      toast('Не удалось сохранить политику', 'error')
+      toast.error('Не удалось сохранить политику')
     } finally {
       setSavingPolicy(false)
     }
@@ -127,71 +183,83 @@ function CommandCard({
   const policyChanged = policyExpr !== row.policyExpression
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200">
-      {}
-      <div
-        className="flex items-center justify-between p-5 cursor-pointer hover:bg-gray-50 rounded-t-xl"
-        onClick={() => setExpanded(!expanded)}
-      >
-        <div className="flex items-center gap-3">
-          <span className={`text-xs transform transition-transform ${expanded ? 'rotate-90' : ''}`}>&#9654;</span>
-          <span className="font-mono text-sm font-medium text-gray-900">/{row.name}</span>
-          {row.description && <span className="text-sm text-gray-500">{row.description}</span>}
-        </div>
-        <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
-          {row.policyExpression && (
-            <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">policy</span>
-          )}
-          <button
-            onClick={handleToggle}
-            disabled={toggling}
-            className={`relative w-9 h-5 rounded-full transition-colors ${
-              row.enabled ? 'bg-blue-600' : 'bg-gray-300'
-            } ${toggling ? 'opacity-50' : ''}`}
-          >
-            <span
-              className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
-                row.enabled ? 'translate-x-4' : ''
-              }`}
-            />
-          </button>
-        </div>
-      </div>
-
-      {}
-      {expanded && (
-        <div className={`border-t border-gray-100 p-5 ${!row.enabled ? 'opacity-50 pointer-events-none' : ''}`}>
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="text-sm font-medium text-gray-700">
-              Политика доступа
-              {row.policyExpression
-                ? <span className="ml-2 text-xs text-purple-600 font-normal">(активна)</span>
-                : <span className="ml-2 text-xs text-gray-400 font-normal">(пусто = доступно всем)</span>
-              }
-            </h4>
-          </div>
-
-          <RuleBuilder expression={policyExpr} onChange={setPolicyExpr} />
-
-          <div className="flex justify-end gap-2 mt-3 pt-3 border-t border-gray-100">
-            {row.policyExpression && (
-              <button
-                onClick={() => setPolicyExpr('')}
-                className="px-3 py-1.5 text-xs border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50"
-              >
-                Очистить
-              </button>
-            )}
-            <button
-              onClick={handleSavePolicy}
-              disabled={savingPolicy || !policyChanged}
-              className="px-4 py-1.5 text-xs bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
-            >
-              {savingPolicy ? 'Сохранение...' : 'Сохранить'}
+    <Card>
+      <Collapsible open={expanded} onOpenChange={setExpanded}>
+        <div className="flex items-center justify-between p-5">
+          <CollapsibleTrigger asChild>
+            <button className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity">
+              <ChevronRight
+                className={cn(
+                  'h-4 w-4 text-muted-foreground transition-transform',
+                  expanded && 'rotate-90',
+                )}
+              />
+              <span
+                className={cn(
+                  'inline-block h-2 w-2 rounded-full shrink-0',
+                  row.enabled ? 'bg-green-500' : 'bg-red-500',
+                )}
+              />
+              <span className="font-mono text-sm font-medium">/{row.name}</span>
+              {row.description && (
+                <span className="text-sm text-muted-foreground">{row.description}</span>
+              )}
             </button>
+          </CollapsibleTrigger>
+          <div className="flex items-center gap-3">
+            {row.policyExpression && (
+              <Badge variant="secondary">policy</Badge>
+            )}
+            <Switch
+              checked={row.enabled}
+              onCheckedChange={handleToggle}
+              disabled={toggling}
+            />
           </div>
         </div>
-      )}
-    </div>
+
+        <CollapsibleContent>
+          <Separator />
+          <CardContent
+            className={cn(
+              'p-5',
+              !row.enabled && 'opacity-50 pointer-events-none',
+            )}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-medium">
+                Политика доступа
+                {row.policyExpression
+                  ? <span className="ml-2 text-xs text-primary font-normal">(активна)</span>
+                  : <span className="ml-2 text-xs text-muted-foreground font-normal">(пусто = доступно всем)</span>
+                }
+              </h4>
+            </div>
+
+            <RuleBuilder expression={policyExpr} onChange={setPolicyExpr} />
+
+            <Separator className="my-3" />
+            <div className="flex justify-end gap-2">
+              {row.policyExpression && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPolicyExpr('')}
+                >
+                  Очистить
+                </Button>
+              )}
+              <Button
+                size="sm"
+                onClick={handleSavePolicy}
+                disabled={savingPolicy || !policyChanged}
+              >
+                {savingPolicy ? 'Сохранение...' : 'Сохранить'}
+              </Button>
+            </div>
+          </CardContent>
+        </CollapsibleContent>
+      </Collapsible>
+    </Card>
   )
 }

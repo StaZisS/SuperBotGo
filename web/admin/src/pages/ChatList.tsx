@@ -1,5 +1,18 @@
 import { useEffect, useState } from 'react'
-import { api, ChatReference, BroadcastResult } from '../api/client'
+import { MessageSquare, Send, X, CheckCircle2, XCircle } from 'lucide-react'
+import { api, ChatReference, BroadcastResult } from '@/api/client'
+import { toast } from 'sonner'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import { Separator } from '@/components/ui/separator'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Label } from '@/components/ui/label'
+import { cn } from '@/lib/utils'
 
 const CHANNEL_TYPES = ['', 'TELEGRAM', 'DISCORD'] as const
 const CHAT_KINDS = ['', 'GROUP', 'PRIVATE', 'CHANNEL'] as const
@@ -15,14 +28,18 @@ const channelLabel: Record<string, string> = {
   DISCORD: 'Discord',
 }
 
+const channelVariant: Record<string, 'default' | 'secondary' | 'outline'> = {
+  TELEGRAM: 'default',
+  DISCORD: 'secondary',
+}
+
+const MAX_BROADCAST_LENGTH = 4096
+
 export default function ChatList() {
   const [chats, setChats] = useState<ChatReference[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-
   const [filterChannel, setFilterChannel] = useState('')
   const [filterKind, setFilterKind] = useState('')
-
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [broadcastText, setBroadcastText] = useState('')
   const [sending, setSending] = useState(false)
@@ -30,23 +47,19 @@ export default function ChatList() {
 
   const load = async () => {
     setLoading(true)
-    setError('')
     try {
       const params: { channel_type?: string; chat_kind?: string } = {}
       if (filterChannel) params.channel_type = filterChannel
       if (filterKind) params.chat_kind = filterKind
-      const data = await api.listChats(params)
-      setChats(data)
+      setChats(await api.listChats(params))
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to load chats')
+      toast.error(e instanceof Error ? e.message : 'Failed to load chats')
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => {
-    load()
-  }, [filterChannel, filterKind])
+  useEffect(() => { load() }, [filterChannel, filterKind])
 
   const toggleSelect = (id: number) => {
     setSelected((prev) => {
@@ -58,11 +71,8 @@ export default function ChatList() {
   }
 
   const toggleAll = () => {
-    if (selected.size === chats.length) {
-      setSelected(new Set())
-    } else {
-      setSelected(new Set(chats.map((c) => c.id)))
-    }
+    if (selected.size === chats.length) setSelected(new Set())
+    else setSelected(new Set(chats.map((c) => c.id)))
   }
 
   const handleBroadcast = async () => {
@@ -70,185 +80,283 @@ export default function ChatList() {
     setSending(true)
     setResults(null)
     try {
-      const res = await api.broadcast(Array.from(selected), broadcastText.trim())
-      setResults(res)
+      setResults(await api.broadcast(Array.from(selected), broadcastText.trim()))
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Broadcast failed')
+      toast.error(e instanceof Error ? e.message : 'Broadcast failed')
     } finally {
       setSending(false)
     }
   }
 
+  const sentCount = results?.filter((r) => r.status === 'sent').length ?? 0
+  const totalCount = results?.length ?? 0
+
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold text-gray-900">Чаты</h1>
-
-      {/* Filters */}
-      <div className="flex gap-4 items-end">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Мессенджер</label>
-          <select
-            className="border border-gray-300 rounded-md px-3 py-2 text-sm bg-white"
-            value={filterChannel}
-            onChange={(e) => setFilterChannel(e.target.value)}
-          >
-            <option value="">Все</option>
-            {CHANNEL_TYPES.filter(Boolean).map((t) => (
-              <option key={t} value={t}>
-                {channelLabel[t] ?? t}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Тип чата</label>
-          <select
-            className="border border-gray-300 rounded-md px-3 py-2 text-sm bg-white"
-            value={filterKind}
-            onChange={(e) => setFilterKind(e.target.value)}
-          >
-            <option value="">Все</option>
-            {CHAT_KINDS.filter(Boolean).map((k) => (
-              <option key={k} value={k}>
-                {kindLabel[k] ?? k}
-              </option>
-            ))}
-          </select>
-        </div>
+      {/* Page header */}
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Чаты</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Управление чатами и рассылка сообщений
+        </p>
       </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
-          {error}
-        </div>
-      )}
+      {/* Filters in a Card */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex flex-wrap gap-6 items-end">
+            <div className="space-y-2">
+              <Label htmlFor="filter-channel">Мессенджер</Label>
+              <Select
+                value={filterChannel}
+                onValueChange={(v) => setFilterChannel(v === '_all' ? '' : v)}
+              >
+                <SelectTrigger id="filter-channel" className="w-[180px]">
+                  <SelectValue placeholder="Все" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_all">Все</SelectItem>
+                  {CHANNEL_TYPES.filter(Boolean).map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {channelLabel[t] ?? t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="filter-kind">Тип чата</Label>
+              <Select
+                value={filterKind}
+                onValueChange={(v) => setFilterKind(v === '_all' ? '' : v)}
+              >
+                <SelectTrigger id="filter-kind" className="w-[180px]">
+                  <SelectValue placeholder="Все" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_all">Все</SelectItem>
+                  {CHAT_KINDS.filter(Boolean).map((k) => (
+                    <SelectItem key={k} value={k}>
+                      {kindLabel[k] ?? k}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Chat table */}
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-4 py-3 text-left">
-                <input
-                  type="checkbox"
-                  checked={chats.length > 0 && selected.size === chats.length}
-                  onChange={toggleAll}
-                  className="rounded border-gray-300"
-                />
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Название</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Мессенджер</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Тип</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Platform ID</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {loading ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                  Загрузка...
-                </td>
-              </tr>
-            ) : chats.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                  Чаты не найдены
-                </td>
-              </tr>
-            ) : (
-              chats.map((chat) => (
-                <tr
-                  key={chat.id}
-                  className={`hover:bg-gray-50 cursor-pointer ${selected.has(chat.id) ? 'bg-blue-50' : ''}`}
-                  onClick={() => toggleSelect(chat.id)}
-                >
-                  <td className="px-4 py-3">
-                    <input
-                      type="checkbox"
-                      checked={selected.has(chat.id)}
-                      onChange={() => toggleSelect(chat.id)}
-                      onClick={(e) => e.stopPropagation()}
-                      className="rounded border-gray-300"
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-900">{chat.id}</td>
-                  <td className="px-4 py-3 text-sm text-gray-900 font-medium">
-                    {chat.title || <span className="text-gray-400 italic">Без названия</span>}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        chat.channel_type === 'TELEGRAM'
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-indigo-100 text-indigo-800'
-                      }`}
-                    >
-                      {channelLabel[chat.channel_type] ?? chat.channel_type}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                      {kindLabel[chat.chat_kind] ?? chat.chat_kind}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-500 font-mono">{chat.platform_chat_id}</td>
-                </tr>
-              ))
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">Список чатов</CardTitle>
+            {selected.size > 0 && (
+              <Badge variant="secondary">
+                Выбрано: {selected.size}
+              </Badge>
             )}
-          </tbody>
-        </table>
-      </div>
+          </div>
+          {!loading && chats.length > 0 && (
+            <CardDescription>
+              Найдено {chats.length} {chats.length === 1 ? 'чат' : chats.length < 5 ? 'чата' : 'чатов'}
+            </CardDescription>
+          )}
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[40px] pl-4">
+                  <Checkbox
+                    checked={chats.length > 0 && selected.size === chats.length}
+                    onCheckedChange={toggleAll}
+                    disabled={loading || chats.length === 0}
+                  />
+                </TableHead>
+                <TableHead>ID</TableHead>
+                <TableHead>Название</TableHead>
+                <TableHead>Мессенджер</TableHead>
+                <TableHead>Тип</TableHead>
+                <TableHead>Platform ID</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                // Skeleton loading rows
+                Array.from({ length: 5 }).map((_, i) => (
+                  <TableRow key={`skeleton-${i}`}>
+                    <TableCell className="pl-4">
+                      <Skeleton className="h-4 w-4 rounded" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-10" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-32" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-5 w-20 rounded-full" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-5 w-16 rounded-full" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-24" />
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : chats.length === 0 ? (
+                // Empty state
+                <TableRow>
+                  <TableCell colSpan={6} className="h-48">
+                    <div className="flex flex-col items-center justify-center gap-3 text-center">
+                      <div className="rounded-full bg-muted p-3">
+                        <MessageSquare className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">Чаты не найдены</p>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Попробуйте изменить параметры фильтрации или добавьте бота в чат
+                        </p>
+                      </div>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                chats.map((chat) => (
+                  <TableRow
+                    key={chat.id}
+                    className={cn('cursor-pointer', selected.has(chat.id) && 'bg-muted/50')}
+                    data-state={selected.has(chat.id) ? 'selected' : undefined}
+                    onClick={() => toggleSelect(chat.id)}
+                  >
+                    <TableCell className="pl-4">
+                      <Checkbox
+                        checked={selected.has(chat.id)}
+                        onCheckedChange={() => toggleSelect(chat.id)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </TableCell>
+                    <TableCell className="text-sm">{chat.id}</TableCell>
+                    <TableCell className="text-sm font-medium">
+                      {chat.title || <span className="text-muted-foreground italic">Без названия</span>}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={channelVariant[chat.channel_type] ?? 'outline'}>
+                        {channelLabel[chat.channel_type] ?? chat.channel_type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">
+                        {kindLabel[chat.chat_kind] ?? chat.chat_kind}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground font-mono">
+                      {chat.platform_chat_id}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
       {/* Broadcast panel */}
       {selected.size > 0 && (
-        <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-4">
-          <h2 className="text-lg font-medium text-gray-900">
-            Рассылка ({selected.size} {selected.size === 1 ? 'чат' : selected.size < 5 ? 'чата' : 'чатов'})
-          </h2>
-          <textarea
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm min-h-[120px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            placeholder="Введите текст сообщения..."
-            value={broadcastText}
-            onChange={(e) => setBroadcastText(e.target.value)}
-          />
-          <div className="flex items-center gap-4">
-            <button
-              className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Send className="h-4 w-4" />
+              Рассылка ({selected.size} {selected.size === 1 ? 'чат' : selected.size < 5 ? 'чата' : 'чатов'})
+            </CardTitle>
+            <CardDescription>
+              Сообщение будет отправлено во все выбранные чаты
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Textarea
+                placeholder="Введите текст сообщения..."
+                className="min-h-[120px]"
+                value={broadcastText}
+                onChange={(e) => setBroadcastText(e.target.value)}
+                maxLength={MAX_BROADCAST_LENGTH}
+              />
+              <div className="flex justify-end">
+                <span
+                  className={cn(
+                    'text-xs tabular-nums',
+                    broadcastText.length > MAX_BROADCAST_LENGTH * 0.9
+                      ? 'text-destructive'
+                      : 'text-muted-foreground',
+                  )}
+                >
+                  {broadcastText.length} / {MAX_BROADCAST_LENGTH}
+                </span>
+              </div>
+            </div>
+
+            {results && (
+              <>
+                <Separator />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-medium">Результат рассылки</h3>
+                    <Badge variant={sentCount === totalCount ? 'default' : 'secondary'}>
+                      Отправлено {sentCount} из {totalCount}
+                    </Badge>
+                  </div>
+                  <div className="space-y-1">
+                    {results.map((r, i) => (
+                      <div
+                        key={i}
+                        className={cn(
+                          'flex items-center gap-2 text-sm px-3 py-2 rounded-md',
+                          r.status === 'sent'
+                            ? 'bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400'
+                            : 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400',
+                        )}
+                      >
+                        {r.status === 'sent' ? (
+                          <CheckCircle2 className="h-4 w-4 shrink-0" />
+                        ) : (
+                          <XCircle className="h-4 w-4 shrink-0" />
+                        )}
+                        <span>
+                          Chat #{r.chat_id} ({r.channel_type}):{' '}
+                          {r.status === 'sent' ? 'Отправлено' : `Ошибка: ${r.error}`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </CardContent>
+          <CardFooter className="gap-3">
+            <Button
               disabled={!broadcastText.trim() || sending}
               onClick={handleBroadcast}
             >
+              <Send className="h-4 w-4 mr-2" />
               {sending ? 'Отправка...' : 'Отправить'}
-            </button>
-            <button
-              className="text-gray-600 hover:text-gray-900 text-sm"
+            </Button>
+            <Button
+              variant="ghost"
               onClick={() => {
                 setSelected(new Set())
                 setResults(null)
               }}
             >
+              <X className="h-4 w-4 mr-2" />
               Отменить выбор
-            </button>
-          </div>
-
-          {results && (
-            <div className="space-y-2">
-              <h3 className="text-sm font-medium text-gray-700">Результат рассылки:</h3>
-              <div className="space-y-1">
-                {results.map((r, i) => (
-                  <div
-                    key={i}
-                    className={`text-sm px-3 py-2 rounded ${
-                      r.status === 'sent' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                    }`}
-                  >
-                    Chat #{r.chat_id} ({r.channel_type}): {r.status === 'sent' ? 'Отправлено' : `Ошибка: ${r.error}`}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+            </Button>
+          </CardFooter>
+        </Card>
       )}
     </div>
   )

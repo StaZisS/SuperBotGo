@@ -1,9 +1,66 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api, PluginMeta } from '../api/client'
-import WasmUploader from '../components/WasmUploader'
-import PermissionsPanel from '../components/PermissionsPanel'
-import { toast } from '../components/Toast'
+import { Info } from 'lucide-react'
+import { api, PluginMeta } from '@/api/client'
+import WasmUploader from '@/components/WasmUploader'
+import PermissionsPanel from '@/components/PermissionsPanel'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+} from '@/components/ui/card'
+import { cn } from '@/lib/utils'
+
+const steps = [
+  { num: 1, label: 'Загрузка файла' },
+  { num: 2, label: 'Проверка метаданных' },
+  { num: 3, label: 'Установка' },
+]
+
+function StepIndicator({ current }: { current: number }) {
+  return (
+    <div className="flex items-center justify-center mb-8">
+      {steps.map((step, i) => (
+        <div key={step.num} className="flex items-center">
+          <div className="flex flex-col items-center">
+            <div
+              className={cn(
+                'flex items-center justify-center w-8 h-8 rounded-full border-2 text-sm font-semibold transition-colors',
+                current >= step.num
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-muted-foreground/30 text-muted-foreground',
+              )}
+            >
+              {step.num}
+            </div>
+            <span
+              className={cn(
+                'text-xs mt-1.5 whitespace-nowrap',
+                current >= step.num ? 'text-primary font-medium' : 'text-muted-foreground',
+              )}
+            >
+              {step.label}
+            </span>
+          </div>
+          {i < steps.length - 1 && (
+            <div
+              className={cn(
+                'w-16 sm:w-24 h-0.5 mx-2 mb-5 transition-colors',
+                current > step.num ? 'bg-primary' : 'bg-muted-foreground/20',
+              )}
+            />
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export default function PluginUpload() {
   const navigate = useNavigate()
@@ -11,6 +68,8 @@ export default function PluginUpload() {
   const [installing, setInstalling] = useState(false)
   const [meta, setMeta] = useState<PluginMeta | null>(null)
   const [selectedPerms, setSelectedPerms] = useState<string[]>([])
+
+  const currentStep = installing ? 3 : meta ? 2 : 1
 
   const handleFile = async (file: File) => {
     setUploading(true)
@@ -21,9 +80,9 @@ export default function PluginUpload() {
       const required = result.permissions.filter((p) => p.required).map((p) => p.key)
       setSelectedPerms(required)
       setMeta(result)
-      toast('Файл загружен, проверьте метаданные ниже')
+      toast.success('Файл загружен, проверьте метаданные ниже')
     } catch (e: unknown) {
-      toast((e as Error).message, 'error')
+      toast.error((e as Error).message)
     } finally {
       setUploading(false)
     }
@@ -38,10 +97,10 @@ export default function PluginUpload() {
         config: {},
         permissions: selectedPerms,
       })
-      toast('Плагин успешно установлен')
+      toast.success('Плагин успешно установлен')
       navigate(`/admin/plugins/${meta.id}/config`)
     } catch (e: unknown) {
-      toast((e as Error).message, 'error')
+      toast.error((e as Error).message)
     } finally {
       setInstalling(false)
     }
@@ -54,79 +113,88 @@ export default function PluginUpload() {
 
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-6">Загрузка плагина</h2>
+      <div className="mb-6">
+        <h2 className="text-lg font-semibold">Загрузка плагина</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Загрузите .wasm файл для установки нового плагина
+        </p>
+      </div>
+
+      <StepIndicator current={currentStep} />
 
       {!meta && <WasmUploader onFile={handleFile} loading={uploading} />}
 
       {meta && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
-          {}
-          <div>
-            <h3 className="font-semibold text-lg">{meta.name}</h3>
-            <p className="text-sm text-gray-500">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-2xl font-bold">{meta.name}</CardTitle>
+            <CardDescription className="text-sm">
               {meta.id} &middot; v{meta.version}
-            </p>
+            </CardDescription>
             {meta.wasm_hash && (
-              <p className="text-xs text-gray-400 font-mono mt-1 truncate">
+              <Badge variant="secondary" className="w-fit font-mono text-xs truncate max-w-full">
                 SHA: {meta.wasm_hash}
-              </p>
+              </Badge>
             )}
-          </div>
+          </CardHeader>
 
-          {}
-          {meta.commands.length > 0 && (
-            <div>
-              <h4 className="text-sm font-medium text-gray-700 mb-2">
-                Команды ({meta.commands.length})
-              </h4>
-              <div className="space-y-1">
-                {meta.commands.map((cmd) => (
-                  <div key={cmd.name} className="flex items-center gap-3 text-sm p-2 bg-gray-50 rounded">
-                    <span className="font-mono text-blue-600 shrink-0">/{cmd.name}</span>
-                    <span className="text-gray-500 min-w-0 truncate">{cmd.description}</span>
-                    {cmd.min_role && (
-                      <span className="ml-auto text-xs text-gray-400 shrink-0">{cmd.min_role}</span>
-                    )}
-                  </div>
-                ))}
+          <CardContent className="space-y-6">
+            {meta.commands.length > 0 && (
+              <div>
+                <h4 className="text-sm font-medium text-muted-foreground mb-2">
+                  Команды ({meta.commands.length})
+                </h4>
+                <div className="space-y-1">
+                  {meta.commands.map((cmd) => (
+                    <div
+                      key={cmd.name}
+                      className="flex items-center gap-3 text-sm p-2 bg-muted/50 rounded"
+                    >
+                      <span className="font-mono text-primary shrink-0">/{cmd.name}</span>
+                      <span className="text-muted-foreground min-w-0 truncate">
+                        {cmd.description}
+                      </span>
+                      {cmd.min_role && (
+                        <Badge variant="outline" className="ml-auto shrink-0">
+                          {cmd.min_role}
+                        </Badge>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {}
-          {meta.permissions.length > 0 && (
-            <PermissionsPanel
-              permissions={meta.permissions}
-              selected={selectedPerms}
-              onChange={setSelectedPerms}
-            />
-          )}
+            {meta.permissions.length > 0 && (
+              <PermissionsPanel
+                permissions={meta.permissions}
+                selected={selectedPerms}
+                onChange={setSelectedPerms}
+              />
+            )}
 
-          {}
-          {meta.config_schema && Object.keys(meta.config_schema).length > 0 && (
-            <p className="text-sm text-gray-500 bg-blue-50 border border-blue-100 rounded-lg p-3">
-              У этого плагина есть параметры конфигурации. Вы можете настроить их после установки.
-            </p>
-          )}
+            {meta.config_schema && Object.keys(meta.config_schema).length > 0 && (
+              <Card className="border-blue-200 bg-blue-50/50">
+                <CardContent className="flex items-start gap-3 p-4">
+                  <Info className="h-5 w-5 text-blue-500 mt-0.5 shrink-0" />
+                  <p className="text-sm text-blue-700">
+                    У этого плагина есть параметры конфигурации. Вы можете настроить их после
+                    установки.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+          </CardContent>
 
-          {}
-          <div className="flex gap-3 pt-2">
-            <button
-              onClick={handleInstall}
-              disabled={installing}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50 transition-colors"
-            >
+          <CardFooter className="gap-3">
+            <Button onClick={handleInstall} disabled={installing}>
               {installing ? 'Установка...' : 'Установить'}
-            </button>
-            <button
-              onClick={handleReset}
-              disabled={installing}
-              className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50"
-            >
+            </Button>
+            <Button variant="outline" onClick={handleReset} disabled={installing}>
               Отмена
-            </button>
-          </div>
-        </div>
+            </Button>
+          </CardFooter>
+        </Card>
       )}
     </div>
   )
