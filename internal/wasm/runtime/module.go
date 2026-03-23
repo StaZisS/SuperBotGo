@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"time"
@@ -15,11 +16,23 @@ import (
 	"github.com/tetratelabs/wazero/sys"
 )
 
+type slogWriter struct {
+	pluginID string
+}
+
+func (w *slogWriter) Write(p []byte) (int, error) {
+	if len(p) > 0 {
+		slog.Warn("plugin stderr", "plugin_id", w.pluginID, "output", string(p))
+	}
+	return len(p), nil
+}
+
 var requiredExports = []string{"alloc"}
 
 type CompiledModule struct {
 	compiled wazero.CompiledModule
 	rt       *Runtime
+	pool     *ModulePool
 	ID       string
 	Version  string
 	Hash     string
@@ -56,7 +69,22 @@ func (r *Runtime) LoadModuleFromFile(ctx context.Context, path string) (*Compile
 	return r.CompileModule(ctx, data)
 }
 
+func (cm *CompiledModule) EnablePool(cfg *PoolConfig) {
+	if cm.pool != nil {
+		cm.pool.Close()
+	}
+	cm.pool = NewModulePool(cm, cfg)
+}
+
+func (cm *CompiledModule) Pool() *ModulePool {
+	return cm.pool
+}
+
 func (cm *CompiledModule) Close(ctx context.Context) error {
+	if cm.pool != nil {
+		cm.pool.Close()
+		cm.pool = nil
+	}
 	return cm.compiled.Close(ctx)
 }
 
@@ -65,11 +93,24 @@ func (cm *CompiledModule) RunAction(ctx context.Context, action string, input []
 }
 
 func (cm *CompiledModule) RunActionWithConfig(ctx context.Context, action string, input []byte, configJSON []byte) ([]byte, error) {
-	timeout := time.Duration(cm.rt.config.DefaultTimeoutSeconds) * time.Second
+	if cm.pool != nil {
+		return cm.pool.Execute(ctx, action, input, configJSON)
+	}
+
+	return cm.runActionDirect(ctx, action, input, configJSON)
+}
+
+func (cm *CompiledModule) runActionDirect(ctx context.Context, action string, input []byte, configJSON []byte) ([]byte, error) {
+	timeoutSec := pluginTimeoutFromContext(ctx, cm.rt.config.DefaultTimeoutSeconds)
+	timeout := time.Duration(timeoutSec) * time.Second
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	ctx = context.WithValue(ctx, PluginIDKey{}, cm.ID)
+
+	for _, hook := range cm.rt.contextHooks {
+		ctx = hook(ctx, cm.ID)
+	}
 
 	start := time.Now()
 	status := "ok"
@@ -95,10 +136,17 @@ func (cm *CompiledModule) RunActionWithConfig(ctx context.Context, action string
 		stdin = bytes.NewReader(nil)
 	}
 
+	var stderr io.Writer = io.Discard
+	if cm.ID != "" {
+		stderr = &slogWriter{pluginID: cm.ID}
+	}
+
 	modCfg := wazero.NewModuleConfig().
 		WithEnv("PLUGIN_ACTION", action).
 		WithStdin(stdin).
 		WithStdout(&stdout).
+		WithStderr(stderr).
+		WithFSConfig(wazero.NewFSConfig()).
 		WithName("")
 
 	if len(configJSON) > 0 {
@@ -156,6 +204,41 @@ func (cm *CompiledModule) CallConfigure(ctx context.Context, configJSON []byte) 
 		if json.Unmarshal(data, &errResp) == nil && errResp.Error != "" {
 			return fmt.Errorf("configure error: %s", errResp.Error)
 		}
+	}
+
+	return nil
+}
+
+func (cm *CompiledModule) CallMigrate(ctx context.Context, oldVersion, newVersion string) error {
+	input, err := json.Marshal(struct {
+		OldVersion string `json:"old_version"`
+		NewVersion string `json:"new_version"`
+	}{
+		OldVersion: oldVersion,
+		NewVersion: newVersion,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal migrate input: %w", err)
+	}
+
+	data, err := cm.RunAction(ctx, ActionMigrate, input)
+	if err != nil {
+		return fmt.Errorf("call migrate: %w", err)
+	}
+
+	if len(data) == 0 {
+		return nil
+	}
+
+	var resp struct {
+		Status  string `json:"status"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil
+	}
+	if resp.Status == "error" && resp.Message != "" {
+		return fmt.Errorf("migrate error: %s", resp.Message)
 	}
 
 	return nil

@@ -38,7 +38,9 @@ import (
 	"SuperBotGo/internal/trigger"
 	"SuperBotGo/internal/user"
 	"SuperBotGo/internal/wasm/adapter"
+	"SuperBotGo/internal/wasm/eventbus"
 	"SuperBotGo/internal/wasm/hostapi"
+	"SuperBotGo/internal/wasm/registry"
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -80,6 +82,11 @@ func main() {
 	hostAPI := hostapi.NewHostAPI(hostapi.Dependencies{})
 	hostAPI.SetMetrics(m)
 
+	ebMetrics := eventbus.NewMetrics()
+	pluginEventBus := eventbus.New(nil, ebMetrics)
+	hostAPI.SetEventBus(pluginEventBus)
+	logger.Info("plugin event bus initialised with at-least-once delivery")
+
 	if err := hostAPI.RegisterHostModule(wasmCtx, rt); err != nil {
 		logger.Error("failed to register wasm host module", slog.Any("error", err))
 		os.Exit(1)
@@ -98,8 +105,11 @@ func main() {
 		return senderAPI.ReplyToChat(ctx, channelType, chatID, msg)
 	})
 
+	pluginRegistry := registry.NewPluginRegistry()
+
 	wasmLoader := adapter.NewLoader(rt, hostAPI, wasmSendFunc)
 	wasmLoader.SetMetrics(m)
+	wasmLoader.SetRegistry(pluginRegistry)
 
 	triggerRegistry := trigger.NewRegistry()
 	wasmLoader.SetTriggerRegistry(triggerRegistry)

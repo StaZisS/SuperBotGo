@@ -40,6 +40,12 @@ type Plugin struct {
 	// OnEvent is the fallback event handler for triggers that don't have
 	// their own Handler. If a Trigger has a Handler, it takes priority.
 	OnEvent func(ctx *EventContext) error
+
+	// Migrate is called when the host detects a version change during plugin
+	// reload. The handler receives a MigrateContext with the old and new
+	// version strings plus access to the KV store for data transformation.
+	// If nil, migration is a silent no-op (success).
+	Migrate func(ctx *MigrateContext) error
 }
 
 // TriggerType identifies the kind of trigger.

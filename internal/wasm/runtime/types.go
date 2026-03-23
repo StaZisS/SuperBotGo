@@ -6,6 +6,8 @@ type PluginIDKey struct{}
 
 const MaxSupportedSDKVersion = 1
 
+const ActionMigrate = "migrate"
+
 type PluginMeta struct {
 	ID           string          `json:"id"`
 	Name         string          `json:"name"`
@@ -15,6 +17,12 @@ type PluginMeta struct {
 	Triggers     []TriggerDef    `json:"triggers,omitempty"`
 	Permissions  []PermissionDef `json:"permissions,omitempty"`
 	ConfigSchema json.RawMessage `json:"config_schema,omitempty"`
+	Dependencies []DependencyDef `json:"dependencies,omitempty"`
+}
+
+type DependencyDef struct {
+	PluginID          string `json:"plugin"`
+	VersionConstraint string `json:"version"`
 }
 
 type TriggerDef struct {

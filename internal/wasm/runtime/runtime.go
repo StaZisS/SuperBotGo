@@ -11,11 +11,14 @@ import (
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
 
+type ContextHook func(ctx context.Context, pluginID string) context.Context
+
 type Runtime struct {
-	engine  wazero.Runtime
-	cache   wazero.CompilationCache
-	config  Config
-	metrics *metrics.Metrics
+	engine       wazero.Runtime
+	cache        wazero.CompilationCache
+	config       Config
+	metrics      *metrics.Metrics
+	contextHooks []ContextHook
 }
 
 func (r *Runtime) SetMetrics(m *metrics.Metrics) {
@@ -51,6 +54,10 @@ func NewRuntime(ctx context.Context, cfg Config) (*Runtime, error) {
 		cache:  cache,
 		config: cfg,
 	}, nil
+}
+
+func (r *Runtime) AddContextHook(hook ContextHook) {
+	r.contextHooks = append(r.contextHooks, hook)
 }
 
 func (r *Runtime) Engine() wazero.Runtime {

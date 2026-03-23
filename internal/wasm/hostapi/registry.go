@@ -18,6 +18,8 @@ func AllHostPermissions() []PermissionInfo {
 		{Key: "triggers:http", Description: "Прием HTTP-запросов (webhooks, API)", Category: "triggers"},
 		{Key: "triggers:cron", Description: "Запуск по расписанию (cron)", Category: "triggers"},
 		{Key: "triggers:events", Description: "Подписка на события других плагинов", Category: "triggers"},
+		{Key: "kv:read", Description: "Чтение из key-value хранилища (kv_get, kv_list)", Category: "kv"},
+		{Key: "kv:write", Description: "Запись в key-value хранилище (kv_set, kv_delete)", Category: "kv"},
 	}
 }
 

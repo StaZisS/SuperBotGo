@@ -5,25 +5,42 @@ package wasmplugin
 import "unsafe"
 
 // ---------------------------------------------------------------------------
-// Bump allocator — exported so the host can write into module memory.
+// Arena allocator — exported so the host can write into module memory.
+//
+// Each WASM execution is a fresh module instance, so the arena only needs to
+// be safe within a single execution. The allocator:
+//   - Uses a 256 KB heap (up from 64 KB).
+//   - Aligns all allocations to 8 bytes.
+//   - Returns 0 (null) when the heap is exhausted instead of silently
+//     wrapping around — the host must check for a null return.
+//   - Provides an explicit alloc_reset export that clears all allocations
+//     (useful if instance pooling is ever implemented).
 // ---------------------------------------------------------------------------
 
-var heapBuf [65536]byte
+const heapSize = 262144 // 256 KB
+
+var heapBuf [heapSize]byte
 var heapOffset uint32
 
 //go:wasmexport alloc
 func alloc(size uint32) uint32 {
-	// Align to 4 bytes.
-	aligned := (heapOffset + 3) & ^uint32(3)
-	if aligned+size > uint32(len(heapBuf)) {
-		// Reset allocator when out of space.
-		// Safe because the host copies data immediately after alloc.
-		aligned = 0
-		heapOffset = 0
+	if size == 0 {
+		return 0
 	}
-	ptr := aligned
-	heapOffset = aligned + size
-	return uint32(uintptr(unsafe.Pointer(&heapBuf[ptr])))
+	// Align to 8 bytes.
+	aligned := (heapOffset + 7) & ^uint32(7)
+	end := aligned + size
+	if end > heapSize {
+		// Heap exhausted — return null. The host must handle this.
+		return 0
+	}
+	heapOffset = end
+	return uint32(uintptr(unsafe.Pointer(&heapBuf[aligned])))
+}
+
+//go:wasmexport alloc_reset
+func allocReset() {
+	heapOffset = 0
 }
 
 // ptrToBytes returns a Go slice aliasing memory at (ptr, length).

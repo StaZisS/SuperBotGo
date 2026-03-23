@@ -119,6 +119,20 @@ type condCaseDef struct {
 }
 
 // ---------------------------------------------------------------------------
+// migrate protocol
+// ---------------------------------------------------------------------------
+
+type migrateRequest struct {
+	OldVersion string `json:"old_version"`
+	NewVersion string `json:"new_version"`
+}
+
+type migrateResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
 // step_callback protocol
 // ---------------------------------------------------------------------------
 

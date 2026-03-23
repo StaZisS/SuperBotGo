@@ -26,6 +26,9 @@ func writeToMemory(ctx context.Context, mod api.Module, data []byte) (uint32, ui
 		return 0, 0, fmt.Errorf("alloc(%d) returned no results", length)
 	}
 	offset := uint32(results[0])
+	if offset == 0 {
+		return 0, 0, fmt.Errorf("alloc(%d): plugin arena exhausted (returned null)", length)
+	}
 
 	mem := mod.Memory()
 	if mem == nil {

@@ -3,7 +3,6 @@ package hostapi
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -13,10 +12,12 @@ import (
 	"strings"
 	"time"
 
+	wasmrt "SuperBotGo/internal/wasm/runtime"
+
 	"github.com/tetratelabs/wazero/api"
 )
 
-const wasmHTTPTimeout = 30 * time.Second
+var wasmHTTPMaxTimeout = time.Duration(wasmrt.DefaultHostHTTPTimeoutSeconds) * time.Second
 
 func isBlockedHost(rawURL string) bool {
 	u, err := url.Parse(rawURL)
@@ -47,46 +48,36 @@ func isBlockedHost(rawURL string) bool {
 }
 
 type httpRequestPayload struct {
-	Method  string            `json:"method"`
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers,omitempty"`
-	Body    string            `json:"body,omitempty"`
+	Method  string            `json:"method" msgpack:"method"`
+	URL     string            `json:"url" msgpack:"url"`
+	Headers map[string]string `json:"headers,omitempty" msgpack:"headers,omitempty"`
+	Body    string            `json:"body,omitempty" msgpack:"body,omitempty"`
 }
 
 type httpResponsePayload struct {
-	StatusCode int               `json:"status_code"`
-	Headers    map[string]string `json:"headers,omitempty"`
-	Body       string            `json:"body"`
+	StatusCode int               `json:"status_code" msgpack:"status_code"`
+	Headers    map[string]string `json:"headers,omitempty" msgpack:"headers,omitempty"`
+	Body       string            `json:"body" msgpack:"body"`
 }
 
 func (h *HostAPI) httpRequestFunc() api.GoModuleFunc {
 	return func(ctx context.Context, mod api.Module, stack []uint64) {
 		pluginID := pluginIDFromContext(ctx)
-		start := time.Now()
-		status := "ok"
-		defer func() {
-			dur := time.Since(start)
-			if h.metrics != nil {
-				h.metrics.HostAPIDuration.WithLabelValues(pluginID, "http_request").Observe(dur.Seconds())
-				h.metrics.HostAPITotal.WithLabelValues(pluginID, "http_request", status).Inc()
-			}
-			slog.Info("host api call", "plugin_id", pluginID, "function", "http_request", "duration_ms", dur.Milliseconds(), "status", status)
-		}()
 
 		offset := uint32(stack[0])
 		length := uint32(stack[1])
 
-		data, err := readModMemory(mod, offset, length)
+		data, enc, err := readModMemoryAndDetect(mod, offset, length)
 		if err != nil {
-			status = "error"
+			SetHostCallStatus(ctx, "error")
 			writeErrorResult(ctx, mod, stack, err)
 			return
 		}
 
 		var payload httpRequestPayload
-		if err := json.Unmarshal(data, &payload); err != nil {
-			status = "error"
-			writeErrorResult(ctx, mod, stack, err)
+		if err := unmarshalPayload(data, enc, &payload); err != nil {
+			SetHostCallStatus(ctx, "error")
+			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
@@ -95,24 +86,24 @@ func (h *HostAPI) httpRequestFunc() api.GoModuleFunc {
 			requiredPerm = "network:write"
 		}
 		if err := h.perms.CheckPermission(pluginID, requiredPerm); err != nil {
-			status = "error"
-			writeErrorResult(ctx, mod, stack, err)
+			SetHostCallStatus(ctx, "error")
+			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
 		if h.deps.HTTP == nil {
-			status = "error"
-			writeErrorResult(ctx, mod, stack, errDepNotAvailable("HTTP"))
+			SetHostCallStatus(ctx, "error")
+			writeErrorResultWithEnc(ctx, mod, stack, errDepNotAvailable("HTTP"), enc)
 			return
 		}
 
 		if isBlockedHost(payload.URL) {
-			status = "error"
-			writeErrorResult(ctx, mod, stack, fmt.Errorf("requests to internal/private addresses are not allowed"))
+			SetHostCallStatus(ctx, "error")
+			writeErrorResultWithEnc(ctx, mod, stack, fmt.Errorf("requests to internal/private addresses are not allowed"), enc)
 			return
 		}
 
-		reqCtx, cancel := context.WithTimeout(ctx, wasmHTTPTimeout)
+		reqCtx, cancel := context.WithTimeout(ctx, contextAwareTimeout(ctx, wasmHTTPMaxTimeout))
 		defer cancel()
 
 		method := payload.Method
@@ -127,8 +118,8 @@ func (h *HostAPI) httpRequestFunc() api.GoModuleFunc {
 
 		req, err := http.NewRequestWithContext(reqCtx, method, payload.URL, body)
 		if err != nil {
-			status = "error"
-			writeErrorResult(ctx, mod, stack, fmt.Errorf("create request: %w", err))
+			SetHostCallStatus(ctx, "error")
+			writeErrorResultWithEnc(ctx, mod, stack, fmt.Errorf("create request: %w", err), enc)
 			return
 		}
 
@@ -138,8 +129,8 @@ func (h *HostAPI) httpRequestFunc() api.GoModuleFunc {
 
 		resp, err := h.deps.HTTP.Do(req)
 		if err != nil {
-			status = "error"
-			writeErrorResult(ctx, mod, stack, fmt.Errorf("http request: %w", err))
+			SetHostCallStatus(ctx, "error")
+			writeErrorResultWithEnc(ctx, mod, stack, fmt.Errorf("http request: %w", err), enc)
 			return
 		}
 		defer resp.Body.Close()
@@ -160,6 +151,6 @@ func (h *HostAPI) httpRequestFunc() api.GoModuleFunc {
 			Body:       string(respBody),
 		}
 
-		writeJSONResult(ctx, mod, stack, result)
+		writeEncodedResult(ctx, mod, stack, result, enc)
 	}
 }

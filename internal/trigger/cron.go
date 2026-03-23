@@ -9,10 +9,13 @@ import (
 	"time"
 
 	"SuperBotGo/internal/model"
+	wasmrt "SuperBotGo/internal/wasm/runtime"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/robfig/cron/v3"
 )
+
+const cronTriggerTimeout = 30 * time.Second
 
 type cronEntry struct {
 	EntryID     cron.EntryID
@@ -26,6 +29,8 @@ type CronScheduler struct {
 	entries map[string][]cronEntry
 	router  *Router
 	redis   *redis.Client
+
+	running sync.Map
 }
 
 func NewCronScheduler(router *Router) *CronScheduler {
@@ -73,8 +78,13 @@ func (cs *CronScheduler) RemoveAll(pluginID string) {
 
 	for _, e := range cs.entries[pluginID] {
 		cs.cron.Remove(e.EntryID)
+		cs.running.Delete(cronRunKey(pluginID, e.TriggerName))
 	}
 	delete(cs.entries, pluginID)
+}
+
+func cronRunKey(pluginID, triggerName string) string {
+	return pluginID + ":" + triggerName
 }
 
 func (cs *CronScheduler) Start() {
@@ -113,6 +123,16 @@ func (cs *CronScheduler) tryLock(pluginID, triggerName string, fireTime time.Tim
 }
 
 func (cs *CronScheduler) fire(pluginID, triggerName string) {
+	runKey := cronRunKey(pluginID, triggerName)
+	if _, alreadyRunning := cs.running.LoadOrStore(runKey, struct{}{}); alreadyRunning {
+		slog.Warn(fmt.Sprintf("skipping cron trigger %s: previous execution still running", triggerName),
+			"plugin", pluginID,
+			"trigger", triggerName,
+		)
+		return
+	}
+	defer cs.running.Delete(runKey)
+
 	now := time.Now()
 
 	if !cs.tryLock(pluginID, triggerName, now) {
@@ -137,8 +157,9 @@ func (cs *CronScheduler) fire(pluginID, triggerName string) {
 		Data:        data,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), cronTriggerTimeout)
 	defer cancel()
+	ctx = context.WithValue(ctx, wasmrt.PluginTimeoutOverrideKey{}, int(cronTriggerTimeout.Seconds()))
 
 	resp, err := cs.router.RouteEvent(ctx, event)
 	if err != nil {

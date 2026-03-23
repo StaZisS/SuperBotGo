@@ -24,6 +24,8 @@ func Run(p Plugin) {
 		handleEvent(p)
 	case "step_callback":
 		handleStepCallback(p)
+	case "migrate":
+		handleMigrate(p)
 	default:
 		writeEventResponse(eventResponseJSON{Error: "unknown action: " + action})
 	}
@@ -119,6 +121,45 @@ func handleConfigure(p Plugin) {
 			return
 		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// action: migrate
+// ---------------------------------------------------------------------------
+
+func handleMigrate(p Plugin) {
+	data, _ := io.ReadAll(os.Stdin)
+
+	// If no Migrate handler is registered, succeed silently.
+	if p.Migrate == nil {
+		writeMigrateResponse(migrateResponse{Status: "ok"})
+		return
+	}
+
+	var req migrateRequest
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &req); err != nil {
+			writeMigrateResponse(migrateResponse{Status: "error", Message: "failed to parse migrate request: " + err.Error()})
+			return
+		}
+	}
+
+	ctx := &MigrateContext{
+		OldVersion: req.OldVersion,
+		NewVersion: req.NewVersion,
+	}
+
+	if err := p.Migrate(ctx); err != nil {
+		writeMigrateResponse(migrateResponse{Status: "error", Message: err.Error()})
+		return
+	}
+
+	writeMigrateResponse(migrateResponse{Status: "ok"})
+}
+
+func writeMigrateResponse(v migrateResponse) {
+	data, _ := json.Marshal(v)
+	os.Stdout.Write(data)
 }
 
 // ---------------------------------------------------------------------------

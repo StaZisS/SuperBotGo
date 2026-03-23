@@ -9,6 +9,12 @@ type Metrics struct {
 	HostAPITotal    *prometheus.CounterVec
 	HostAPIDuration *prometheus.HistogramVec
 
+	PluginHostCallTotal    *prometheus.CounterVec
+	PluginHostCallDuration *prometheus.HistogramVec
+
+	PluginReloadTotal    *prometheus.CounterVec
+	PluginReloadDuration *prometheus.HistogramVec
+
 	HTTPTriggerTotal    *prometheus.CounterVec
 	HTTPTriggerDuration *prometheus.HistogramVec
 
@@ -39,6 +45,28 @@ func New() *Metrics {
 			Buckets: []float64{.0005, .001, .0025, .005, .01, .025, .05, .1, .25, .5, 1},
 		}, []string{"plugin_id", "function"}),
 
+		PluginHostCallTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "plugin_host_call_total",
+			Help: "Total number of host function calls per plugin, function, and status",
+		}, []string{"plugin_id", "function", "status"}),
+
+		PluginHostCallDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "plugin_host_call_duration_seconds",
+			Help:    "Duration of host function calls per plugin and function",
+			Buckets: []float64{.0005, .001, .0025, .005, .01, .025, .05, .1, .25, .5, 1},
+		}, []string{"plugin_id", "function"}),
+
+		PluginReloadTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "plugin_reload_total",
+			Help: "Total number of plugin reload attempts",
+		}, []string{"plugin_id", "status"}),
+
+		PluginReloadDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "plugin_reload_duration_seconds",
+			Help:    "Duration of plugin reload operations",
+			Buckets: []float64{.01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
+		}, []string{"plugin_id"}),
+
 		HTTPTriggerTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "http_trigger_requests_total",
 			Help: "Total number of HTTP trigger requests",
@@ -61,6 +89,10 @@ func New() *Metrics {
 		m.PluginActionDuration,
 		m.HostAPITotal,
 		m.HostAPIDuration,
+		m.PluginHostCallTotal,
+		m.PluginHostCallDuration,
+		m.PluginReloadTotal,
+		m.PluginReloadDuration,
 		m.HTTPTriggerTotal,
 		m.HTTPTriggerDuration,
 		m.LoadedPluginsGauge,

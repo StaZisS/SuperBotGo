@@ -123,3 +123,17 @@ func (ctx *EventContext) Locale() string {
 	}
 	return "en"
 }
+
+// ---------------------------------------------------------------------------
+// MigrateContext — passed to Plugin.Migrate during version upgrades
+// ---------------------------------------------------------------------------
+
+// MigrateContext provides version information and data access for plugin
+// data migrations. It is passed to the Plugin.Migrate handler when the host
+// detects a version change during reload.
+type MigrateContext struct {
+	// OldVersion is the previously loaded plugin version.
+	OldVersion string
+	// NewVersion is the version being loaded now.
+	NewVersion string
+}

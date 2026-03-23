@@ -146,6 +146,7 @@ func (h *AdminHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/plugins/upload", h.handleUpload)
 	mux.HandleFunc("POST /api/admin/plugins/{id}/install", h.handleInstall)
 	mux.HandleFunc("PUT /api/admin/plugins/{id}/config", h.handleUpdateConfig)
+	mux.HandleFunc("POST /api/admin/plugins/{id}/config/validate", h.handleValidateConfig)
 	mux.HandleFunc("POST /api/admin/plugins/{id}/update", h.handleUpdate)
 	mux.HandleFunc("POST /api/admin/plugins/{id}/disable", h.handleDisable)
 	mux.HandleFunc("POST /api/admin/plugins/{id}/enable", h.handleEnable)
@@ -156,6 +157,9 @@ func (h *AdminHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/plugins/{id}/versions", h.handleListVersions)
 	mux.HandleFunc("POST /api/admin/plugins/{id}/versions/{versionId}/rollback", h.handleRollback)
 	mux.HandleFunc("DELETE /api/admin/plugins/{id}/versions/{versionId}", h.handleDeleteVersion)
+
+	mux.HandleFunc("GET /api/admin/registry", h.requireAuth(h.handleRegistryList))
+	mux.HandleFunc("GET /api/admin/registry/{id}/versions", h.requireAuth(h.handleRegistryVersions))
 }
 
 func validateBlobKey(key string) bool {
@@ -358,6 +362,11 @@ func (h *AdminHandler) handleUpdateConfig(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if err := h.loader.ValidateConfig(pluginID, body.Config); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	record.ConfigJSON = body.Config
 	record.UpdatedAt = time.Now()
 	if err := h.store.SavePlugin(r.Context(), record); err != nil {
@@ -372,6 +381,26 @@ func (h *AdminHandler) handleUpdateConfig(w http.ResponseWriter, r *http.Request
 	h.publish(r.Context(), pubsub.EventConfigChanged, pluginID)
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+func (h *AdminHandler) handleValidateConfig(w http.ResponseWriter, r *http.Request) {
+	pluginID := r.PathValue("id")
+
+	var body struct {
+		Config json.RawMessage `json:"config"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	if err := h.loader.ValidateConfig(pluginID, body.Config); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"valid": "true"})
 }
 
 func (h *AdminHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
