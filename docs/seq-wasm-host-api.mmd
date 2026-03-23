@@ -5,9 +5,11 @@ sequenceDiagram
     participant WP as WasmPlugin<br/>(wasm/adapter/adapter.go)
     participant RT as WASM Runtime<br/>(wasm/runtime/module.go)
     participant WASM as WASM Module<br/>(plugin code)
+    participant RL as RateLimiter<br/>(hostapi/rate_limiter.go)
     participant HostAPI as Host API Functions<br/>(hostapi/)
     participant Perms as Permissions
     participant DB as Database
+    participant KV as KVStore<br/>(hostapi/kv_store.go)
     participant Net as HTTP Client
     participant Sender as SenderAPI
 
@@ -15,6 +17,8 @@ sequenceDiagram
     WP->>WP: json.Marshal(event) -> eventJSON
     WP->>RT: CallHandleEvent(ctx, eventJSON, configJSON)
 
+    RT->>RT: ctx = ContextWithRateLimiter(ctx, pluginID)
+    RT->>RT: ctx = ContextWithTraceID(ctx, traceID)
     RT->>RT: Instantiate WASM module with host functions
     RT->>WASM: Call export "handle_event"(eventPtr, eventLen, configPtr, configLen)
 
@@ -23,6 +27,8 @@ sequenceDiagram
     rect rgb(240, 248, 255)
         Note over WASM, DB: Host API call: db_query
         WASM->>HostAPI: db_query(querySpecPtr, querySpecLen)
+        HostAPI->>RL: Allow("db_query")
+        RL-->>HostAPI: ok
         HostAPI->>Perms: CheckPermission(pluginID, "db:read")
         Perms-->>HostAPI: ok
         HostAPI->>DB: Execute query
@@ -34,8 +40,8 @@ sequenceDiagram
     rect rgb(255, 248, 240)
         Note over WASM, Net: Host API call: http_request
         WASM->>HostAPI: http_request(requestPtr, requestLen)
-        HostAPI->>Perms: CheckPermission(pluginID, "network:read")
-        Perms-->>HostAPI: ok
+        HostAPI->>RL: Allow("http_request")
+        RL-->>HostAPI: ok
         HostAPI->>Net: HTTP GET https://api.example.com/data
         Net-->>HostAPI: response
         HostAPI->>HostAPI: writeModMemory(mod, responseJSON)
@@ -43,8 +49,35 @@ sequenceDiagram
     end
 
     rect rgb(240, 255, 240)
+        Note over WASM, KV: Host API call: kv_set
+        WASM->>HostAPI: kv_set(recordPtr, recordLen)
+        HostAPI->>RL: Allow("kv_set")
+        RL-->>HostAPI: ok
+        HostAPI->>Perms: CheckPermission(pluginID, "kv:write")
+        Perms-->>HostAPI: ok
+        HostAPI->>KV: Set(pluginID, key, value)
+        KV-->>HostAPI: ok
+        HostAPI-->>WASM: (resultPtr, resultLen)
+    end
+
+    rect rgb(248, 240, 255)
+        Note over WASM, KV: Host API call: kv_get
+        WASM->>HostAPI: kv_get(keyPtr, keyLen)
+        HostAPI->>RL: Allow("kv_get")
+        RL-->>HostAPI: ok
+        HostAPI->>Perms: CheckPermission(pluginID, "kv:read")
+        Perms-->>HostAPI: ok
+        HostAPI->>KV: Get(pluginID, key)
+        KV-->>HostAPI: value
+        HostAPI->>HostAPI: writeModMemory(mod, valueJSON)
+        HostAPI-->>WASM: (resultPtr, resultLen)
+    end
+
+    rect rgb(255, 255, 230)
         Note over WASM, DB: Host API call: db_save
         WASM->>HostAPI: db_save(recordPtr, recordLen)
+        HostAPI->>RL: Allow("db_save")
+        RL-->>HostAPI: ok
         HostAPI->>Perms: CheckPermission(pluginID, "db:write")
         Perms-->>HostAPI: ok
         HostAPI->>DB: Upsert record

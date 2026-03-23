@@ -2,11 +2,12 @@ sequenceDiagram
     title Multi-Step Command (e.g. /broadcast)
 
     participant CM as ChannelManager<br/>(channel/manager.go)
-    participant Auth as Authorizer
+    participant PR as PluginRegistry<br/>(plugin/manager.go)
+    participant Auth as Authorizer<br/>(authz/authorizer.go)
+    participant SMA as StateManagerAdapter<br/>(channel/state_adapter.go)
     participant SM as StateManager<br/>(state/manager.go)
     participant Store as DialogStorage<br/>(Redis)
     participant UR as UpdateRouter<br/>(plugin/router.go)
-    participant PM as PluginManager
     participant Plugin as Plugin
     participant Sender as SenderAPI
     participant AR as AdapterRegistry<br/>(channel/registry.go)
@@ -14,18 +15,31 @@ sequenceDiagram
     Note over CM: OnUpdate: TextInput{"/broadcast"}
 
     CM->>CM: handleCommand()
-    CM->>Auth: CheckCommand(userID, "broadcast")
-    Auth-->>CM: ok
 
-    CM->>SM: CancelCommand(ctx, userID)
+    CM->>PR: GetCommandDefinition("broadcast")
+    PR-->>CM: CommandDefinition{Requirements}
+    CM->>PR: GetPluginIDByCommand("broadcast")
+    PR-->>CM: pluginID
+
+    CM->>Auth: CheckCommand(ctx, userID, pluginID, "broadcast", requirements)
+    Auth-->>CM: true, nil
+
+    CM->>SMA: IsPreservesDialog("broadcast")
+    SMA-->>CM: false
+    CM->>SMA: CancelCommand(ctx, userID, channelType)
+    SMA->>SM: CancelCommand(ctx, userID)
     SM->>Store: Delete(ctx, userID)
 
-    CM->>SM: StartCommand(ctx, userID, "broadcast", locale)
+    CM->>SMA: StartCommand(ctx, userID, channelType, "broadcast", locale)
+    SMA->>SM: IsCommandImmediate("broadcast")
+    SM-->>SMA: false (has steps)
+    SMA->>SM: StartCommand(ctx, userID, "broadcast", locale)
     SM->>SM: handler.CreateNewState("broadcast")
     SM->>SM: handler.BuildStepMessage(state, locale)
     Note over SM: First step: "target"<br/>Options: [to_user, to_project]
     SM->>Store: Save(ctx, userID, dialogState)
-    SM-->>CM: StateResult{IsComplete: false, Message: promptMsg}
+    SM-->>SMA: Message{promptMsg}
+    SMA-->>CM: StateResult{IsComplete: false, Message: promptMsg}
 
     CM->>AR: SendToChat(ctx, channelType, chatID, promptMsg)
     Note over AR: → "Choose target:" [to_user] [to_project]
@@ -35,13 +49,15 @@ sequenceDiagram
 
         Note over CM: OnUpdate: CallbackInput{Data: "to_user"}
         CM->>CM: handleInput()
-        CM->>SM: ProcessInput(ctx, userID, CallbackInput{"to_user"}, locale)
+        CM->>SMA: ProcessInput(ctx, userID, channelType, CallbackInput{"to_user"}, locale)
+        SMA->>SM: ProcessInput(ctx, userID, CallbackInput{"to_user"}, locale)
         SM->>Store: Load(ctx, userID)
-        Store-->>SM: DialogState{Step: "target", Params: {}}
+        Store-->>SM: DialogState{CommandName: "broadcast", Params: {}}
         SM->>SM: handler.RestoreState → ProcessInput → BuildStepMessage
         Note over SM: Validates "to_user", Branch → next step: "user_id"
         SM->>Store: Save(ctx, userID, updatedState)
-        SM-->>CM: StateResult{IsComplete: false, Message: "Enter user ID:"}
+        SM-->>SMA: Message, nil (no CommandRequest → incomplete)
+        SMA-->>CM: StateResult{IsComplete: false, Message: "Enter user ID:"}
 
         CM->>AR: SendToChat(ctx, channelType, chatID, msg)
     end
@@ -51,12 +67,14 @@ sequenceDiagram
 
         Note over CM: OnUpdate: TextInput{"12345"}
         CM->>CM: handleInput()
-        CM->>SM: ProcessInput(ctx, userID, TextInput{"12345"}, locale)
+        CM->>SMA: ProcessInput(ctx, userID, channelType, TextInput{"12345"}, locale)
+        SMA->>SM: ProcessInput(ctx, userID, TextInput{"12345"}, locale)
         SM->>Store: Load(ctx, userID)
-        Store-->>SM: DialogState{Step: "user_id", Params: {target: "to_user"}}
+        Store-->>SM: DialogState{Params: {target: "to_user"}}
         SM->>SM: handler.ProcessInput → next step: "message_text"
         SM->>Store: Save(ctx, userID, updatedState)
-        SM-->>CM: StateResult{IsComplete: false, Message: "Enter message:"}
+        SM-->>SMA: Message, nil
+        SMA-->>CM: StateResult{IsComplete: false, Message: "Enter message:"}
 
         CM->>AR: SendToChat(...)
     end
@@ -66,18 +84,21 @@ sequenceDiagram
 
         Note over CM: OnUpdate: TextInput{"Hello everyone!"}
         CM->>CM: handleInput()
-        CM->>SM: ProcessInput(ctx, userID, TextInput{"Hello..."}, locale)
+        CM->>SMA: ProcessInput(ctx, userID, channelType, TextInput{"Hello..."}, locale)
+        SMA->>SM: ProcessInput(ctx, userID, TextInput{"Hello..."}, locale)
         SM->>Store: Load(ctx, userID)
         SM->>SM: handler.ProcessInput → all steps complete
         SM->>Store: Delete(ctx, userID)
-        SM-->>CM: StateResult{IsComplete: true,<br/>Params: {target, user_id, message_text}}
+        SM-->>SMA: Message, &CommandRequest{Params: {target, user_id, message_text}}
+        SMA-->>CM: StateResult{IsComplete: true,<br/>Params: {target, user_id, message_text}}
     end
 
-    Note over CM: Dialog complete → route to plugin
+    Note over CM: handleInput: send message first, then route
 
-    CM->>UR: Route(ctx, CommandRequest{CommandName: "broadcast", Params})
-    UR->>PM: GetByCommand("broadcast")
-    PM-->>UR: Plugin
+    CM->>AR: SendToChat(ctx, channelType, chatID, resultMessage)
+
+    CM->>UR: Route(ctx, CommandRequest{UserID, ChannelType,<br/>ChatID, "broadcast", Params, Locale})
+    UR->>UR: plugins.GetByCommand("broadcast")
     UR->>Plugin: HandleEvent(ctx, messengerEvent)
 
     Plugin->>Sender: Reply(ctx, triggerData, Message)

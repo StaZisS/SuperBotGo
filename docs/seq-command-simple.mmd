@@ -2,38 +2,47 @@ sequenceDiagram
     title Simple Command (no steps)
 
     participant CM as ChannelManager<br/>(channel/manager.go)
-    participant Auth as Authorizer
+    participant PR as PluginRegistry<br/>(plugin/manager.go)
+    participant Auth as Authorizer<br/>(authz/authorizer.go)
+    participant SMA as StateManagerAdapter<br/>(channel/state_adapter.go)
     participant SM as StateManager<br/>(state/manager.go)
-    participant PM as PluginManager<br/>(plugin/manager.go)
     participant UR as UpdateRouter<br/>(plugin/router.go)
     participant Plugin as Plugin
     participant Sender as SenderAPI<br/>(plugin/sender.go)
     participant AR as AdapterRegistry<br/>(channel/registry.go)
 
-    Note over CM: OnUpdate(ctx, channelType, platformUserID,<br/>TextInput{"/help"}, chatID)
+    Note over CM: OnUpdate(ctx, Update{ChannelType, PlatformUserID,<br/>TextInput{"/help"}, ChatID})
     CM->>CM: FindOrCreateUser(channelType, platformUserID)
-    CM->>CM: processUpdate() → input.IsCommand() == true
-    CM->>CM: handleCommand()
+    CM->>CM: processUpdate(ctx, user, channelType, input, chatID, locale)
+    CM->>CM: input.IsCommand() == true → handleCommand()
 
-    CM->>PM: GetCommandDefinition("help")
-    PM-->>CM: CommandDefinition
+    CM->>PR: GetCommandDefinition("help")
+    PR-->>CM: CommandDefinition{Requirements}
 
-    CM->>Auth: CheckCommand(userID, commandDef)
-    Auth-->>CM: ok
+    CM->>PR: GetPluginIDByCommand("help")
+    PR-->>CM: pluginID
 
-    CM->>SM: CancelCommand(ctx, userID)
-    Note over SM: Deletes any active dialog state
+    CM->>Auth: CheckCommand(ctx, userID, pluginID, "help", requirements)
+    Note right of Auth: SubjectContext cache (TTL 30s)<br/>Policy evaluation via expr-lang
+    Auth-->>CM: true, nil
 
-    CM->>SM: StartCommand(ctx, userID, "help", locale)
-    Note over SM: No steps → immediately complete
-    SM-->>CM: StateResult{IsComplete: true, Params: {}}
+    CM->>SMA: IsPreservesDialog("help")
+    SMA-->>CM: false
 
-    CM->>UR: Route(ctx, CommandRequest{CommandName, Params, UserID, ChatID})
-    UR->>PM: GetByCommand("help")
-    PM-->>UR: Plugin
+    CM->>SMA: CancelCommand(ctx, userID, channelType)
+    SMA->>SM: CancelCommand(ctx, userID)
+    SM->>SM: storage.Delete(ctx, userID)
 
+    CM->>SMA: StartCommand(ctx, userID, channelType, "help", locale)
+    SMA->>SM: IsCommandImmediate("help")
+    SM-->>SMA: true (no steps)
+    Note over SMA: Immediate command → return complete
+    SMA-->>CM: StateResult{IsComplete: true, Params: {}}
+
+    CM->>UR: Route(ctx, CommandRequest{UserID, ChannelType,<br/>ChatID, "help", Params, Locale})
+    UR->>UR: plugins.GetByCommand("help")
     UR->>UR: NewMessengerEvent(req, pluginID)
-    UR->>Plugin: HandleEvent(ctx, Event{TriggerType: TriggerMessenger})
+    UR->>Plugin: HandleEvent(ctx, Event{TriggerType: TriggerMessenger,<br/>Data: MessengerTriggerData})
 
     Plugin->>Sender: Reply(ctx, triggerData, Message)
     Sender->>AR: SendToChat(ctx, channelType, chatID, Message)

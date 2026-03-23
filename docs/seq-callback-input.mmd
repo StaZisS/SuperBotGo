@@ -2,10 +2,10 @@ sequenceDiagram
     title Callback Input (button click during active dialog)
 
     participant CM as ChannelManager<br/>(channel/manager.go)
+    participant SMA as StateManagerAdapter<br/>(channel/state_adapter.go)
     participant SM as StateManager<br/>(state/manager.go)
     participant Store as DialogStorage<br/>(Redis)
     participant UR as UpdateRouter<br/>(plugin/router.go)
-    participant PM as PluginManager
     participant Plugin as Plugin
     participant Sender as SenderAPI
     participant AR as AdapterRegistry<br/>(channel/registry.go)
@@ -14,27 +14,31 @@ sequenceDiagram
     CM->>CM: processUpdate() → IsCommand() == false
     CM->>CM: handleInput()
 
-    CM->>SM: ProcessInput(ctx, userID, CallbackInput{"option_a"}, locale)
+    CM->>SMA: ProcessInput(ctx, userID, channelType, CallbackInput{"option_a"}, locale)
+    SMA->>SM: ProcessInput(ctx, userID, CallbackInput{"option_a"}, locale)
     SM->>Store: Load(ctx, userID)
-    Store-->>SM: DialogState{Command: "settings", Step: "language", Params: {}}
+    Store-->>SM: DialogState{CommandName: "settings", Params: {}}
 
     SM->>SM: handler.RestoreState(dialogState)
-    SM->>SM: handler.ProcessInput(state, "option_a")
-    SM->>SM: Validate "option_a" against step options
+    SM->>SM: handler.ProcessInput(userID, state, "option_a")
+    SM->>SM: handler.BuildStepMessage(nextState, locale)
 
     alt More steps remain
-        SM->>SM: handler.BuildStepMessage(nextState, locale)
         SM->>Store: Save(ctx, userID, updatedState)
-        SM-->>CM: StateResult{IsComplete: false, Message: nextPrompt}
+        SM-->>SMA: Message, nil (no CommandRequest → incomplete)
+        SMA-->>CM: StateResult{IsComplete: false, Message: nextPrompt}
 
         CM->>AR: SendToChat(ctx, channelType, chatID, nextPrompt)
     else Dialog complete
         SM->>Store: Delete(ctx, userID)
-        SM-->>CM: StateResult{IsComplete: true, Params: {language: "option_a"}}
+        SM-->>SMA: Message, &CommandRequest{CommandName: "settings",<br/>Params: {language: "option_a"}}
+        SMA-->>CM: StateResult{IsComplete: true,<br/>CommandName: "settings", Params: {language: "option_a"}}
 
-        CM->>UR: Route(ctx, CommandRequest{CommandName: "settings", Params})
-        UR->>PM: GetByCommand("settings")
-        PM-->>UR: Plugin
+        Note over CM: handleInput: always send message first
+        CM->>AR: SendToChat(ctx, channelType, chatID, resultMessage)
+
+        CM->>UR: Route(ctx, CommandRequest{UserID, ChannelType,<br/>ChatID, "settings", Params, Locale})
+        UR->>UR: plugins.GetByCommand("settings")
         UR->>Plugin: HandleEvent(ctx, messengerEvent)
 
         Plugin->>Sender: Reply(ctx, triggerData, responseMsg)

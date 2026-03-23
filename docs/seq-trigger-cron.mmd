@@ -4,8 +4,8 @@ sequenceDiagram
     participant Cron as CronScheduler<br/>(trigger/cron.go)
     participant Redis as Redis<br/>(distributed lock)
     participant TR as TriggerRouter<br/>(trigger/router.go)
-    participant PM as PluginManager
-    participant Plugin as WasmPlugin
+    participant PM as PluginManager<br/>(plugin/manager.go)
+    participant Plugin as WasmPlugin<br/>(wasm/adapter/adapter.go)
     participant WASM as WASM Module
     participant Sender as SenderAPI<br/>(plugin/sender.go)
     participant AR as AdapterRegistry<br/>(channel/registry.go)
@@ -13,7 +13,14 @@ sequenceDiagram
     Note over Cron: Schedule fires: "0 9 * * *"
 
     Cron->>Cron: fire(pluginID, triggerName)
+
+    Cron->>Cron: running.LoadOrStore(runKey)
+    alt Previous execution still running
+        Note over Cron: Skip (overlapping execution guard)
+    end
+
     Cron->>Redis: tryLock(pluginID, triggerName, fireTime)
+    Note right of Redis: SetNX with key:<br/>cron_lock:{pluginID}:{triggerName}:{minute}<br/>TTL: 2 minutes
 
     alt Lock acquired
         Redis-->>Cron: true
@@ -22,10 +29,13 @@ sequenceDiagram
         Note over Cron: Skip (another instance handles it)
     end
 
-    Cron->>Cron: Build Event{TriggerType: TriggerCron,<br/>TriggerName, PluginID, Data: CronTriggerData}
+    Cron->>Cron: Build Event{ID: generateID(),<br/>TriggerType: TriggerCron,<br/>TriggerName, PluginID,<br/>Data: CronTriggerData{ScheduleName, FireTime}}
+
+    Cron->>Cron: ctx = WithTimeout(30s)<br/>ctx = WithValue(PluginTimeoutOverrideKey, 30)
 
     Cron->>TR: RouteEvent(ctx, event)
     TR->>PM: All()
+    TR->>TR: allPlugins[event.PluginID]
     TR->>Plugin: HandleEvent(ctx, event)
     Plugin->>WASM: CallHandleEvent(ctx, eventJSON, config)
 
@@ -38,3 +48,4 @@ sequenceDiagram
 
     Plugin-->>TR: EventResponse{Status: "ok"}
     TR-->>Cron: EventResponse
+    Cron->>Cron: running.Delete(runKey)
