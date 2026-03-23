@@ -1,0 +1,48 @@
+sequenceDiagram
+    title Конкурентное выполнение с семафором (N=3)
+
+    participant G1 as Горутина 1
+    participant G2 as Горутина 2
+    participant G3 as Горутина 3
+    participant G4 as Горутина 4
+    participant Pool as ModulePool
+    participant Sem as Semaphore<br/>(capacity=3, tokens=3)
+
+    Note over Sem: Начальное состояние:<br/>3 токена доступно
+
+    G1->>Pool: Execute(action)
+    Pool->>Sem: <-sem
+    Sem-->>Pool: токен (осталось: 2)
+    Note over G1: Слот 1 занят
+
+    G2->>Pool: Execute(action)
+    Pool->>Sem: <-sem
+    Sem-->>Pool: токен (осталось: 1)
+    Note over G2: Слот 2 занят
+
+    G3->>Pool: Execute(action)
+    Pool->>Sem: <-sem
+    Sem-->>Pool: токен (осталось: 0)
+    Note over G3: Слот 3 занят
+
+    G4->>Pool: Execute(action)
+    Pool->>Sem: <-sem
+    Note over G4, Sem: Канал пуст — G4 заблокирована
+
+    G1->>Pool: Выполнение завершено
+    Pool->>Sem: sem <- struct{} (возврат)
+    Note over Sem: Токенов: 1
+
+    Sem-->>Pool: токен для G4
+    Note over G4: G4 разблокирована,<br/>начинает выполнение
+
+    G2->>Pool: Выполнение завершено
+    Pool->>Sem: sem <- struct{} (возврат)
+
+    G3->>Pool: Выполнение завершено
+    Pool->>Sem: sem <- struct{} (возврат)
+
+    G4->>Pool: Выполнение завершено
+    Pool->>Sem: sem <- struct{} (возврат)
+
+    Note over Sem: Все 3 токена возвращены

@@ -1,0 +1,53 @@
+sequenceDiagram
+    title Жизненный цикл ModulePool
+
+    participant Loader as Loader<br/>(adapter/loader.go)
+    participant RT as Runtime<br/>(runtime/runtime.go)
+    participant CM as CompiledModule<br/>(runtime/module.go)
+    participant Pool as ModulePool<br/>(runtime/pool.go)
+    participant Sem as Semaphore
+
+    Note over Loader, Sem: Фаза 1: Создание пула при загрузке плагина
+
+    Loader->>RT: CompileModule(wasmBytes)
+    RT-->>Loader: CompiledModule
+
+    Loader->>CM: CallMeta(ctx)
+    CM-->>Loader: PluginMeta
+
+    Loader->>CM: CallConfigure(ctx, config)
+    CM-->>Loader: OK
+
+    Loader->>CM: EnablePool(poolConfig)
+    CM->>Pool: NewModulePool(cm, cfg)
+    Pool->>Pool: size = cfg.MaxConcurrency ?? 8
+    Pool->>Sem: make(chan struct{}, size)
+    Pool->>Sem: Заполняет size токенами
+
+    Note right of Pool: Пул готов к работе
+
+    Note over Loader, Sem: Фаза 2: Работа (многократные вызовы Execute)
+
+    loop Каждый входящий запрос
+        Loader->>CM: RunActionWithConfig(ctx, action, input, config)
+        CM->>Pool: Execute(ctx, action, input, config)
+        Pool->>Sem: <-sem (захват)
+        Note over Pool: InstantiateModule → выполнение
+        Pool->>Sem: sem <- {} (возврат)
+        Pool-->>CM: result
+        CM-->>Loader: result
+    end
+
+    Note over Loader, Sem: Фаза 3: Остановка (Unload / Reload / Shutdown)
+
+    Loader->>Loader: drainPlugin(lp, pluginID)
+    Note right of Loader: Ждёт завершения activeRequests<br/>таймаут: 10 секунд
+
+    Loader->>CM: Close(ctx)
+    CM->>Pool: Close()
+    Pool->>Pool: closed.Store(true)
+    Pool->>Sem: Забирает все N токенов
+    Note right of Pool: Дожидается завершения<br/>всех текущих Execute()
+
+    CM->>RT: compiled.Close(ctx)
+    Note right of RT: Освобождение<br/>скомпилированного модуля

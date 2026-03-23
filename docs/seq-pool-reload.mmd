@@ -1,0 +1,48 @@
+sequenceDiagram
+    title Graceful Shutdown пула при обновлении плагина
+
+    participant Req as Активные запросы
+    participant Loader as Loader
+    participant OldPool as Старый ModulePool
+    participant OldCM as Старый CompiledModule
+    participant NewCM as Новый CompiledModule
+    participant NewPool as Новый ModulePool
+
+    Note over Loader: ReloadPluginFromBytes()
+
+    Loader->>Loader: old.draining.Store(true)
+    Note right of Loader: Новые запросы к старому<br/>плагину отклоняются
+
+    rect rgb(240, 255, 240)
+        Note over Loader, NewPool: Загрузка нового модуля
+
+        Loader->>NewCM: CompileModule(newWasmBytes)
+        Loader->>NewCM: CallMeta() + CallConfigure()
+        Loader->>NewCM: EnablePool(poolConfig)
+        NewCM->>NewPool: NewModulePool(cm, cfg)
+        Note right of NewPool: Новый пул готов,<br/>запросы идут сюда
+    end
+
+    Loader->>Loader: plugins[id] = newPlugin
+    Note right of Loader: Новые запросы идут<br/>в новый пул
+
+    rect rgb(255, 240, 240)
+        Note over Req, OldPool: Дренирование старого пула
+
+        Req->>OldPool: Execute() (всё ещё выполняется)
+        Note over Loader: drainPlugin(): ждёт<br/>activeRequests == 0
+
+        alt Все запросы завершились
+            Req-->>OldPool: done
+            OldPool-->>Loader: drained
+            Note over Loader: Плагин слит мгновенно
+        else Таймаут 10 секунд
+            Note over Loader: Force close
+        end
+    end
+
+    Loader->>OldPool: Close()
+    OldPool->>OldPool: Забирает все токены из семафора
+
+    Loader->>OldCM: Close(ctx)
+    Note over OldCM: Память освобождена
