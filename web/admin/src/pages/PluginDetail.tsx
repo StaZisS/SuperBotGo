@@ -13,6 +13,9 @@ import {
   Copy,
   Package,
   TriangleAlert,
+  Clock,
+  Globe,
+  Zap,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import PluginStatusBadge from '@/components/PluginStatusBadge'
@@ -67,6 +70,56 @@ function formatDate(dateStr: string): string {
     month: 'long',
     year: 'numeric',
   })
+}
+
+function describeCron(expr: string): string {
+  const parts = expr.trim().split(/\s+/)
+  if (parts.length < 5) return expr
+
+  const [min, hour, dom, mon, dow] = parts
+
+  if (min === '*' && hour === '*') return 'каждую минуту'
+  if (hour === '*' && min !== '*') return `каждый час в :${min.padStart(2, '0')}`
+  if (dom === '*' && mon === '*' && dow === '*' && min !== '*' && hour !== '*')
+    return `каждый день в ${hour}:${min.padStart(2, '0')}`
+  if (dow !== '*' && dom === '*' && mon === '*') {
+    const days: Record<string, string> = {
+      '0': 'вс', '1': 'пн', '2': 'вт', '3': 'ср',
+      '4': 'чт', '5': 'пт', '6': 'сб', '7': 'вс',
+    }
+    const dayList = dow.split(',').map((d) => days[d] || d).join(', ')
+    return `${dayList} в ${hour}:${min.padStart(2, '0')}`
+  }
+
+  if (min.startsWith('*/')) return `каждые ${min.slice(2)} мин`
+  if (hour.startsWith('*/')) return `каждые ${hour.slice(2)} ч`
+
+  return expr
+}
+
+const triggerIcon: Record<string, typeof Clock> = {
+  cron: Clock,
+  http: Globe,
+  event: Zap,
+}
+
+const triggerLabel: Record<string, string> = {
+  cron: 'Cron',
+  http: 'HTTP',
+  event: 'Event',
+}
+
+function TriggerBadge({ type }: { type: string }) {
+  const colors: Record<string, string> = {
+    cron: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
+    http: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
+    event: 'bg-amber-500/10 text-amber-600 border-amber-500/20',
+  }
+  return (
+    <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${colors[type] || 'bg-muted text-muted-foreground'}`}>
+      {triggerLabel[type] || type}
+    </span>
+  )
 }
 
 function LoadingSkeleton() {
@@ -371,6 +424,58 @@ export default function PluginDetail() {
                       )}
                     </div>
                   ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Triggers */}
+          {plugin.meta?.triggers && plugin.meta.triggers.length > 0 && (
+            <>
+              <Separator />
+              <div>
+                <h4 className="text-sm font-medium mb-2">
+                  Триггеры ({plugin.meta.triggers.length})
+                </h4>
+                <div className="space-y-1">
+                  {plugin.meta.triggers.map((t) => {
+                    const Icon = triggerIcon[t.type] || Zap
+                    return (
+                      <div
+                        key={`${t.type}-${t.name}`}
+                        className="flex items-center gap-3 text-sm p-2 bg-muted/50 rounded-md"
+                      >
+                        <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <span className="font-medium shrink-0">{t.name}</span>
+                        {t.description && (
+                          <span className="text-muted-foreground min-w-0 truncate">
+                            {t.description}
+                          </span>
+                        )}
+                        <div className="ml-auto flex items-center gap-2 shrink-0">
+                          {t.type === 'cron' && t.schedule && (
+                            <span
+                              className="font-mono text-xs text-muted-foreground"
+                              title={t.schedule}
+                            >
+                              {describeCron(t.schedule)}
+                            </span>
+                          )}
+                          {t.type === 'http' && t.path && (
+                            <span className="font-mono text-xs text-muted-foreground">
+                              {t.methods?.join(', ') || 'GET'} {t.path}
+                            </span>
+                          )}
+                          {t.type === 'event' && t.topic && (
+                            <span className="font-mono text-xs text-muted-foreground">
+                              {t.topic}
+                            </span>
+                          )}
+                          <TriggerBadge type={t.type} />
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             </>

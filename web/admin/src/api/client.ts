@@ -64,11 +64,22 @@ export interface PluginInfo {
   commands: number
 }
 
+export interface TriggerDef {
+  name: string
+  type: 'cron' | 'http' | 'event'
+  description?: string
+  schedule?: string
+  path?: string
+  methods?: string[]
+  topic?: string
+}
+
 export interface PluginMeta {
   id: string
   name: string
   version: string
   commands: { name: string; description: string; min_role?: string }[]
+  triggers?: TriggerDef[]
   permissions: { key: string; description: string; required: boolean }[]
   config_schema: Record<string, unknown> | null
   wasm_key: string
