@@ -81,8 +81,8 @@ func (m *ChannelManager) RegisterAdapter(adapter ChannelAdapter) {
 	m.adapters.Register(adapter)
 }
 
-func (m *ChannelManager) OnUpdate(ctx context.Context, channelType model.ChannelType, platformUserID model.PlatformUserID, input model.UserInput, chatID string) error {
-	user, err := m.userService.FindOrCreateUser(ctx, channelType, platformUserID)
+func (m *ChannelManager) OnUpdate(ctx context.Context, u Update) error {
+	user, err := m.userService.FindOrCreateUser(ctx, u.ChannelType, u.PlatformUserID)
 	if err != nil {
 		return err
 	}
@@ -92,8 +92,8 @@ func (m *ChannelManager) OnUpdate(ctx context.Context, channelType model.Channel
 		locale = "en"
 	}
 
-	if err := m.processUpdate(ctx, user, channelType, input, chatID, locale); err != nil {
-		m.handleError(ctx, channelType, chatID, user.ID, err)
+	if err := m.processUpdate(ctx, user, u.ChannelType, u.Input, u.ChatID, locale); err != nil {
+		m.handleError(ctx, u.ChannelType, u.ChatID, user.ID, err)
 	}
 	return nil
 }

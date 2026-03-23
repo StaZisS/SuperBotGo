@@ -395,7 +395,8 @@ func main() {
 
 	if cfg.Telegram.Token != "" {
 		logger.Info("starting Telegram bot")
-		tgBot, err := telegram.NewBot(cfg.Telegram.Token, channelMgr, joinHandler, logger)
+		tgHandler := channel.Chain(channelMgr.OnUpdate, telegram.CallbackNormalizer())
+		tgBot, err := telegram.NewBot(cfg.Telegram.Token, tgHandler, joinHandler, logger)
 		if err != nil {
 			logger.Error("failed to create Telegram bot", slog.Any("error", err))
 		} else {
@@ -413,7 +414,7 @@ func main() {
 
 	if cfg.Discord.Token != "" {
 		logger.Info("starting Discord bot")
-		dcBot, err := discord.NewBot(cfg.Discord.Token, channelMgr, joinHandler, logger)
+		dcBot, err := discord.NewBot(cfg.Discord.Token, channelMgr.OnUpdate, joinHandler, logger)
 		if err != nil {
 			logger.Error("failed to create Discord bot", slog.Any("error", err))
 		} else {

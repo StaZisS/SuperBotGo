@@ -13,12 +13,12 @@ import (
 
 type Bot struct {
 	session     *discordgo.Session
-	handler     channel.UpdateHandler
+	handler     channel.UpdateHandlerFunc
 	joinHandler channel.ChatJoinHandler
 	logger      *slog.Logger
 }
 
-func NewBot(token string, handler channel.UpdateHandler, joinHandler channel.ChatJoinHandler, logger *slog.Logger) (*Bot, error) {
+func NewBot(token string, handler channel.UpdateHandlerFunc, joinHandler channel.ChatJoinHandler, logger *slog.Logger) (*Bot, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -149,7 +149,12 @@ func (b *Bot) registerHandlers() {
 			slog.String("text", text))
 
 		ctx := context.Background()
-		if err := b.handler.OnUpdate(ctx, model.ChannelDiscord, model.PlatformUserID(platformUserID), model.TextInput{Text: text}, chatID); err != nil {
+		if err := b.handler(ctx, channel.Update{
+			ChannelType:    model.ChannelDiscord,
+			PlatformUserID: model.PlatformUserID(platformUserID),
+			Input:          model.TextInput{Text: text},
+			ChatID:         chatID,
+		}); err != nil {
 			b.logger.Error("discord: error handling message",
 				slog.String("user", platformUserID),
 				slog.Any("error", err))
@@ -180,7 +185,12 @@ func (b *Bot) registerHandlers() {
 		})
 
 		ctx := context.Background()
-		if err := b.handler.OnUpdate(ctx, model.ChannelDiscord, model.PlatformUserID(platformUserID), model.CallbackInput{Data: data.CustomID}, chatID); err != nil {
+		if err := b.handler(ctx, channel.Update{
+			ChannelType:    model.ChannelDiscord,
+			PlatformUserID: model.PlatformUserID(platformUserID),
+			Input:          model.CallbackInput{Data: data.CustomID},
+			ChatID:         chatID,
+		}); err != nil {
 			b.logger.Error("discord: error handling button",
 				slog.String("user", platformUserID),
 				slog.Any("error", err))

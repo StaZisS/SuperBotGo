@@ -15,12 +15,12 @@ import (
 
 type Bot struct {
 	bot         *tele.Bot
-	handler     channel.UpdateHandler
+	handler     channel.UpdateHandlerFunc
 	joinHandler channel.ChatJoinHandler
 	logger      *slog.Logger
 }
 
-func NewBot(token string, handler channel.UpdateHandler, joinHandler channel.ChatJoinHandler, logger *slog.Logger) (*Bot, error) {
+func NewBot(token string, handler channel.UpdateHandlerFunc, joinHandler channel.ChatJoinHandler, logger *slog.Logger) (*Bot, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -88,7 +88,12 @@ func (b *Bot) handleTextMessage(c tele.Context) error {
 		slog.String("text", text))
 
 	ctx := context.Background()
-	if err := b.handler.OnUpdate(ctx, model.ChannelTelegram, model.PlatformUserID(platformUserID), model.TextInput{Text: text}, chatID); err != nil {
+	if err := b.handler(ctx, channel.Update{
+		ChannelType:    model.ChannelTelegram,
+		PlatformUserID: model.PlatformUserID(platformUserID),
+		Input:          model.TextInput{Text: text},
+		ChatID:         chatID,
+	}); err != nil {
 		b.logger.Error("telegram: error handling message",
 			slog.String("user", platformUserID),
 			slog.Any("error", err))
@@ -181,37 +186,22 @@ func (b *Bot) registerHandlers() {
 		platformUserID := strconv.FormatInt(c.Sender().ID, 10)
 		data := c.Callback().Data
 
-		if len(data) > 0 && data[0] == '\f' {
-			rest := data[1:]
-			if idx := indexOf(rest, '|'); idx >= 0 {
-				data = rest[idx+1:]
-			} else if idx := indexOf(rest, '\f'); idx >= 0 {
-				data = rest[idx+1:]
-			} else {
-				data = rest
-			}
-		}
-
 		b.logger.Info("telegram: received callback",
 			slog.String("user", platformUserID),
 			slog.String("chat", chatID),
 			slog.String("data", data))
 
 		ctx := context.Background()
-		if err := b.handler.OnUpdate(ctx, model.ChannelTelegram, model.PlatformUserID(platformUserID), model.CallbackInput{Data: data}, chatID); err != nil {
+		if err := b.handler(ctx, channel.Update{
+			ChannelType:    model.ChannelTelegram,
+			PlatformUserID: model.PlatformUserID(platformUserID),
+			Input:          model.CallbackInput{Data: data},
+			ChatID:         chatID,
+		}); err != nil {
 			b.logger.Error("telegram: error handling callback",
 				slog.String("user", platformUserID),
 				slog.Any("error", err))
 		}
 		return nil
 	})
-}
-
-func indexOf(s string, ch byte) int {
-	for i := 0; i < len(s); i++ {
-		if s[i] == ch {
-			return i
-		}
-	}
-	return -1
 }
