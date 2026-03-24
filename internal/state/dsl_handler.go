@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 
-	"SuperBotGo/internal/i18n"
 	"SuperBotGo/internal/model"
 )
 
@@ -148,11 +147,7 @@ func (h *DslStateHandler) BuildStepMessage(s State, locale string) model.Message
 	ds := requireDslState(s)
 	step := h.command.CurrentStep(ds.Params)
 	if step == nil {
-		return model.Message{
-			Blocks: []model.ContentBlock{
-				model.TextBlock{Text: i18n.Get("common.command_completed", locale), Style: model.StylePlain},
-			},
-		}
+		return model.Message{}
 	}
 
 	ctx := StepContext{

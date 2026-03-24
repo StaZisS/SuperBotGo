@@ -1,6 +1,3 @@
-# Общие
-"common.command_completed" = "Команда выполнена."
-
 # Пагинация
 "pagination.next" = "Далее →"
 "pagination.prev" = "← Назад"

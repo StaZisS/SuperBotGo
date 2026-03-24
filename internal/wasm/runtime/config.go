@@ -12,6 +12,8 @@ const (
 	DefaultHostEventTimeoutSeconds = 3
 
 	DefaultHostCallPluginTimeoutSeconds = 4
+
+	DefaultHostNotifyTimeoutSeconds = 4
 )
 
 type PluginTimeoutOverrideKey struct{}

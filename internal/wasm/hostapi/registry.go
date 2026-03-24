@@ -20,6 +20,9 @@ func AllHostPermissions() []PermissionInfo {
 		{Key: "triggers:events", Description: "Подписка на события других плагинов", Category: "triggers"},
 		{Key: "kv:read", Description: "Чтение из key-value хранилища (kv_get, kv_list)", Category: "kv"},
 		{Key: "kv:write", Description: "Запись в key-value хранилище (kv_set, kv_delete)", Category: "kv"},
+		{Key: "notify:user", Description: "Отправка уведомлений пользователю (notify_user)", Category: "notifications"},
+		{Key: "notify:chat", Description: "Отправка уведомлений в чат (notify_chat)", Category: "notifications"},
+		{Key: "notify:project", Description: "Рассылка уведомлений по проекту (notify_project)", Category: "notifications"},
 	}
 }
 

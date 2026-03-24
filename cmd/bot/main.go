@@ -232,6 +232,10 @@ func main() {
 	localizedUserService = userService
 	localizedChatRegistry = chatRegistry
 
+	// Wire notification host API for WASM plugins.
+	notifyAPI := notification.NewNotifyAPI(adapterRegistry, userService, notifPrefsRepo, chatRegistry)
+	hostAPI.SetNotifier(notification.NewWasmNotifier(notifyAPI))
+
 	authorizer := authz.NewAuthorizer(authzStore, logger, universityProvider)
 	schemaBuilder := authz.NewRuleSchemaBuilder(authzStore, universityProvider)
 	ruleSchemaHandler := adminapi.NewRuleSchemaHandler(schemaBuilder)

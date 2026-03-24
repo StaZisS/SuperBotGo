@@ -56,6 +56,10 @@ func (h *HostAPI) SetEventBus(eb EventBus) {
 	h.deps.Events = eb
 }
 
+func (h *HostAPI) SetNotifier(n Notifier) {
+	h.deps.Notifier = n
+}
+
 func (h *HostAPI) Provider() *HostFunctionProvider {
 	return h.provider
 }
@@ -104,6 +108,18 @@ func (h *HostAPI) RegisterHostModule(ctx context.Context, rt *wasmrt.Runtime) er
 		[]api.ValueType{api.ValueTypeI64})
 
 	builder = h.registerFunc(builder, "kv_list", h.kvListFunc(),
+		[]api.ValueType{api.ValueTypeI32, api.ValueTypeI32},
+		[]api.ValueType{api.ValueTypeI64})
+
+	builder = h.registerFunc(builder, "notify_user", h.notifyUserFunc(),
+		[]api.ValueType{api.ValueTypeI32, api.ValueTypeI32},
+		[]api.ValueType{api.ValueTypeI64})
+
+	builder = h.registerFunc(builder, "notify_chat", h.notifyChatFunc(),
+		[]api.ValueType{api.ValueTypeI32, api.ValueTypeI32},
+		[]api.ValueType{api.ValueTypeI64})
+
+	builder = h.registerFunc(builder, "notify_project", h.notifyProjectFunc(),
 		[]api.ValueType{api.ValueTypeI32, api.ValueTypeI32},
 		[]api.ValueType{api.ValueTypeI64})
 
@@ -169,6 +185,25 @@ func (h *HostAPI) buildProvider() *HostFunctionProvider {
 		Name:        "kv_list",
 		Description: "List keys in the plugin-scoped key-value store.",
 		Permissions: []string{"kv:read"},
+		Handler:     h.noopHandler(),
+	})
+
+	p.Register(HostFunction{
+		Name:        "notify_user",
+		Description: "Send a priority-aware notification to a user.",
+		Permissions: []string{"notify:user"},
+		Handler:     h.noopHandler(),
+	})
+	p.Register(HostFunction{
+		Name:        "notify_chat",
+		Description: "Send a priority-aware notification to a chat.",
+		Permissions: []string{"notify:chat"},
+		Handler:     h.noopHandler(),
+	})
+	p.Register(HostFunction{
+		Name:        "notify_project",
+		Description: "Send a priority-aware notification to all chats in a project.",
+		Permissions: []string{"notify:project"},
 		Handler:     h.noopHandler(),
 	})
 

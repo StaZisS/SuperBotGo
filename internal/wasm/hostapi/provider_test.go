@@ -141,6 +141,9 @@ func TestBuildProviderRegistersAllFunctions(t *testing.T) {
 		"kv_get",
 		"kv_list",
 		"kv_set",
+		"notify_chat",
+		"notify_project",
+		"notify_user",
 		"publish_event",
 	}
 
