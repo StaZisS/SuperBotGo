@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"SuperBotGo/internal/channel"
@@ -18,6 +19,7 @@ type Bot struct {
 	handler     channel.UpdateHandlerFunc
 	joinHandler channel.ChatJoinHandler
 	logger      *slog.Logger
+	connected   atomic.Bool
 }
 
 func NewBot(token string, handler channel.UpdateHandlerFunc, joinHandler channel.ChatJoinHandler, logger *slog.Logger) (*Bot, error) {
@@ -48,15 +50,17 @@ func NewBot(token string, handler channel.UpdateHandlerFunc, joinHandler channel
 }
 
 func (b *Bot) Adapter() *Adapter {
-	return NewAdapter(b.bot)
+	return NewAdapter(b.bot, &b.connected)
 }
 
 func (b *Bot) Start(ctx context.Context) error {
 	b.logger.Info("Telegram bot starting long polling")
+	b.connected.Store(true)
 
 	go func() {
 		<-ctx.Done()
 		b.logger.Info("Telegram bot stopping")
+		b.connected.Store(false)
 		b.bot.Stop()
 	}()
 

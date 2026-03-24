@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"SuperBotGo/internal/model"
-	pluginLink "SuperBotGo/internal/plugin/link"
+	pluginCore "SuperBotGo/internal/plugin/core"
 )
 
 const (
@@ -36,7 +36,7 @@ func NewAccountLinker(accountRepo AccountRepository) *AccountLinkerImpl {
 	}
 }
 
-func (l *AccountLinkerImpl) InitiateLinking(_ context.Context, userID model.GlobalUserID) pluginLink.LinkResult {
+func (l *AccountLinkerImpl) InitiateLinking(_ context.Context, userID model.GlobalUserID) pluginCore.LinkResult {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -48,8 +48,8 @@ func (l *AccountLinkerImpl) InitiateLinking(_ context.Context, userID model.Glob
 
 	code, err := generateCode()
 	if err != nil {
-		return pluginLink.LinkResult{
-			Kind:    pluginLink.LinkError,
+		return pluginCore.LinkResult{
+			Kind:    pluginCore.LinkError,
 			Message: "Failed to generate link code.",
 		}
 	}
@@ -59,19 +59,19 @@ func (l *AccountLinkerImpl) InitiateLinking(_ context.Context, userID model.Glob
 		ExpiresAt: time.Now().Add(codeTTL),
 	}
 
-	return pluginLink.LinkResult{
-		Kind: pluginLink.LinkCodeGenerated,
+	return pluginCore.LinkResult{
+		Kind: pluginCore.LinkCodeGenerated,
 		Code: code,
 	}
 }
 
-func (l *AccountLinkerImpl) CompleteLinking(ctx context.Context, userID model.GlobalUserID, code string) pluginLink.LinkResult {
+func (l *AccountLinkerImpl) CompleteLinking(ctx context.Context, userID model.GlobalUserID, code string) pluginCore.LinkResult {
 	l.mu.Lock()
 	entry, ok := l.codes[code]
 	if !ok {
 		l.mu.Unlock()
-		return pluginLink.LinkResult{
-			Kind:    pluginLink.LinkError,
+		return pluginCore.LinkResult{
+			Kind:    pluginCore.LinkError,
 			Message: "Invalid link code.",
 		}
 	}
@@ -79,8 +79,8 @@ func (l *AccountLinkerImpl) CompleteLinking(ctx context.Context, userID model.Gl
 	if time.Now().After(entry.ExpiresAt) {
 		delete(l.codes, code)
 		l.mu.Unlock()
-		return pluginLink.LinkResult{
-			Kind:    pluginLink.LinkError,
+		return pluginCore.LinkResult{
+			Kind:    pluginCore.LinkError,
 			Message: "Link code has expired. Please generate a new one.",
 		}
 	}
@@ -90,16 +90,16 @@ func (l *AccountLinkerImpl) CompleteLinking(ctx context.Context, userID model.Gl
 	l.mu.Unlock()
 
 	if sourceUserID == userID {
-		return pluginLink.LinkResult{
-			Kind:    pluginLink.LinkError,
+		return pluginCore.LinkResult{
+			Kind:    pluginCore.LinkError,
 			Message: "Cannot link to yourself. Use the code from a different platform.",
 		}
 	}
 
 	accounts, err := l.accountRepo.FindByGlobalUserID(ctx, sourceUserID)
 	if err != nil {
-		return pluginLink.LinkResult{
-			Kind:    pluginLink.LinkError,
+		return pluginCore.LinkResult{
+			Kind:    pluginCore.LinkError,
 			Message: fmt.Sprintf("Failed to find accounts: %v", err),
 		}
 	}
@@ -107,15 +107,15 @@ func (l *AccountLinkerImpl) CompleteLinking(ctx context.Context, userID model.Gl
 	for i := range accounts {
 		accounts[i].GlobalUserID = userID
 		if _, err := l.accountRepo.Save(ctx, &accounts[i]); err != nil {
-			return pluginLink.LinkResult{
-				Kind:    pluginLink.LinkError,
+			return pluginCore.LinkResult{
+				Kind:    pluginCore.LinkError,
 				Message: fmt.Sprintf("Failed to link account: %v", err),
 			}
 		}
 	}
 
-	return pluginLink.LinkResult{
-		Kind:    pluginLink.LinkLinked,
+	return pluginCore.LinkResult{
+		Kind:    pluginCore.LinkLinked,
 		Message: fmt.Sprintf("Accounts linked successfully! %d account(s) merged.", len(accounts)),
 	}
 }
@@ -132,4 +132,4 @@ func generateCode() (string, error) {
 	return string(b), nil
 }
 
-var _ pluginLink.AccountLinker = (*AccountLinkerImpl)(nil)
+var _ pluginCore.AccountLinker = (*AccountLinkerImpl)(nil)

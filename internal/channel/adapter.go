@@ -12,6 +12,12 @@ type ChannelAdapter interface {
 	SendToChat(ctx context.Context, chatID string, msg model.Message) error
 }
 
+// StatusChecker is an optional interface that adapters can implement
+// to report their real-time connection status.
+type StatusChecker interface {
+	Connected() bool
+}
+
 type ChatJoinHandler interface {
 	OnChatJoin(ctx context.Context, channelType model.ChannelType, platformChatID string, chatKind model.ChatKind, title string) error
 	OnChatLeave(ctx context.Context, channelType model.ChannelType, platformChatID string) error

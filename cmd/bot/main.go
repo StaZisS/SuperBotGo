@@ -27,11 +27,7 @@ import (
 	"SuperBotGo/internal/model"
 	"SuperBotGo/internal/notification"
 	"SuperBotGo/internal/plugin"
-	"SuperBotGo/internal/plugin/broadcast"
-	pluginLink "SuperBotGo/internal/plugin/link"
-	"SuperBotGo/internal/plugin/project"
-	"SuperBotGo/internal/plugin/resume"
-	"SuperBotGo/internal/plugin/settings"
+	"SuperBotGo/internal/plugin/core"
 	"SuperBotGo/internal/pubsub"
 	"SuperBotGo/internal/role"
 	"SuperBotGo/internal/state"
@@ -294,6 +290,11 @@ func main() {
 	pluginPermHandler.RegisterRoutes(adminMux)
 	chatHandler := adminapi.NewChatHandler(adminChatStore, adapterRegistry)
 	chatHandler.RegisterRoutes(adminMux)
+	channelStatusHandler := adminapi.NewChannelStatusHandler(adapterRegistry, adminapi.ChannelStatusConfig{
+		TelegramConfigured: cfg.Telegram.Token != "",
+		DiscordConfigured:  cfg.Discord.Token != "",
+	})
+	channelStatusHandler.RegisterRoutes(adminMux)
 	ruleSchemaHandler.RegisterRoutes(adminMux)
 	httpTrigger := trigger.NewHTTPTriggerHandler(triggerRouter, triggerRegistry)
 	httpTrigger.SetMetrics(m)
@@ -319,18 +320,10 @@ func main() {
 	}()
 
 	senderAPI = plugin.NewSenderAPI(adapterRegistry, userService, chatRegistry)
-	notifyAPI := notification.NewNotifyAPI(adapterRegistry, userService, notifPrefsRepo, chatRegistry)
-
-	projectStore := &placeholderProjectStore{}
-	chatStore := &placeholderChatStore{}
 	accountLinker := user.NewAccountLinker(accountRepo)
 
 	allPlugins := []plugin.Plugin{
-		broadcast.New(senderAPI, notifyAPI, projectStore),
-		pluginLink.New(senderAPI, accountLinker),
-		project.New(senderAPI, projectStore, chatStore),
-		resume.New(senderAPI, stateMgr),
-		settings.New(senderAPI, userService, notifPrefsRepo),
+		core.New(senderAPI, accountLinker, stateMgr, userService, notifPrefsRepo),
 	}
 
 	for _, p := range allPlugins {

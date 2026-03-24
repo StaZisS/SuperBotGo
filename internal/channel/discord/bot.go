@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 
 	"SuperBotGo/internal/channel"
 	"SuperBotGo/internal/model"
@@ -16,6 +17,7 @@ type Bot struct {
 	handler     channel.UpdateHandlerFunc
 	joinHandler channel.ChatJoinHandler
 	logger      *slog.Logger
+	connected   atomic.Bool
 }
 
 func NewBot(token string, handler channel.UpdateHandlerFunc, joinHandler channel.ChatJoinHandler, logger *slog.Logger) (*Bot, error) {
@@ -46,7 +48,7 @@ func NewBot(token string, handler channel.UpdateHandlerFunc, joinHandler channel
 }
 
 func (b *Bot) Adapter() *Adapter {
-	return NewAdapter(b.session)
+	return NewAdapter(b.session, &b.connected)
 }
 
 func (b *Bot) Start(ctx context.Context) error {
@@ -55,8 +57,10 @@ func (b *Bot) Start(ctx context.Context) error {
 	if err := b.session.Open(); err != nil {
 		return fmt.Errorf("discord: open gateway: %w", err)
 	}
+	b.connected.Store(true)
 
 	<-ctx.Done()
+	b.connected.Store(false)
 	b.logger.Info("Discord bot closing gateway connection")
 	return b.session.Close()
 }

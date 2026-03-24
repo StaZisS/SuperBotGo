@@ -3,6 +3,7 @@ package discord
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 
 	"SuperBotGo/internal/channel"
 	"SuperBotGo/internal/model"
@@ -10,18 +11,27 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-var _ channel.SilentSender = (*Adapter)(nil)
+var (
+	_ channel.SilentSender  = (*Adapter)(nil)
+	_ channel.StatusChecker = (*Adapter)(nil)
+)
 
 type Adapter struct {
-	session  *discordgo.Session
-	renderer *Renderer
+	session   *discordgo.Session
+	renderer  *Renderer
+	connected *atomic.Bool
 }
 
-func NewAdapter(session *discordgo.Session) *Adapter {
+func NewAdapter(session *discordgo.Session, connected *atomic.Bool) *Adapter {
 	return &Adapter{
-		session:  session,
-		renderer: NewRenderer(),
+		session:   session,
+		renderer:  NewRenderer(),
+		connected: connected,
 	}
+}
+
+func (a *Adapter) Connected() bool {
+	return a.connected.Load()
 }
 
 func (a *Adapter) Type() model.ChannelType {

@@ -1,4 +1,4 @@
-package settings
+package core
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 	"SuperBotGo/internal/i18n"
 	"SuperBotGo/internal/model"
 	"SuperBotGo/internal/notification"
-	"SuperBotGo/internal/plugin"
 	"SuperBotGo/internal/state"
 )
 
@@ -22,45 +21,96 @@ type UserLocaleUpdater interface {
 	UpdateLocale(ctx context.Context, userID model.GlobalUserID, locale string) error
 }
 
-type Plugin struct {
-	api         *plugin.SenderAPI
-	userService UserLocaleUpdater
-	prefsRepo   notification.PrefsRepository
-	cmdDef      *state.CommandDefinition
+func SettingsCommand() *state.CommandDefinition {
+	return state.NewCommand("settings").
+		Description("User Settings").
+		Step("action", func(s *state.StepBuilder) {
+			s.Prompt(func(p *state.PromptBuilder) {
+				p.LocalizedText("settings.title", model.StyleHeader)
+				p.LocalizedOptions("settings.action_prompt", func(o *state.OptionsBuilder) {
+					o.LocalizedOption("settings.change_language", "change_language")
+					o.LocalizedOption("settings.notification_channel", "notification_channel")
+					o.LocalizedOption("settings.mute_mentions", "mute_mentions")
+					o.LocalizedOption("settings.work_hours", "work_hours")
+				})
+			})
+		}).
+		Branch("action", func(b *state.BranchBuilder) {
+			b.Case("change_language", func(n *state.NodeListBuilder) {
+				n.Step("language", func(s *state.StepBuilder) {
+					s.Prompt(func(p *state.PromptBuilder) {
+						p.LocalizedText("settings.select_language", model.StylePlain)
+						p.LocalizedOptions("settings.language_prompt", func(o *state.OptionsBuilder) {
+							o.Add("English", "en")
+							o.Add("Русский", "ru")
+						})
+					})
+				})
+			})
+			b.Case("notification_channel", func(n *state.NodeListBuilder) {
+				n.Step("preferred_channel", func(s *state.StepBuilder) {
+					s.Prompt(func(p *state.PromptBuilder) {
+						p.LocalizedText("settings.select_channel", model.StylePlain)
+						p.LocalizedOptions("settings.channel_prompt", func(o *state.OptionsBuilder) {
+							o.Add("Telegram", "TELEGRAM")
+							o.Add("Discord", "DISCORD")
+							o.Add("Telegram → Discord", "TELEGRAM,DISCORD")
+							o.Add("Discord → Telegram", "DISCORD,TELEGRAM")
+						})
+					})
+				})
+			})
+			b.Case("mute_mentions", func(n *state.NodeListBuilder) {
+				n.Step("mute_value", func(s *state.StepBuilder) {
+					s.Prompt(func(p *state.PromptBuilder) {
+						p.LocalizedText("settings.mute_mentions_prompt", model.StylePlain)
+						p.LocalizedOptions("settings.mute_mentions_options", func(o *state.OptionsBuilder) {
+							o.LocalizedOption("settings.mute_on", "true")
+							o.LocalizedOption("settings.mute_off", "false")
+						})
+					})
+				})
+			})
+			b.Case("work_hours", func(n *state.NodeListBuilder) {
+				n.Step("work_hours_value", func(s *state.StepBuilder) {
+					s.Prompt(func(p *state.PromptBuilder) {
+						p.LocalizedText("settings.work_hours_prompt", model.StylePlain)
+						p.LocalizedOptions("settings.work_hours_options", func(o *state.OptionsBuilder) {
+							o.LocalizedOption("settings.wh_9_18", "9-18")
+							o.LocalizedOption("settings.wh_8_17", "8-17")
+							o.LocalizedOption("settings.wh_10_19", "10-19")
+							o.LocalizedOption("settings.wh_disable", "off")
+						})
+					})
+				})
+				n.Step("timezone", func(s *state.StepBuilder) {
+					s.Prompt(func(p *state.PromptBuilder) {
+						p.LocalizedText("settings.timezone_prompt", model.StylePlain)
+						p.LocalizedOptions("settings.timezone_options", func(o *state.OptionsBuilder) {
+							o.Add("Europe/Moscow (UTC+3)", "Europe/Moscow")
+							o.Add("Europe/London (UTC+0)", "Europe/London")
+							o.Add("Asia/Novosibirsk (UTC+7)", "Asia/Novosibirsk")
+							o.Add("Asia/Vladivostok (UTC+10)", "Asia/Vladivostok")
+						})
+					})
+				})
+			})
+		}).
+		Build()
 }
 
-func New(api *plugin.SenderAPI, userService UserLocaleUpdater, prefsRepo notification.PrefsRepository) *Plugin {
-	return &Plugin{
-		api:         api,
-		userService: userService,
-		prefsRepo:   prefsRepo,
-		cmdDef:      SettingsCommand(),
-	}
-}
-
-func (p *Plugin) ID() string                           { return "settings" }
-func (p *Plugin) Name() string                         { return "User Settings" }
-func (p *Plugin) Version() string                      { return "1.0.0" }
-func (p *Plugin) SupportedRoles() []string             { return []string{"USER", "ADMIN"} }
-func (p *Plugin) Commands() []*state.CommandDefinition { return []*state.CommandDefinition{p.cmdDef} }
-
-func (p *Plugin) HandleEvent(ctx context.Context, event model.Event) (*model.EventResponse, error) {
-	m, err := event.Messenger()
-	if err != nil {
-		return nil, fmt.Errorf("settings: parse messenger data: %w", err)
-	}
-
+func (p *Plugin) handleSettings(ctx context.Context, m *model.MessengerTriggerData) error {
 	switch m.Params.Get("action") {
 	case "change_language":
-		return nil, p.changeLanguage(ctx, m)
+		return p.changeLanguage(ctx, m)
 	case "notification_channel":
-		return nil, p.changeNotificationChannel(ctx, m)
+		return p.changeNotificationChannel(ctx, m)
 	case "mute_mentions":
-		return nil, p.toggleMuteMentions(ctx, m)
+		return p.toggleMuteMentions(ctx, m)
 	case "work_hours":
-		return nil, p.setWorkHours(ctx, m)
+		return p.setWorkHours(ctx, m)
 	default:
-		return nil, p.api.Reply(ctx, m,
+		return p.api.Reply(ctx, m,
 			model.NewTextMessage(i18n.Get("settings.unknown_action", m.Locale)))
 	}
 }

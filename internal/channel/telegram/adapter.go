@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync/atomic"
 
 	"SuperBotGo/internal/channel"
 	"SuperBotGo/internal/model"
@@ -11,18 +12,27 @@ import (
 	tele "gopkg.in/telebot.v3"
 )
 
-var _ channel.SilentSender = (*Adapter)(nil)
+var (
+	_ channel.SilentSender  = (*Adapter)(nil)
+	_ channel.StatusChecker = (*Adapter)(nil)
+)
 
 type Adapter struct {
-	bot      *tele.Bot
-	renderer *Renderer
+	bot       *tele.Bot
+	renderer  *Renderer
+	connected *atomic.Bool
 }
 
-func NewAdapter(bot *tele.Bot) *Adapter {
+func NewAdapter(bot *tele.Bot, connected *atomic.Bool) *Adapter {
 	return &Adapter{
-		bot:      bot,
-		renderer: NewRenderer(),
+		bot:       bot,
+		renderer:  NewRenderer(),
+		connected: connected,
 	}
+}
+
+func (a *Adapter) Connected() bool {
+	return a.connected.Load()
 }
 
 func (a *Adapter) Type() model.ChannelType {

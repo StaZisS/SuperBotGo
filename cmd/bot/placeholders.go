@@ -8,7 +8,6 @@ import (
 	"SuperBotGo/internal/channel"
 	"SuperBotGo/internal/chat"
 	"SuperBotGo/internal/model"
-	"SuperBotGo/internal/plugin/project"
 	"SuperBotGo/internal/state/storage"
 )
 
@@ -87,44 +86,3 @@ func (s *inMemoryDialogStorage) Delete(_ context.Context, userID model.GlobalUse
 }
 
 var _ storage.DialogStorage = (*inMemoryDialogStorage)(nil)
-
-type placeholderProjectStore struct{}
-
-func (s *placeholderProjectStore) ListProjects() ([]model.Project, error) {
-	return nil, nil
-}
-
-func (s *placeholderProjectStore) FindProject(_ context.Context, _ int64) (*model.Project, error) {
-	return nil, nil
-}
-
-func (s *placeholderProjectStore) SaveProject(_ context.Context, name, description string) (*model.Project, error) {
-	return &model.Project{ID: 1, Name: name, Description: description}, nil
-}
-
-var _ project.ProjectStore = (*placeholderProjectStore)(nil)
-
-type placeholderChatStore struct{}
-
-func (s *placeholderChatStore) ListChats() ([]model.ChatReference, error) {
-	return nil, nil
-}
-
-func (s *placeholderChatStore) FindChat(_ context.Context, _ model.ChannelType, _ string) (*model.ChatReference, error) {
-	return nil, nil
-}
-
-func (s *placeholderChatStore) FindChatByID(_ context.Context, _ int64) (*model.ChatReference, error) {
-	return nil, nil
-}
-
-func (s *placeholderChatStore) RegisterChat(_ context.Context, ref model.ChatReference) (*model.ChatReference, error) {
-	ref.ID = 1
-	return &ref, nil
-}
-
-func (s *placeholderChatStore) BindChat(_ context.Context, _, _ int64) error {
-	return nil
-}
-
-var _ project.ChatStore = (*placeholderChatStore)(nil)

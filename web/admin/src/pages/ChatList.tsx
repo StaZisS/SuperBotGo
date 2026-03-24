@@ -13,6 +13,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
+import ChannelStatusCard from '@/components/ChannelStatusCard'
 
 const CHANNEL_TYPES = ['', 'TELEGRAM', 'DISCORD'] as const
 const CHAT_KINDS = ['', 'GROUP', 'PRIVATE', 'CHANNEL'] as const
@@ -100,6 +101,9 @@ export default function ChatList() {
           Управление чатами и рассылка сообщений
         </p>
       </div>
+
+      {/* Channel status */}
+      <ChannelStatusCard />
 
       {/* Filters in a Card */}
       <Card>

@@ -174,6 +174,12 @@ export interface VersionInfo {
   created_at: string
 }
 
+export interface ChannelStatus {
+  name: string
+  type: string
+  status: 'connected' | 'disconnected' | 'not_configured'
+}
+
 export interface ChatReference {
   id: number
   channel_type: string
@@ -270,6 +276,8 @@ export const api = {
       `/plugins/${encodeURIComponent(pluginId)}/versions/${versionId}`,
       { method: 'DELETE' },
     ),
+
+  listChannelStatus: () => request<ChannelStatus[]>('/channels/status'),
 
   listChats: (params?: { channel_type?: string; chat_kind?: string }) => {
     const q = new URLSearchParams()

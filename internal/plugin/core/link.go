@@ -1,12 +1,10 @@
-package link
+package core
 
 import (
 	"context"
-	"fmt"
 
 	"SuperBotGo/internal/i18n"
 	"SuperBotGo/internal/model"
-	"SuperBotGo/internal/plugin"
 	"SuperBotGo/internal/state"
 )
 
@@ -29,36 +27,36 @@ type AccountLinker interface {
 	CompleteLinking(ctx context.Context, userID model.GlobalUserID, code string) LinkResult
 }
 
-type Plugin struct {
-	api    *plugin.SenderAPI
-	linker AccountLinker
-	cmdDef *state.CommandDefinition
+func LinkCommand() *state.CommandDefinition {
+	return state.NewCommand("link").
+		Description("Account Linking").
+		Step("action", func(s *state.StepBuilder) {
+			s.Prompt(func(p *state.PromptBuilder) {
+				p.LocalizedText("link.title", model.StylePlain)
+				p.LocalizedText("link.description", model.StylePlain)
+				p.LocalizedOptions("link.action_prompt", func(o *state.OptionsBuilder) {
+					o.LocalizedOption("link.generate", "generate")
+					o.LocalizedOption("link.enter", "enter")
+				})
+			})
+		}).
+		Step("code", func(s *state.StepBuilder) {
+			s.VisibleWhen(func(params model.OptionMap) bool {
+				return params.Get("action") != "generate"
+			})
+			s.Prompt(func(p *state.PromptBuilder) {
+				p.LocalizedText("link.enter_code_title", model.StylePlain)
+				p.LocalizedText("link.enter_code_hint", model.StylePlain)
+			})
+		}).
+		Build()
 }
 
-func New(api *plugin.SenderAPI, linker AccountLinker) *Plugin {
-	return &Plugin{
-		api:    api,
-		linker: linker,
-		cmdDef: LinkCommand(),
-	}
-}
-
-func (p *Plugin) ID() string                           { return "link" }
-func (p *Plugin) Name() string                         { return "Account Linking" }
-func (p *Plugin) Version() string                      { return "1.0.0" }
-func (p *Plugin) SupportedRoles() []string             { return []string{"USER", "ADMIN"} }
-func (p *Plugin) Commands() []*state.CommandDefinition { return []*state.CommandDefinition{p.cmdDef} }
-
-func (p *Plugin) HandleEvent(ctx context.Context, event model.Event) (*model.EventResponse, error) {
-	m, err := event.Messenger()
-	if err != nil {
-		return nil, fmt.Errorf("link: parse messenger data: %w", err)
-	}
-
+func (p *Plugin) handleLink(ctx context.Context, m *model.MessengerTriggerData) error {
 	locale := m.Locale
 	action := m.Params.Get("action")
 	if action == "" {
-		return nil, p.api.Reply(ctx, m, model.NewTextMessage(i18n.Get("link.action_required", locale)))
+		return p.api.Reply(ctx, m, model.NewTextMessage(i18n.Get("link.action_required", locale)))
 	}
 
 	var result LinkResult
@@ -68,11 +66,11 @@ func (p *Plugin) HandleEvent(ctx context.Context, event model.Event) (*model.Eve
 	case "enter":
 		code := m.Params.Get("code")
 		if code == "" {
-			return nil, p.api.Reply(ctx, m, model.NewTextMessage(i18n.Get("link.code_required", locale)))
+			return p.api.Reply(ctx, m, model.NewTextMessage(i18n.Get("link.code_required", locale)))
 		}
 		result = p.linker.CompleteLinking(ctx, m.UserID, code)
 	default:
-		return nil, p.api.Reply(ctx, m, model.NewTextMessage("Unknown action: "+action))
+		return p.api.Reply(ctx, m, model.NewTextMessage("Unknown action: "+action))
 	}
 
 	var msg model.Message
@@ -91,5 +89,5 @@ func (p *Plugin) HandleEvent(ctx context.Context, event model.Event) (*model.Eve
 		msg = model.NewTextMessage(result.Message)
 	}
 
-	return nil, p.api.Reply(ctx, m, msg)
+	return p.api.Reply(ctx, m, msg)
 }

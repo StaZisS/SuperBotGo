@@ -39,6 +39,13 @@ func (r *AdapterRegistry) MustGet(channelType model.ChannelType) (ChannelAdapter
 	return adapter, nil
 }
 
+// IsRegistered reports whether an adapter for the given channel type exists.
+func (r *AdapterRegistry) IsRegistered(channelType model.ChannelType) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.adapters[channelType] != nil
+}
+
 // SendToChat dispatches a message to the appropriate adapter with retry on transient errors.
 func (r *AdapterRegistry) SendToChat(ctx context.Context, channelType model.ChannelType, chatID string, msg model.Message) error {
 	adapter, err := r.MustGet(channelType)
