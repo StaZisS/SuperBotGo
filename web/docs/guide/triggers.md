@@ -54,7 +54,8 @@ wasmplugin.Trigger{
     Schedule:    "0 9 * * *",
     Handler: func(ctx *wasmplugin.EventContext) error {
         ctx.Log("cron: daily_report сработал")
-        ctx.Reply("Ежедневный отчёт: ...")
+        // ctx.Reply() не работает для cron — используйте ctx.SendMessage()
+        ctx.SendMessage("CHAT_ID", "Ежедневный отчёт: ...")
         return nil
     },
 }
@@ -66,6 +67,10 @@ wasmplugin.Trigger{
 |---|---|---|
 | `ScheduleName` | `string` | Имя расписания (= `Name` триггера) |
 | `FireTime` | `int64` | Unix timestamp срабатывания |
+
+::: tip ctx.Reply() vs ctx.SendMessage()
+`ctx.Reply()` работает **только** в messenger-триггерах — он отвечает в текущий чат пользователя. Для cron и event-триггеров используйте `ctx.SendMessage(chatID, text)` с явным указанием ID чата.
+:::
 
 ## Event Bus-триггер
 
