@@ -22,28 +22,24 @@ func (h *HostAPI) dbQueryFunc() api.GoModuleFunc {
 		length := uint32(stack[1])
 
 		if err := h.perms.CheckPermission(pluginID, "db:read"); err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, err)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		data, enc, err := readModMemoryAndDetect(mod, offset, length)
 		if err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, err)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var query map[string]interface{}
 		if err := unmarshalPayload(data, enc, &query); err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
+			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
 		if h.deps.DB == nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, errDepNotAvailable("DB"), enc)
+			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("DB"), enc)
 			return
 		}
 
@@ -52,12 +48,10 @@ func (h *HostAPI) dbQueryFunc() api.GoModuleFunc {
 
 		results, err := h.deps.DB.Query(dbCtx, pluginID, query)
 		if err != nil {
-			SetHostCallStatus(ctx, "error")
 			if dbCtx.Err() == context.DeadlineExceeded {
-				writeErrorResultWithEnc(ctx, mod, stack, fmt.Errorf("db_query timed out after %s", wasmDBMaxTimeout), enc)
-			} else {
-				writeErrorResultWithEnc(ctx, mod, stack, err, enc)
+				err = fmt.Errorf("db_query timed out after %s", wasmDBMaxTimeout)
 			}
+			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
@@ -73,28 +67,24 @@ func (h *HostAPI) dbSaveFunc() api.GoModuleFunc {
 		length := uint32(stack[1])
 
 		if err := h.perms.CheckPermission(pluginID, "db:write"); err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, err)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		data, enc, err := readModMemoryAndDetect(mod, offset, length)
 		if err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, err)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var record map[string]interface{}
 		if err := unmarshalPayload(data, enc, &record); err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
+			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
 		if h.deps.DB == nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, errDepNotAvailable("DB"), enc)
+			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("DB"), enc)
 			return
 		}
 
@@ -102,12 +92,10 @@ func (h *HostAPI) dbSaveFunc() api.GoModuleFunc {
 		defer cancel()
 
 		if err := h.deps.DB.Save(dbCtx, pluginID, record); err != nil {
-			SetHostCallStatus(ctx, "error")
 			if dbCtx.Err() == context.DeadlineExceeded {
-				writeErrorResultWithEnc(ctx, mod, stack, fmt.Errorf("db_save timed out after %s", wasmDBMaxTimeout), enc)
-			} else {
-				writeErrorResultWithEnc(ctx, mod, stack, err, enc)
+				err = fmt.Errorf("db_save timed out after %s", wasmDBMaxTimeout)
 			}
+			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
@@ -125,6 +113,18 @@ func writeErrorResultWithEnc(ctx context.Context, mod api.Module, stack []uint64
 	slog.Error("wasm host function error", "error", err)
 	resp := map[string]string{"error": err.Error()}
 	writeEncodedResult(ctx, mod, stack, resp, enc)
+}
+
+// returnError sets the host call status to "error" and writes a JSON error result.
+func returnError(ctx context.Context, mod api.Module, stack []uint64, err error) {
+	SetHostCallStatus(ctx, "error")
+	writeErrorResult(ctx, mod, stack, err)
+}
+
+// returnErrorEnc sets the host call status to "error" and writes an encoded error result.
+func returnErrorEnc(ctx context.Context, mod api.Module, stack []uint64, err error, enc EncodingType) {
+	SetHostCallStatus(ctx, "error")
+	writeErrorResultWithEnc(ctx, mod, stack, err, enc)
 }
 
 func writeJSONResult(ctx context.Context, mod api.Module, stack []uint64, v interface{}) {

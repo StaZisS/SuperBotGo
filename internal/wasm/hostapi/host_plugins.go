@@ -84,28 +84,24 @@ func (h *HostAPI) callPluginFunc() api.GoModuleFunc {
 
 		data, enc, err := readModMemoryAndDetect(mod, offset, length)
 		if err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, err)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var payload callPluginPayload
 		if err := unmarshalPayload(data, enc, &payload); err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
+			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
 		perm := fmt.Sprintf("plugins:call:%s", payload.Target)
 		if err := h.perms.CheckPermission(pluginID, perm); err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
+			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
 		if h.deps.PluginRegistry == nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, errDepNotAvailable("PluginRegistry"), enc)
+			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("PluginRegistry"), enc)
 			return
 		}
 
@@ -116,27 +112,25 @@ func (h *HostAPI) callPluginFunc() api.GoModuleFunc {
 		}
 
 		if err := checkCallCycle(chain, payload.Target); err != nil {
-			SetHostCallStatus(ctx, "error")
 			slog.Warn("inter-plugin cycle blocked",
 				"trace_id", traceID,
 				"caller", pluginID,
 				"target", payload.Target,
 				"chain", chain,
 			)
-			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
+			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
 		depth := callDepthFromContext(ctx)
 		if depth >= MaxCallDepth {
-			SetHostCallStatus(ctx, "error")
 			slog.Warn("inter-plugin call depth exceeded",
 				"trace_id", traceID,
 				"caller", pluginID,
 				"target", payload.Target,
 				"depth", depth,
 			)
-			writeErrorResultWithEnc(ctx, mod, stack, fmt.Errorf("inter-plugin call depth exceeded (max %d)", MaxCallDepth), enc)
+			returnErrorEnc(ctx, mod, stack, fmt.Errorf("inter-plugin call depth exceeded (max %d)", MaxCallDepth), enc)
 			return
 		}
 
@@ -155,19 +149,18 @@ func (h *HostAPI) callPluginFunc() api.GoModuleFunc {
 
 		result, err := h.deps.PluginRegistry.CallPlugin(callCtx, payload.Target, payload.Method, payload.Params)
 		if err != nil {
-			SetHostCallStatus(ctx, "error")
 			if callCtx.Err() == context.DeadlineExceeded {
-				writeErrorResultWithEnc(ctx, mod, stack, fmt.Errorf("call_plugin %q.%s timed out after %s", payload.Target, payload.Method, wasmCallPluginMaxTimeout), enc)
+				err = fmt.Errorf("call_plugin %q.%s timed out after %s", payload.Target, payload.Method, wasmCallPluginMaxTimeout)
 			} else {
-				writeErrorResultWithEnc(ctx, mod, stack, fmt.Errorf("call_plugin %q.%s: %w", payload.Target, payload.Method, err), enc)
+				err = fmt.Errorf("call_plugin %q.%s: %w", payload.Target, payload.Method, err)
 			}
+			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
 		offset2, length2, err := writeModMemory(ctx, mod, result)
 		if err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
+			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
 		stack[0] = uint64(offset2)<<32 | uint64(length2)
@@ -182,28 +175,24 @@ func (h *HostAPI) publishEventFunc() api.GoModuleFunc {
 		length := uint32(stack[1])
 
 		if err := h.perms.CheckPermission(pluginID, "plugins:events"); err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, err)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		data, enc, err := readModMemoryAndDetect(mod, offset, length)
 		if err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, err)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var payload publishEventPayload
 		if err := unmarshalPayload(data, enc, &payload); err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
+			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
 		if h.deps.Events == nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, errDepNotAvailable("EventBus"), enc)
+			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("EventBus"), enc)
 			return
 		}
 
@@ -213,12 +202,12 @@ func (h *HostAPI) publishEventFunc() api.GoModuleFunc {
 		pubCtx = eventbus.ContextWithPluginID(pubCtx, pluginID)
 
 		if err := h.deps.Events.Publish(pubCtx, payload.Topic, payload.Payload); err != nil {
-			SetHostCallStatus(ctx, "error")
 			if pubCtx.Err() == context.DeadlineExceeded {
-				writeErrorResultWithEnc(ctx, mod, stack, fmt.Errorf("publish_event %q timed out after %s", payload.Topic, wasmPublishEventMaxTimeout), enc)
+				err = fmt.Errorf("publish_event %q timed out after %s", payload.Topic, wasmPublishEventMaxTimeout)
 			} else {
-				writeErrorResultWithEnc(ctx, mod, stack, fmt.Errorf("publish event %q: %w", payload.Topic, err), enc)
+				err = fmt.Errorf("publish event %q: %w", payload.Topic, err)
 			}
+			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
 

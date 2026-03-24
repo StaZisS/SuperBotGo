@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"SuperBotGo/internal/channel"
 	"SuperBotGo/internal/model"
 )
 
@@ -27,44 +28,9 @@ func NewRenderer() *Renderer {
 
 const telegramMaxMessageLength = 4096
 
-func (r *Renderer) Render(msg model.Message) RenderedMessage {
-	var textParts []string
-	var photoURLs []string
-	var keyboard [][]InlineButton
+type formatter struct{}
 
-	for _, block := range msg.Blocks {
-		switch b := block.(type) {
-		case model.TextBlock:
-			textParts = append(textParts, renderTextBlock(b))
-		case model.MentionBlock:
-			textParts = append(textParts, renderMentionBlock(b))
-		case model.LinkBlock:
-			textParts = append(textParts, renderLinkBlock(b))
-		case model.ImageBlock:
-			photoURLs = append(photoURLs, b.URL)
-		case model.OptionsBlock:
-			if b.Prompt != "" {
-				textParts = append(textParts, escapeHTML(b.Prompt))
-			}
-			keyboard = buildOptionsKeyboard(b)
-		}
-	}
-
-	text := strings.Join(textParts, "\n")
-	if len([]rune(text)) > telegramMaxMessageLength {
-		runes := []rune(text)
-		text = string(runes[:telegramMaxMessageLength-3]) + "..."
-	}
-
-	return RenderedMessage{
-		Text:      text,
-		ParseMode: "HTML",
-		Keyboard:  keyboard,
-		PhotoURLs: photoURLs,
-	}
-}
-
-func renderTextBlock(b model.TextBlock) string {
+func (formatter) FormatText(b model.TextBlock) string {
 	escaped := escapeHTML(b.Text)
 	switch b.Style {
 	case model.StyleHeader:
@@ -80,14 +46,40 @@ func renderTextBlock(b model.TextBlock) string {
 	}
 }
 
-func renderMentionBlock(b model.MentionBlock) string {
+func (formatter) FormatMention(b model.MentionBlock) string {
 	name := escapeHTML(b.Username)
 	return fmt.Sprintf(`<a href="tg://user?id=%s">%s</a>`, b.UserID, name)
 }
 
-func renderLinkBlock(b model.LinkBlock) string {
+func (formatter) FormatLink(b model.LinkBlock) string {
 	label := escapeHTML(b.Label)
 	return fmt.Sprintf(`<a href="%s">%s</a>`, b.URL, label)
+}
+
+func (formatter) FormatOptionsPrompt(prompt string) string {
+	return escapeHTML(prompt)
+}
+
+func (r *Renderer) Render(msg model.Message) RenderedMessage {
+	parts := channel.RenderBlocks(msg, formatter{})
+
+	var keyboard [][]InlineButton
+	if parts.Options != nil {
+		keyboard = buildOptionsKeyboard(*parts.Options)
+	}
+
+	text := strings.Join(parts.TextParts, "\n")
+	if len([]rune(text)) > telegramMaxMessageLength {
+		runes := []rune(text)
+		text = string(runes[:telegramMaxMessageLength-3]) + "..."
+	}
+
+	return RenderedMessage{
+		Text:      text,
+		ParseMode: "HTML",
+		Keyboard:  keyboard,
+		PhotoURLs: parts.ImageURLs,
+	}
 }
 
 func buildOptionsKeyboard(b model.OptionsBlock) [][]InlineButton {

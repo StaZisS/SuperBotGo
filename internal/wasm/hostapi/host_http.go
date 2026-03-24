@@ -69,15 +69,13 @@ func (h *HostAPI) httpRequestFunc() api.GoModuleFunc {
 
 		data, enc, err := readModMemoryAndDetect(mod, offset, length)
 		if err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, err)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var payload httpRequestPayload
 		if err := unmarshalPayload(data, enc, &payload); err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
+			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
@@ -86,20 +84,17 @@ func (h *HostAPI) httpRequestFunc() api.GoModuleFunc {
 			requiredPerm = "network:write"
 		}
 		if err := h.perms.CheckPermission(pluginID, requiredPerm); err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
+			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
 		if h.deps.HTTP == nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, errDepNotAvailable("HTTP"), enc)
+			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("HTTP"), enc)
 			return
 		}
 
 		if isBlockedHost(payload.URL) {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, fmt.Errorf("requests to internal/private addresses are not allowed"), enc)
+			returnErrorEnc(ctx, mod, stack, fmt.Errorf("requests to internal/private addresses are not allowed"), enc)
 			return
 		}
 
@@ -118,8 +113,7 @@ func (h *HostAPI) httpRequestFunc() api.GoModuleFunc {
 
 		req, err := http.NewRequestWithContext(reqCtx, method, payload.URL, body)
 		if err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, fmt.Errorf("create request: %w", err), enc)
+			returnErrorEnc(ctx, mod, stack, fmt.Errorf("create request: %w", err), enc)
 			return
 		}
 
@@ -129,8 +123,7 @@ func (h *HostAPI) httpRequestFunc() api.GoModuleFunc {
 
 		resp, err := h.deps.HTTP.Do(req)
 		if err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, fmt.Errorf("http request: %w", err), enc)
+			returnErrorEnc(ctx, mod, stack, fmt.Errorf("http request: %w", err), enc)
 			return
 		}
 		defer resp.Body.Close()

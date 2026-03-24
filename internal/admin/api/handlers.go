@@ -175,28 +175,40 @@ func validateBlobKey(key string) bool {
 	return true
 }
 
-func (h *AdminHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
+// readWasmFromForm parses a multipart form, reads the "wasm" file field,
+// validates the .wasm extension, and returns the raw bytes.
+// Returns nil, false if an error response was already written.
+func readWasmFromForm(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
 		writeError(w, http.StatusBadRequest, "file too large or invalid multipart form")
-		return
+		return nil, false
 	}
 
 	file, header, err := r.FormFile("wasm")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "missing 'wasm' file in form")
-		return
+		return nil, false
 	}
 	defer file.Close()
 
 	if !strings.HasSuffix(header.Filename, ".wasm") {
 		writeError(w, http.StatusBadRequest, "file must have .wasm extension")
-		return
+		return nil, false
 	}
 
 	wasmBytes, err := io.ReadAll(file)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "failed to read uploaded file")
+		return nil, false
+	}
+
+	return wasmBytes, true
+}
+
+func (h *AdminHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
+	wasmBytes, ok := readWasmFromForm(w, r)
+	if !ok {
 		return
 	}
 
@@ -213,7 +225,9 @@ func (h *AdminHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	meta, err := compiled.CallMeta(r.Context())
 	h.hostAPI.RevokePermissions(probeID)
-	_ = compiled.Close(r.Context())
+	if closeErr := compiled.Close(r.Context()); closeErr != nil {
+		slog.Warn("admin: failed to close compiled module", "error", closeErr)
+	}
 	if err != nil {
 		slog.Error("admin: failed to read plugin metadata", "error", err)
 		writeError(w, http.StatusBadRequest, "failed to read plugin metadata")
@@ -258,9 +272,7 @@ func (h *AdminHandler) handleInstall(w http.ResponseWriter, r *http.Request) {
 		Permissions []string        `json:"permissions"`
 		WasmKey     string          `json:"wasm_key"`
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if !decodeJSONBody(w, r, &body) {
 		return
 	}
 
@@ -294,7 +306,9 @@ func (h *AdminHandler) handleInstall(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if wp.ID() != pluginID {
-		_ = h.loader.UnloadPlugin(r.Context(), wp.ID())
+		if unloadErr := h.loader.UnloadPlugin(r.Context(), wp.ID()); unloadErr != nil {
+			slog.Warn("admin: failed to unload mismatched plugin", "id", wp.ID(), "error", unloadErr)
+		}
 		slog.Warn("admin: plugin ID mismatch", "url_id", pluginID, "wasm_id", wp.ID())
 		writeError(w, http.StatusBadRequest, "plugin ID mismatch")
 		return
@@ -350,9 +364,7 @@ func (h *AdminHandler) handleUpdateConfig(w http.ResponseWriter, r *http.Request
 	var body struct {
 		Config json.RawMessage `json:"config"`
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if !decodeJSONBody(w, r, &body) {
 		return
 	}
 
@@ -389,9 +401,7 @@ func (h *AdminHandler) handleValidateConfig(w http.ResponseWriter, r *http.Reque
 	var body struct {
 		Config json.RawMessage `json:"config"`
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if !decodeJSONBody(w, r, &body) {
 		return
 	}
 
@@ -420,27 +430,8 @@ func (h *AdminHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
-	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
-		writeError(w, http.StatusBadRequest, "file too large or invalid form")
-		return
-	}
-
-	file, header, err := r.FormFile("wasm")
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "missing 'wasm' file")
-		return
-	}
-	defer file.Close()
-
-	if !strings.HasSuffix(header.Filename, ".wasm") {
-		writeError(w, http.StatusBadRequest, "file must have .wasm extension")
-		return
-	}
-
-	wasmBytes, err := io.ReadAll(file)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "failed to read file")
+	wasmBytes, ok := readWasmFromForm(w, r)
+	if !ok {
 		return
 	}
 
@@ -451,7 +442,9 @@ func (h *AdminHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.loader.ReloadPluginFromBytes(r.Context(), pluginID, wasmBytes, record.ConfigJSON); err != nil {
-		_ = h.blobs.Delete(r.Context(), newKey)
+		if delErr := h.blobs.Delete(r.Context(), newKey); delErr != nil {
+			slog.Warn("admin: failed to clean up wasm blob after reload failure", "key", newKey, "error", delErr)
+		}
 		slog.Error("admin: failed to reload plugin", "id", pluginID, "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to reload plugin")
 		return
@@ -794,4 +787,13 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 func writeError(w http.ResponseWriter, status int, message string) {
 	slog.Warn("admin: API error", "status", status, "message", message)
 	writeJSON(w, status, map[string]string{"error": message})
+}
+
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, v any) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return false
+	}
+	return true
 }

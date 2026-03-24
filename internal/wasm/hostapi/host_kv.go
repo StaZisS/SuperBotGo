@@ -23,35 +23,30 @@ func (h *HostAPI) kvGetFunc() api.GoModuleFunc {
 		length := uint32(stack[1])
 
 		if err := h.perms.CheckPermission(pluginID, "kv:read"); err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, err)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		data, enc, err := readModMemoryAndDetect(mod, offset, length)
 		if err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, err)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var req kvGetRequest
 		if err := unmarshalPayload(data, enc, &req); err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
+			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
 		if h.kvStore == nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, errDepNotAvailable("KVStore"), enc)
+			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("KVStore"), enc)
 			return
 		}
 
 		value, found, err := h.kvStore.Get(pluginID, req.Key)
 		if err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
+			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
@@ -81,28 +76,24 @@ func (h *HostAPI) kvSetFunc() api.GoModuleFunc {
 		length := uint32(stack[1])
 
 		if err := h.perms.CheckPermission(pluginID, "kv:write"); err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, err)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		data, enc, err := readModMemoryAndDetect(mod, offset, length)
 		if err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, err)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var req kvSetRequest
 		if err := unmarshalPayload(data, enc, &req); err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
+			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
 		if h.kvStore == nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, errDepNotAvailable("KVStore"), enc)
+			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("KVStore"), enc)
 			return
 		}
 
@@ -137,28 +128,24 @@ func (h *HostAPI) kvDeleteFunc() api.GoModuleFunc {
 		length := uint32(stack[1])
 
 		if err := h.perms.CheckPermission(pluginID, "kv:write"); err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, err)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		data, enc, err := readModMemoryAndDetect(mod, offset, length)
 		if err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, err)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var req kvDeleteRequest
 		if err := unmarshalPayload(data, enc, &req); err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
+			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
 		if h.kvStore == nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, errDepNotAvailable("KVStore"), enc)
+			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("KVStore"), enc)
 			return
 		}
 
@@ -188,28 +175,24 @@ func (h *HostAPI) kvListFunc() api.GoModuleFunc {
 		length := uint32(stack[1])
 
 		if err := h.perms.CheckPermission(pluginID, "kv:read"); err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, err)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		data, enc, err := readModMemoryAndDetect(mod, offset, length)
 		if err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, err)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var req kvListRequest
 		if err := unmarshalPayload(data, enc, &req); err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
+			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
 		if h.kvStore == nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, errDepNotAvailable("KVStore"), enc)
+			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("KVStore"), enc)
 			return
 		}
 

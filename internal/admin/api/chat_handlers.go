@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"log/slog"
 	"net/http"
 
@@ -65,9 +64,7 @@ func (h *ChatHandler) handleBroadcast(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body broadcastRequest
-	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if !decodeJSONBody(w, r, &body) {
 		return
 	}
 

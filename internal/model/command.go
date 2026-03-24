@@ -9,17 +9,6 @@ func (m OptionMap) Get(key string) string {
 	return m[key]
 }
 
-func (m OptionMap) GetOr(key, defaultVal string) string {
-	if m == nil {
-		return defaultVal
-	}
-	v, ok := m[key]
-	if !ok {
-		return defaultVal
-	}
-	return v
-}
-
 type CommandRequest struct {
 	UserID      GlobalUserID `json:"user_id"`
 	ChannelType ChannelType  `json:"channel_type"`

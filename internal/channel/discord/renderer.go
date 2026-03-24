@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"SuperBotGo/internal/channel"
 	"SuperBotGo/internal/model"
 )
 
@@ -27,43 +28,9 @@ func NewRenderer() *Renderer {
 
 const discordMaxMessageLength = 2000
 
-func (r *Renderer) Render(msg model.Message) RenderedMessage {
-	var textParts []string
-	var imageURLs []string
-	var buttons [][]Button
+type formatter struct{}
 
-	for _, block := range msg.Blocks {
-		switch b := block.(type) {
-		case model.TextBlock:
-			textParts = append(textParts, renderTextBlock(b))
-		case model.MentionBlock:
-			textParts = append(textParts, renderMentionBlock(b))
-		case model.LinkBlock:
-			textParts = append(textParts, renderLinkBlock(b))
-		case model.ImageBlock:
-			imageURLs = append(imageURLs, b.URL)
-		case model.OptionsBlock:
-			if b.Prompt != "" {
-				textParts = append(textParts, b.Prompt)
-			}
-			buttons = buildOptionButtons(b.Options)
-		}
-	}
-
-	text := strings.Join(textParts, "\n")
-	if len(text) > discordMaxMessageLength {
-		text = text[:discordMaxMessageLength-3] + "..."
-	}
-
-	return RenderedMessage{
-		Text:       text,
-		ImageURLs:  imageURLs,
-		HasOptions: len(buttons) > 0,
-		Buttons:    buttons,
-	}
-}
-
-func renderTextBlock(b model.TextBlock) string {
+func (formatter) FormatText(b model.TextBlock) string {
 	switch b.Style {
 	case model.StyleHeader:
 		return fmt.Sprintf("# %s", b.Text)
@@ -78,12 +45,37 @@ func renderTextBlock(b model.TextBlock) string {
 	}
 }
 
-func renderMentionBlock(b model.MentionBlock) string {
+func (formatter) FormatMention(b model.MentionBlock) string {
 	return fmt.Sprintf("<@%s>", b.UserID)
 }
 
-func renderLinkBlock(b model.LinkBlock) string {
+func (formatter) FormatLink(b model.LinkBlock) string {
 	return fmt.Sprintf("[%s](%s)", b.Label, b.URL)
+}
+
+func (formatter) FormatOptionsPrompt(prompt string) string {
+	return prompt
+}
+
+func (r *Renderer) Render(msg model.Message) RenderedMessage {
+	parts := channel.RenderBlocks(msg, formatter{})
+
+	var buttons [][]Button
+	if parts.Options != nil {
+		buttons = buildOptionButtons(parts.Options.Options)
+	}
+
+	text := strings.Join(parts.TextParts, "\n")
+	if len(text) > discordMaxMessageLength {
+		text = text[:discordMaxMessageLength-3] + "..."
+	}
+
+	return RenderedMessage{
+		Text:       text,
+		ImageURLs:  parts.ImageURLs,
+		HasOptions: len(buttons) > 0,
+		Buttons:    buttons,
+	}
 }
 
 func buildOptionButtons(options []model.Option) [][]Button {

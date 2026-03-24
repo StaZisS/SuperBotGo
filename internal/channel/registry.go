@@ -31,7 +31,7 @@ func (r *AdapterRegistry) Get(channelType model.ChannelType) ChannelAdapter {
 	return r.adapters[channelType]
 }
 
-func (r *AdapterRegistry) MustGet(channelType model.ChannelType) (ChannelAdapter, error) {
+func (r *AdapterRegistry) mustGet(channelType model.ChannelType) (ChannelAdapter, error) {
 	adapter := r.Get(channelType)
 	if adapter == nil {
 		return nil, fmt.Errorf("no adapter registered for channel type: %s", channelType)
@@ -48,7 +48,7 @@ func (r *AdapterRegistry) IsRegistered(channelType model.ChannelType) bool {
 
 // SendToChat dispatches a message to the appropriate adapter with retry on transient errors.
 func (r *AdapterRegistry) SendToChat(ctx context.Context, channelType model.ChannelType, chatID string, msg model.Message) error {
-	adapter, err := r.MustGet(channelType)
+	adapter, err := r.mustGet(channelType)
 	if err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func (r *AdapterRegistry) SendToChat(ctx context.Context, channelType model.Chan
 
 // SendToUser dispatches a message to the appropriate adapter with retry on transient errors.
 func (r *AdapterRegistry) SendToUser(ctx context.Context, channelType model.ChannelType, platformUserID model.PlatformUserID, msg model.Message) error {
-	adapter, err := r.MustGet(channelType)
+	adapter, err := r.mustGet(channelType)
 	if err != nil {
 		return err
 	}
@@ -71,7 +71,7 @@ func (r *AdapterRegistry) SendToUser(ctx context.Context, channelType model.Chan
 // SendToChatWithOpts dispatches a message applying SendOptions (silent mode, mention stripping)
 // with retry on transient errors.
 func (r *AdapterRegistry) SendToChatWithOpts(ctx context.Context, channelType model.ChannelType, chatID string, msg model.Message, opts model.SendOptions) error {
-	adapter, err := r.MustGet(channelType)
+	adapter, err := r.mustGet(channelType)
 	if err != nil {
 		return err
 	}
@@ -91,7 +91,7 @@ func (r *AdapterRegistry) SendToChatWithOpts(ctx context.Context, channelType mo
 // SendToUserWithOpts dispatches a message applying SendOptions (silent mode, mention stripping)
 // with retry on transient errors.
 func (r *AdapterRegistry) SendToUserWithOpts(ctx context.Context, channelType model.ChannelType, platformUserID model.PlatformUserID, msg model.Message, opts model.SendOptions) error {
-	adapter, err := r.MustGet(channelType)
+	adapter, err := r.mustGet(channelType)
 	if err != nil {
 		return err
 	}

@@ -300,48 +300,52 @@ func (wp *WasmPlugin) condBranchNodeDefToCondBranchNode(nd wasmrt.NodeDef) state
 	return cbn
 }
 
-func (wp *WasmPlugin) callOptionsCallback(cbName string, ctx state.StepContext) []model.Option {
-	req := wasmrt.StepCallbackRequest{
-		Callback: cbName,
-		UserID:   int64(ctx.UserID),
-		Locale:   ctx.Locale,
-		Params:   ctx.Params,
+// callStepCallback is the shared call/unmarshal path for all wasm step callbacks.
+func (wp *WasmPlugin) callStepCallback(cbName string, req wasmrt.StepCallbackRequest) (*wasmrt.StepCallbackResponse, error) {
+	req.Callback = cbName
+	reqJSON, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
 	}
-	reqJSON, _ := json.Marshal(req)
 	result, err := wp.compiled.CallStepCallback(context.Background(), reqJSON, wp.config)
 	if err != nil {
-		slog.Error("wasm options callback failed", "plugin", wp.meta.ID, "callback", cbName, "error", err)
-		return nil
+		return nil, err
 	}
 	var resp wasmrt.StepCallbackResponse
 	if err := json.Unmarshal(result, &resp); err != nil {
-		slog.Error("wasm options callback response parse failed", "plugin", wp.meta.ID, "callback", cbName, "error", err)
-		return nil
+		return nil, fmt.Errorf("unmarshal response: %w", err)
 	}
 	if resp.Error != "" {
-		slog.Error("wasm options callback returned error", "plugin", wp.meta.ID, "callback", cbName, "error", resp.Error)
-		return nil
+		return nil, fmt.Errorf("plugin error: %s", resp.Error)
 	}
-	opts := make([]model.Option, len(resp.Options))
-	for i, o := range resp.Options {
+	return &resp, nil
+}
+
+func convertOptions(defs []wasmrt.OptionDef) []model.Option {
+	opts := make([]model.Option, len(defs))
+	for i, o := range defs {
 		opts[i] = model.Option{Label: o.Label, Value: o.Value}
 	}
 	return opts
 }
 
-func (wp *WasmPlugin) callValidateCallback(cbName string, inputText string) bool {
-	req := wasmrt.StepCallbackRequest{
-		Callback: cbName,
-		Input:    inputText,
+func (wp *WasmPlugin) callOptionsCallback(cbName string, ctx state.StepContext) []model.Option {
+	resp, err := wp.callStepCallback(cbName, wasmrt.StepCallbackRequest{
+		UserID: int64(ctx.UserID),
+		Locale: ctx.Locale,
+		Params: ctx.Params,
+	})
+	if err != nil {
+		slog.Error("wasm options callback failed", "plugin", wp.meta.ID, "callback", cbName, "error", err)
+		return nil
 	}
-	reqJSON, _ := json.Marshal(req)
-	result, err := wp.compiled.CallStepCallback(context.Background(), reqJSON, wp.config)
+	return convertOptions(resp.Options)
+}
+
+func (wp *WasmPlugin) callValidateCallback(cbName string, inputText string) bool {
+	resp, err := wp.callStepCallback(cbName, wasmrt.StepCallbackRequest{Input: inputText})
 	if err != nil {
 		slog.Error("wasm validate callback failed", "plugin", wp.meta.ID, "callback", cbName, "error", err)
-		return true
-	}
-	var resp wasmrt.StepCallbackResponse
-	if err := json.Unmarshal(result, &resp); err != nil {
 		return true
 	}
 	if resp.Result != nil {
@@ -351,18 +355,9 @@ func (wp *WasmPlugin) callValidateCallback(cbName string, inputText string) bool
 }
 
 func (wp *WasmPlugin) callConditionCallback(cbName string, params model.OptionMap) bool {
-	req := wasmrt.StepCallbackRequest{
-		Callback: cbName,
-		Params:   params,
-	}
-	reqJSON, _ := json.Marshal(req)
-	result, err := wp.compiled.CallStepCallback(context.Background(), reqJSON, wp.config)
+	resp, err := wp.callStepCallback(cbName, wasmrt.StepCallbackRequest{Params: params})
 	if err != nil {
 		slog.Error("wasm condition callback failed", "plugin", wp.meta.ID, "callback", cbName, "error", err)
-		return true
-	}
-	var resp wasmrt.StepCallbackResponse
-	if err := json.Unmarshal(result, &resp); err != nil {
 		return true
 	}
 	if resp.Result != nil {
@@ -372,33 +367,17 @@ func (wp *WasmPlugin) callConditionCallback(cbName string, params model.OptionMa
 }
 
 func (wp *WasmPlugin) callPaginationCallback(cbName string, ctx state.StepContext, page int) state.OptionsPage {
-	req := wasmrt.StepCallbackRequest{
-		Callback: cbName,
-		UserID:   int64(ctx.UserID),
-		Locale:   ctx.Locale,
-		Params:   ctx.Params,
-		Page:     page,
-	}
-	reqJSON, _ := json.Marshal(req)
-	result, err := wp.compiled.CallStepCallback(context.Background(), reqJSON, wp.config)
+	resp, err := wp.callStepCallback(cbName, wasmrt.StepCallbackRequest{
+		UserID: int64(ctx.UserID),
+		Locale: ctx.Locale,
+		Params: ctx.Params,
+		Page:   page,
+	})
 	if err != nil {
 		slog.Error("wasm pagination callback failed", "plugin", wp.meta.ID, "callback", cbName, "error", err)
 		return state.OptionsPage{}
 	}
-	var resp wasmrt.StepCallbackResponse
-	if err := json.Unmarshal(result, &resp); err != nil {
-		slog.Error("wasm pagination callback response parse failed", "plugin", wp.meta.ID, "callback", cbName, "error", err)
-		return state.OptionsPage{}
-	}
-	if resp.Error != "" {
-		slog.Error("wasm pagination callback returned error", "plugin", wp.meta.ID, "callback", cbName, "error", resp.Error)
-		return state.OptionsPage{}
-	}
-	opts := make([]model.Option, len(resp.Options))
-	for i, o := range resp.Options {
-		opts[i] = model.Option{Label: o.Label, Value: o.Value}
-	}
-	return state.OptionsPage{Options: opts, HasMore: resp.HasMore}
+	return state.OptionsPage{Options: convertOptions(resp.Options), HasMore: resp.HasMore}
 }
 
 func evalCondition(cond *wasmrt.ConditionDef, params model.OptionMap) bool {

@@ -34,27 +34,23 @@ func (h *HostAPI) notifyUserFunc() api.GoModuleFunc {
 
 		data, enc, err := readModMemoryAndDetect(mod, offset, length)
 		if err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, err)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var req notifyUserRequest
 		if err := unmarshalPayload(data, enc, &req); err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
+			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
 		if err := h.perms.CheckPermission(pluginID, "notify:user"); err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
+			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
 		if h.deps.Notifier == nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, errDepNotAvailable("Notifier"), enc)
+			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("Notifier"), enc)
 			return
 		}
 
@@ -92,27 +88,23 @@ func (h *HostAPI) notifyChatFunc() api.GoModuleFunc {
 
 		data, enc, err := readModMemoryAndDetect(mod, offset, length)
 		if err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, err)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var req notifyChatRequest
 		if err := unmarshalPayload(data, enc, &req); err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
+			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
 		if err := h.perms.CheckPermission(pluginID, "notify:chat"); err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
+			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
 		if h.deps.Notifier == nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, errDepNotAvailable("Notifier"), enc)
+			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("Notifier"), enc)
 			return
 		}
 
@@ -149,27 +141,23 @@ func (h *HostAPI) notifyProjectFunc() api.GoModuleFunc {
 
 		data, enc, err := readModMemoryAndDetect(mod, offset, length)
 		if err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, err)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var req notifyProjectRequest
 		if err := unmarshalPayload(data, enc, &req); err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
+			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
 		if err := h.perms.CheckPermission(pluginID, "notify:project"); err != nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
+			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
 		if h.deps.Notifier == nil {
-			SetHostCallStatus(ctx, "error")
-			writeErrorResultWithEnc(ctx, mod, stack, errDepNotAvailable("Notifier"), enc)
+			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("Notifier"), enc)
 			return
 		}
 

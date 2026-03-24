@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 )
 
@@ -47,9 +46,7 @@ func (h *CommandPermHandler) handleSetEnabled(w http.ResponseWriter, r *http.Req
 	var body struct {
 		Enabled bool `json:"enabled"`
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if !decodeJSONBody(w, r, &body) {
 		return
 	}
 
@@ -71,9 +68,7 @@ func (h *CommandPermHandler) handleSetPolicy(w http.ResponseWriter, r *http.Requ
 	var body struct {
 		Expression string `json:"expression"`
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if !decodeJSONBody(w, r, &body) {
 		return
 	}
 

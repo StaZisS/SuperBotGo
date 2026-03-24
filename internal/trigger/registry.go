@@ -107,24 +107,8 @@ func (r *Registry) LookupHTTP(pluginID, path, method string) (triggerName string
 	return route.TriggerName, nil
 }
 
-func (r *Registry) SetAPIKey(pluginID, apiKey string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.apiKeys[pluginID] = apiKey
-}
-
 func (r *Registry) GetAPIKey(pluginID string) string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.apiKeys[pluginID]
-}
-
-func (r *Registry) ListHTTPRoutes() map[string]httpRoute {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	result := make(map[string]httpRoute, len(r.httpRoutes))
-	for k, v := range r.httpRoutes {
-		result[k] = v
-	}
-	return result
 }

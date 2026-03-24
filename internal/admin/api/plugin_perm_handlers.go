@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -101,9 +100,7 @@ func (h *PluginPermHandler) handleUpdatePluginPerms(w http.ResponseWriter, r *ht
 	var body struct {
 		Permissions []string `json:"permissions"`
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if !decodeJSONBody(w, r, &body) {
 		return
 	}
 
