@@ -1,0 +1,60 @@
+sequenceDiagram
+    title SenderAPI — отправка сообщений из плагинов
+
+    participant Plugin as WasmPlugin<br/>(wasm/adapter.go)
+    participant Sender as SenderAPI<br/>(plugin/sender.go)
+    participant Users as UserService
+    participant ChatReg as ChatRegistry
+    participant AR as AdapterRegistry<br/>(channel/registry.go)
+    participant Adapter as ChannelAdapter
+
+    Note over Plugin, Adapter: Reply — ответ в текущий чат
+    Plugin->>Sender: Reply(ctx, messengerData, msg)
+    Sender->>AR: SendToChat(ctx, channelType, chatID, msg)
+    AR->>AR: withRetry(ctx, fn)
+    AR->>Adapter: SendToChat(ctx, chatID, msg)
+    Adapter-->>AR: result
+    AR-->>Sender: result
+    Sender-->>Plugin: result
+
+    Note over Plugin, Adapter: SendToUser — отправка пользователю (primary channel)
+    Plugin->>Sender: SendToUser(ctx, userID, msg)
+    Sender->>Users: GetUser(ctx, userID)
+    Users-->>Sender: GlobalUser
+    Sender->>Sender: user.PlatformUserID()
+    Sender->>AR: SendToUser(ctx, primaryChannel, platformUserID, msg)
+    AR->>AR: withRetry(ctx, fn)
+    AR->>Adapter: SendToUser(ctx, platformUserID, msg)
+    Adapter-->>Sender: result
+
+    Note over Plugin, Adapter: SendToAllChannels — broadcast во все каналы пользователя
+    Plugin->>Sender: SendToAllChannels(ctx, userID, msg)
+    Sender->>Users: GetUser(ctx, userID)
+    Users-->>Sender: GlobalUser{Accounts: [...]}
+    loop Для каждого аккаунта
+        Sender->>AR: SendToUser(ctx, account.ChannelType, account.ChannelUserID, msg)
+        AR->>Adapter: SendToUser(...)
+        alt Ошибка
+            Adapter-->>AR: error
+            AR-->>Sender: error
+            Sender->>Sender: slog.Error(...), накопить ошибку
+        else Успех
+            Adapter-->>Sender: nil
+        end
+    end
+
+    Note over Plugin, Adapter: SendToProject — broadcast по чатам проекта
+    Plugin->>Sender: SendToProject(ctx, projectID, msg)
+    Sender->>ChatReg: FindChatsByProject(ctx, projectID)
+    ChatReg-->>Sender: []ChatReference
+    loop Для каждого чата
+        Sender->>AR: SendToChat(ctx, channelType, chatID, msg)
+        AR->>Adapter: SendToChat(...)
+        alt Ошибка
+            Adapter-->>AR: error
+            AR-->>Sender: error
+            Sender->>Sender: slog.Error(...), накопить ошибку
+        else Успех
+            Adapter-->>Sender: nil
+        end
+    end

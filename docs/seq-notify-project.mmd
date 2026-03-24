@@ -1,0 +1,44 @@
+sequenceDiagram
+    title NotifyProject — рассылка уведомлений по проекту
+
+    participant Caller as Вызывающий код
+    participant Notify as NotifyAPI<br/>(notification/notify.go)
+    participant ChatReg as ChatRegistry
+    participant AR as AdapterRegistry<br/>(channel/registry.go)
+    participant Adapter as ChannelAdapter<br/>(telegram / discord)
+
+    Caller->>Notify: NotifyProject(ctx, projectID, msg, priority)
+
+    Notify->>ChatReg: FindChatsByProject(ctx, projectID)
+    ChatReg-->>Notify: []ChatReference{ChannelType, PlatformChatID}
+
+    Notify->>Notify: opts = SendOptions{Silent: priority == Low}
+
+    loop Для каждого чата проекта
+        Notify->>AR: SendToChatWithOpts(ctx, channelType, chatID, msg, opts)
+
+        AR->>AR: StripMentions? → StripMentionBlocks(msg)
+        AR->>AR: withRetry(ctx, fn)
+
+        alt Silent + SilentSender
+            AR->>Adapter: SendToChatSilent(ctx, chatID, msg, true)
+        else Обычная отправка
+            AR->>Adapter: SendToChat(ctx, chatID, msg)
+        end
+
+        alt Ошибка
+            Adapter-->>AR: error
+            AR-->>Notify: error
+            Notify->>Notify: slog.Error(...), накопить ошибку
+            Note right of Notify: Продолжаем отправку<br/>в оставшиеся чаты
+        else Успех
+            Adapter-->>AR: nil
+            AR-->>Notify: nil
+        end
+    end
+
+    alt Были ошибки
+        Notify-->>Caller: error: "project N broadcast failed on X/Y chats"
+    else Все успешно
+        Notify-->>Caller: nil
+    end

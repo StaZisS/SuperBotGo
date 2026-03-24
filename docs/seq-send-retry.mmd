@@ -1,0 +1,54 @@
+sequenceDiagram
+    title Доставка сообщения с retry (channel/send.go)
+
+    participant Caller as AdapterRegistry<br/>(channel/registry.go)
+    participant Retry as withRetry()<br/>(channel/send.go)
+    participant Adapter as ChannelAdapter<br/>(telegram / discord)
+    participant API as Messenger API<br/>(Telegram Bot API /<br/>Discord Gateway)
+
+    Caller->>Retry: withRetry(ctx, fn)
+
+    loop attempt = 0..2 (maxRetries = 3)
+        Retry->>Adapter: fn() → SendToChat / SendToUser
+        Adapter->>Adapter: msg.IsEmpty()? → error
+        Adapter->>Adapter: Render(msg) → text + media
+        Adapter->>Adapter: Обрезка по лимиту платформы
+        Note right of Adapter: Telegram: 4096 символов<br/>Discord: 2000 символов
+
+        Adapter->>API: HTTP POST (send message)
+
+        alt Успех (200 OK)
+            API-->>Adapter: response
+            Adapter-->>Retry: nil
+            Retry-->>Caller: nil
+            Note right of Retry: Выход из цикла
+        else Транзиентная ошибка
+            API-->>Adapter: error
+            Adapter-->>Retry: error
+
+            Retry->>Retry: isTransient(err)?
+            Note right of Retry: Транзиентные:<br/>• 429 Too Many Requests<br/>• timeout / EOF<br/>• connection reset/refused<br/>• 502 / 503 / 504<br/>• net.Error
+
+            alt Транзиентная + не последняя попытка
+                Retry->>Retry: backoffDelay(attempt)
+                Note right of Retry: 500ms × 2^attempt<br/>+ jitter (±30%)<br/>max = 5s
+
+                Retry->>Retry: slog.Warn("send failed, retrying")
+
+                alt ctx.Done()
+                    Retry-->>Caller: context.Canceled / DeadlineExceeded
+                else Ожидание задержки
+                    Note right of Retry: time.After(delay)
+                end
+            else Последняя попытка
+                Retry-->>Caller: error (последняя ошибка)
+            end
+
+        else Постоянная ошибка
+            API-->>Adapter: error
+            Adapter-->>Retry: error
+            Retry->>Retry: isTransient(err)? → false
+            Retry-->>Caller: error (немедленный возврат)
+            Note right of Retry: Нет повтора для:<br/>• 400 Bad Request<br/>• 401 Unauthorized<br/>• 403 Forbidden<br/>• 404 Not Found
+        end
+    end
