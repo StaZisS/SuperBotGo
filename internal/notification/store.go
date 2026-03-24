@@ -2,9 +2,7 @@ package notification
 
 import (
 	"context"
-	"fmt"
 	"strings"
-	"sync"
 
 	"SuperBotGo/internal/model"
 )
@@ -14,42 +12,6 @@ type PrefsRepository interface {
 	GetPrefs(ctx context.Context, userID model.GlobalUserID) (*model.NotificationPrefs, error)
 	SavePrefs(ctx context.Context, prefs *model.NotificationPrefs) error
 }
-
-// PlaceholderPrefsRepo is an in-memory implementation for use when PostgreSQL is unavailable.
-type PlaceholderPrefsRepo struct {
-	mu    sync.RWMutex
-	store map[model.GlobalUserID]*model.NotificationPrefs
-}
-
-func NewPlaceholderPrefsRepo() *PlaceholderPrefsRepo {
-	return &PlaceholderPrefsRepo{
-		store: make(map[model.GlobalUserID]*model.NotificationPrefs),
-	}
-}
-
-func (r *PlaceholderPrefsRepo) GetPrefs(_ context.Context, userID model.GlobalUserID) (*model.NotificationPrefs, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	p, ok := r.store[userID]
-	if !ok {
-		return nil, nil
-	}
-	cp := *p
-	return &cp, nil
-}
-
-func (r *PlaceholderPrefsRepo) SavePrefs(_ context.Context, prefs *model.NotificationPrefs) error {
-	if prefs == nil {
-		return fmt.Errorf("notification prefs: nil prefs")
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	stored := *prefs
-	r.store[prefs.GlobalUserID] = &stored
-	return nil
-}
-
-var _ PrefsRepository = (*PlaceholderPrefsRepo)(nil)
 
 // MarshalChannelPriority encodes a slice of ChannelType to a comma-separated string.
 func MarshalChannelPriority(channels []model.ChannelType) string {

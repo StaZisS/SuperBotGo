@@ -3,12 +3,10 @@ package main
 import (
 	"context"
 	"log/slog"
-	"sync"
 
 	"SuperBotGo/internal/channel"
 	"SuperBotGo/internal/chat"
 	"SuperBotGo/internal/model"
-	"SuperBotGo/internal/state/storage"
 )
 
 type registryChatJoinHandler struct {
@@ -45,44 +43,3 @@ func (h *registryChatJoinHandler) OnChatLeave(ctx context.Context, channelType m
 }
 
 var _ channel.ChatJoinHandler = (*registryChatJoinHandler)(nil)
-
-type inMemoryDialogStorage struct {
-	mu    sync.RWMutex
-	store map[model.GlobalUserID]*model.DialogState
-}
-
-func (s *inMemoryDialogStorage) Save(_ context.Context, userID model.GlobalUserID, ds model.DialogState) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.store == nil {
-		s.store = make(map[model.GlobalUserID]*model.DialogState)
-	}
-	copy := ds
-	s.store[userID] = &copy
-	return nil
-}
-
-func (s *inMemoryDialogStorage) Load(_ context.Context, userID model.GlobalUserID) (*model.DialogState, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.store == nil {
-		return nil, nil
-	}
-	ds, ok := s.store[userID]
-	if !ok {
-		return nil, nil
-	}
-	copy := *ds
-	return &copy, nil
-}
-
-func (s *inMemoryDialogStorage) Delete(_ context.Context, userID model.GlobalUserID) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.store != nil {
-		delete(s.store, userID)
-	}
-	return nil
-}
-
-var _ storage.DialogStorage = (*inMemoryDialogStorage)(nil)

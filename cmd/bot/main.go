@@ -41,7 +41,6 @@ import (
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/redis/go-redis/v9"
 )
 
 func main() {
@@ -142,114 +141,55 @@ func main() {
 		logger.Info("using local filesystem blob store", slog.String("dir", cfg.Admin.ModulesDir))
 	}
 
-	var redisClient *redis.Client
-	if cfg.Redis.Addr != "" {
-		rc, redisErr := database.NewRedisClient(wasmCtx, cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
-		if redisErr != nil {
-			logger.Warn("Redis not available, Redis dialog storage disabled", slog.Any("error", redisErr))
-		} else {
-			redisClient = rc
-			cronScheduler.SetRedis(rc)
-			logger.Info("connected to Redis", slog.String("addr", cfg.Redis.Addr))
-		}
+	if cfg.Redis.Addr == "" {
+		logger.Error("Redis configuration is required (redis addr must be set)")
+		os.Exit(1)
 	}
-
-	var userRepo user.UserRepository
-	var accountRepo user.AccountRepository
-	var roleStore role.Store
-	var pluginStore adminapi.PluginStore
-	var versionStore adminapi.VersionStore
-	var cmdPermStore adminapi.CommandPermStore
-	var adminChatStore adminapi.AdminChatStore
-	var authzStore authz.Store
-	var universityProvider *providers.UniversityProvider
-	var adminBus *pubsub.Bus
-	var notifPrefsRepo notification.PrefsRepository
+	redisClient, redisErr := database.NewRedisClient(wasmCtx, cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
+	if redisErr != nil {
+		logger.Error("failed to connect to Redis", slog.Any("error", redisErr))
+		os.Exit(1)
+	}
+	cronScheduler.SetRedis(redisClient)
+	logger.Info("connected to Redis", slog.String("addr", cfg.Redis.Addr))
 
 	connString := fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
 		cfg.Database.Host, cfg.Database.Port, cfg.Database.User,
 		cfg.Database.Password, cfg.Database.DBName, cfg.Database.SSLMode,
 	)
-	if cfg.Database.Host != "" && cfg.Database.DBName != "" {
-		pool, dbErr := database.NewPool(wasmCtx, connString)
-		if dbErr != nil {
-			logger.Warn("PostgreSQL not available, falling back to in-memory stores", slog.Any("error", dbErr))
-		} else {
-			if migErr := database.RunMigrations(connString); migErr != nil {
-				logger.Warn("failed to run migrations, falling back to in-memory stores", slog.Any("error", migErr))
-				pool.Close()
-				pool = nil
-			}
-			if pool != nil {
-				userRepo = user.NewPgUserRepo(pool)
-				accountRepo = user.NewPgAccountRepo(pool)
-				roleStore = role.NewPgStore(pool)
-				pluginStore = adminapi.NewPgPluginStore(pool)
-				versionStore = adminapi.NewPgVersionStore(pool)
-				cmdPermStore = adminapi.NewPgCommandPermStore(pool)
-				adminChatStore = adminapi.NewPgAdminChatStore(pool)
-				authzStore = authz.NewPgStore(pool)
-				universityProvider = providers.NewUniversityProvider(pool)
-				adminBus = pubsub.NewBus(pool, connString, generateInstanceID())
-				chatRegistry = chat.NewPgRegistry(pool)
-				notifPrefsRepo = notification.NewPgPrefsRepo(pool)
-				logger.Info("using PostgreSQL stores")
-			}
-		}
+	if cfg.Database.Host == "" || cfg.Database.DBName == "" {
+		logger.Error("PostgreSQL configuration is required (database host and name must be set)")
+		os.Exit(1)
 	}
-
-	if userRepo == nil {
-		userRepo = user.NewPlaceholderUserRepo()
-		accountRepo = user.NewPlaceholderAccountRepo()
-		logger.Warn("using in-memory user/account stores (data will be lost on restart)")
+	pool, dbErr := database.NewPool(wasmCtx, connString)
+	if dbErr != nil {
+		logger.Error("failed to connect to PostgreSQL", slog.Any("error", dbErr))
+		os.Exit(1)
 	}
-	if roleStore == nil {
-		roleStore = role.NewPlaceholderStore()
-		logger.Warn("using in-memory role store (data will be lost on restart)")
+	if migErr := database.RunMigrations(connString); migErr != nil {
+		logger.Error("failed to run database migrations", slog.Any("error", migErr))
+		os.Exit(1)
 	}
-	if chatRegistry == nil {
-		chatRegistry = chat.NewPlaceholderRegistry()
-		logger.Warn("using in-memory chat registry (data will be lost on restart)")
-	}
-	if authzStore == nil {
-		authzStore = authz.NewPlaceholderStore()
-	}
-	if notifPrefsRepo == nil {
-		notifPrefsRepo = notification.NewPlaceholderPrefsRepo()
-		logger.Warn("using in-memory notification preferences store (data will be lost on restart)")
-	}
-	if pluginStore == nil {
-		fileStore, fsErr := adminapi.NewFilePluginStore(cfg.Admin.ModulesDir)
-		if fsErr != nil {
-			logger.Error("failed to create file plugin store", slog.Any("error", fsErr))
-			os.Exit(1)
-		}
-		pluginStore = fileStore
-		logger.Info("using file-based plugin store")
-	}
-	if versionStore == nil {
-		fileVerStore, fsErr := adminapi.NewFileVersionStore(cfg.Admin.ModulesDir)
-		if fsErr != nil {
-			logger.Error("failed to create file version store", slog.Any("error", fsErr))
-			os.Exit(1)
-		}
-		versionStore = fileVerStore
-		logger.Info("using file-based version store")
-	}
+	userRepo := user.NewPgUserRepo(pool)
+	accountRepo := user.NewPgAccountRepo(pool)
+	roleStore := role.NewPgStore(pool)
+	pluginStore := adminapi.NewPgPluginStore(pool)
+	versionStore := adminapi.NewPgVersionStore(pool)
+	cmdPermStore := adminapi.NewPgCommandPermStore(pool)
+	adminChatStore := adminapi.NewPgAdminChatStore(pool)
+	authzStore := authz.NewPgStore(pool)
+	universityProvider := providers.NewUniversityProvider(pool)
+	adminBus := pubsub.NewBus(pool, connString, generateInstanceID())
+	chatRegistry = chat.NewPgRegistry(pool)
+	notifPrefsRepo := notification.NewPgPrefsRepo(pool)
+	logger.Info("using PostgreSQL stores")
 
 	userService := user.NewService(userRepo, accountRepo)
 	roleManager := role.NewManager(roleStore, logger)
 
-	var authzProviders []authz.AttributeProvider
-	var schemaContributors []authz.SchemaContributor
-	if universityProvider != nil {
-		authzProviders = append(authzProviders, universityProvider)
-		schemaContributors = append(schemaContributors, universityProvider)
-	}
-
-	authorizer := authz.NewAuthorizer(authzStore, logger, authzProviders...)
-	schemaBuilder := authz.NewRuleSchemaBuilder(authzStore, schemaContributors...)
+	authorizer := authz.NewAuthorizer(authzStore, logger, universityProvider)
+	schemaBuilder := authz.NewRuleSchemaBuilder(authzStore, universityProvider)
 	ruleSchemaHandler := adminapi.NewRuleSchemaHandler(schemaBuilder)
 
 	if err := adminapi.AutoloadPlugins(wasmCtx, pluginStore, blobStore, wasmLoader, pluginManager); err != nil {
@@ -258,14 +198,8 @@ func main() {
 
 	adapter.RegisterWasmPlugins(pluginManager, wasmLoader)
 
-	var dialogStore storage.DialogStorage
-	if redisClient != nil {
-		dialogStore = storage.NewRedisStorage(redisClient)
-		logger.Info("using Redis dialog storage")
-	} else {
-		dialogStore = &inMemoryDialogStorage{}
-		logger.Warn("using in-memory dialog storage (state will be lost on restart)")
-	}
+	dialogStore := storage.NewRedisStorage(redisClient)
+	logger.Info("using Redis dialog storage")
 	stateMgr := state.NewManager(dialogStore)
 
 	adminHandler := adminapi.NewAdminHandler(
@@ -359,28 +293,26 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	if adminBus != nil {
-		pluginFetcher := func(fCtx context.Context, id string) (*pubsub.PluginData, error) {
-			rec, err := pluginStore.GetPlugin(fCtx, id)
-			if err != nil {
-				return nil, err
-			}
-			return &pubsub.PluginData{
-				WasmKey:     rec.WasmKey,
-				ConfigJSON:  rec.ConfigJSON,
-				Permissions: rec.Permissions,
-			}, nil
+	pluginFetcher := func(fCtx context.Context, id string) (*pubsub.PluginData, error) {
+		rec, err := pluginStore.GetPlugin(fCtx, id)
+		if err != nil {
+			return nil, err
 		}
-		eventHandler := pubsub.NewAdminEventHandler(
-			pluginFetcher, blobStore.Get, wasmLoader, pluginManager, hostAPI, stateMgr,
-		)
-		go func() {
-			if err := adminBus.Subscribe(ctx, eventHandler.Handle); err != nil {
-				logger.Error("pubsub subscriber stopped", slog.Any("error", err))
-			}
-		}()
-		logger.Info("pub/sub subscriber started", slog.String("instance", adminBus.InstanceID()))
+		return &pubsub.PluginData{
+			WasmKey:     rec.WasmKey,
+			ConfigJSON:  rec.ConfigJSON,
+			Permissions: rec.Permissions,
+		}, nil
 	}
+	eventHandler := pubsub.NewAdminEventHandler(
+		pluginFetcher, blobStore.Get, wasmLoader, pluginManager, hostAPI, stateMgr,
+	)
+	go func() {
+		if err := adminBus.Subscribe(ctx, eventHandler.Handle); err != nil {
+			logger.Error("pubsub subscriber stopped", slog.Any("error", err))
+		}
+	}()
+	logger.Info("pub/sub subscriber started", slog.String("instance", adminBus.InstanceID()))
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
