@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"time"
 
 	"github.com/tetratelabs/wazero"
@@ -61,14 +60,6 @@ func (r *Runtime) CompileModule(ctx context.Context, wasmBytes []byte) (*Compile
 	}, nil
 }
 
-func (r *Runtime) LoadModuleFromFile(ctx context.Context, path string) (*CompiledModule, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read wasm file %q: %w", path, err)
-	}
-	return r.CompileModule(ctx, data)
-}
-
 func (cm *CompiledModule) EnablePool(cfg *PoolConfig) {
 	if cm.pool != nil {
 		cm.pool.Close()
@@ -100,6 +91,42 @@ func (cm *CompiledModule) RunActionWithConfig(ctx context.Context, action string
 	return cm.runActionDirect(ctx, action, input, configJSON)
 }
 
+// instantiate creates a fresh WASM module instance, runs it, and returns stdout.
+func (cm *CompiledModule) instantiate(ctx context.Context, action string, input, configJSON []byte) ([]byte, error) {
+	var stdout bytes.Buffer
+	stdin := bytes.NewReader(input)
+
+	var stderr io.Writer = io.Discard
+	if cm.ID != "" {
+		stderr = &slogWriter{pluginID: cm.ID}
+	}
+
+	modCfg := wazero.NewModuleConfig().
+		WithEnv("PLUGIN_ACTION", action).
+		WithStdin(stdin).
+		WithStdout(&stdout).
+		WithStderr(stderr).
+		WithFSConfig(wazero.NewFSConfig()).
+		WithName("")
+
+	if len(configJSON) > 0 {
+		modCfg = modCfg.WithEnv("PLUGIN_CONFIG", string(configJSON))
+	}
+
+	_, err := cm.rt.engine.InstantiateModule(ctx, cm.compiled, modCfg)
+	if err != nil {
+		if exitErr, ok := err.(*sys.ExitError); ok {
+			if exitErr.ExitCode() == 0 {
+				return stdout.Bytes(), nil
+			}
+			return nil, fmt.Errorf("wasm module exited with code %d", exitErr.ExitCode())
+		}
+		return nil, fmt.Errorf("instantiate wasm module: %w", err)
+	}
+
+	return stdout.Bytes(), nil
+}
+
 func (cm *CompiledModule) runActionDirect(ctx context.Context, action string, input []byte, configJSON []byte) ([]byte, error) {
 	timeoutSec := pluginTimeoutFromContext(ctx, cm.rt.config.DefaultTimeoutSeconds)
 	timeout := time.Duration(timeoutSec) * time.Second
@@ -128,47 +155,12 @@ func (cm *CompiledModule) runActionDirect(ctx context.Context, action string, in
 		)
 	}()
 
-	var stdout bytes.Buffer
-	var stdin *bytes.Reader
-	if len(input) > 0 {
-		stdin = bytes.NewReader(input)
-	} else {
-		stdin = bytes.NewReader(nil)
-	}
-
-	var stderr io.Writer = io.Discard
-	if cm.ID != "" {
-		stderr = &slogWriter{pluginID: cm.ID}
-	}
-
-	modCfg := wazero.NewModuleConfig().
-		WithEnv("PLUGIN_ACTION", action).
-		WithStdin(stdin).
-		WithStdout(&stdout).
-		WithStderr(stderr).
-		WithFSConfig(wazero.NewFSConfig()).
-		WithName("")
-
-	if len(configJSON) > 0 {
-		modCfg = modCfg.WithEnv("PLUGIN_CONFIG", string(configJSON))
-	}
-
-	_, err := cm.rt.engine.InstantiateModule(ctx, cm.compiled, modCfg)
+	result, err := cm.instantiate(ctx, action, input, configJSON)
 	if err != nil {
-
-		if exitErr, ok := err.(*sys.ExitError); ok {
-			if exitErr.ExitCode() == 0 {
-
-				return stdout.Bytes(), nil
-			}
-			status = "error"
-			return nil, fmt.Errorf("wasm module exited with code %d", exitErr.ExitCode())
-		}
 		status = "error"
-		return nil, fmt.Errorf("instantiate wasm module: %w", err)
+		return nil, err
 	}
-
-	return stdout.Bytes(), nil
+	return result, nil
 }
 
 func (cm *CompiledModule) CallMeta(ctx context.Context) (PluginMeta, error) {
@@ -242,14 +234,6 @@ func (cm *CompiledModule) CallMigrate(ctx context.Context, oldVersion, newVersio
 	}
 
 	return nil
-}
-
-func (cm *CompiledModule) CallHandleCommand(ctx context.Context, reqJSON []byte, configJSON []byte) ([]byte, error) {
-	data, err := cm.RunActionWithConfig(ctx, "handle_command", reqJSON, configJSON)
-	if err != nil {
-		return nil, fmt.Errorf("call handle_command: %w", err)
-	}
-	return data, nil
 }
 
 func (cm *CompiledModule) CallStepCallback(ctx context.Context, reqJSON []byte, configJSON []byte) ([]byte, error) {

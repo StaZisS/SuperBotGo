@@ -1,17 +1,12 @@
 package runtime
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/tetratelabs/wazero"
-	"github.com/tetratelabs/wazero/sys"
 )
 
 type ModulePool struct {
@@ -124,56 +119,21 @@ func (p *ModulePool) Execute(ctx context.Context, action string, input []byte, c
 		}
 		defer func() { p.sem <- struct{}{} }()
 	}
-	waitDuration := time.Since(waitStart)
-	p.totalWaitTime.Add(waitDuration.Nanoseconds())
+	p.totalWaitTime.Add(time.Since(waitStart).Nanoseconds())
 
 	p.activeExecutions.Add(1)
 	defer p.activeExecutions.Add(-1)
 	p.totalExecutions.Add(1)
 
-	var stdout bytes.Buffer
-	var stdin *bytes.Reader
-	if len(input) > 0 {
-		stdin = bytes.NewReader(input)
-	} else {
-		stdin = bytes.NewReader(nil)
-	}
-
-	var stderr io.Writer = io.Discard
-	if cm.ID != "" {
-		stderr = &slogWriter{pluginID: cm.ID}
-	}
-
-	modCfg := wazero.NewModuleConfig().
-		WithEnv("PLUGIN_ACTION", action).
-		WithStdin(stdin).
-		WithStdout(&stdout).
-		WithStderr(stderr).
-		WithFSConfig(wazero.NewFSConfig()).
-		WithName("")
-
-	if len(configJSON) > 0 {
-		modCfg = modCfg.WithEnv("PLUGIN_CONFIG", string(configJSON))
-	}
-
 	instStart := time.Now()
-	_, err := cm.rt.engine.InstantiateModule(ctx, cm.compiled, modCfg)
-	instDuration := time.Since(instStart)
-	p.totalInstantiateT.Add(instDuration.Nanoseconds())
+	result, err := cm.instantiate(ctx, action, input, configJSON)
+	p.totalInstantiateT.Add(time.Since(instStart).Nanoseconds())
 
 	if err != nil {
-		if exitErr, ok := err.(*sys.ExitError); ok {
-			if exitErr.ExitCode() == 0 {
-				return stdout.Bytes(), nil
-			}
-			status = "error"
-			return nil, fmt.Errorf("wasm module exited with code %d", exitErr.ExitCode())
-		}
 		status = "error"
-		return nil, fmt.Errorf("instantiate wasm module: %w", err)
+		return nil, err
 	}
-
-	return stdout.Bytes(), nil
+	return result, nil
 }
 
 func (p *ModulePool) Close() {

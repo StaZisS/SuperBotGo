@@ -20,7 +20,6 @@ type HostAPI struct {
 	metrics    *metrics.Metrics
 	kvStore    *KVStore
 	rateLimits map[string]int
-	provider   *HostFunctionProvider
 }
 
 func NewHostAPI(deps Dependencies) *HostAPI {
@@ -60,18 +59,12 @@ func (h *HostAPI) SetNotifier(n Notifier) {
 	h.deps.Notifier = n
 }
 
-func (h *HostAPI) Provider() *HostFunctionProvider {
-	return h.provider
-}
-
 func (h *HostAPI) RegisterHostModule(ctx context.Context, rt *wasmrt.Runtime) error {
 	rt.AddContextHook(func(ctx context.Context, pluginID string) context.Context {
 		ctx = h.ContextWithRateLimiter(ctx, pluginID)
 		ctx = ContextWithTraceID(ctx, GenerateTraceID())
 		return ctx
 	})
-
-	h.provider = h.buildProvider()
 
 	builder := rt.Engine().NewHostModuleBuilder("env")
 
@@ -127,109 +120,12 @@ func (h *HostAPI) RegisterHostModule(ctx context.Context, rt *wasmrt.Runtime) er
 	return err
 }
 
-func (h *HostAPI) buildProvider() *HostFunctionProvider {
-	p := NewHostFunctionProvider()
-
-	p.Register(HostFunction{
-		Name:        "db_query",
-		Description: "Query the plugin-scoped database.",
-		Permissions: []string{"db:read"},
-		Handler:     h.noopHandler(),
-	})
-	p.Register(HostFunction{
-		Name:        "db_save",
-		Description: "Save a record to the plugin-scoped database.",
-		Permissions: []string{"db:write"},
-		Handler:     h.noopHandler(),
-	})
-
-	p.Register(HostFunction{
-		Name:        "http_request",
-		Description: "Make an outbound HTTP request.",
-		Permissions: []string{},
-		Handler:     h.noopHandler(),
-	})
-
-	p.Register(HostFunction{
-		Name:        "call_plugin",
-		Description: "Call a method on another plugin.",
-		Permissions: []string{},
-		Handler:     h.noopHandler(),
-	})
-	p.Register(HostFunction{
-		Name:        "publish_event",
-		Description: "Publish an event to the event bus.",
-		Permissions: []string{"plugins:events"},
-		Handler:     h.noopHandler(),
-	})
-
-	p.Register(HostFunction{
-		Name:        "kv_get",
-		Description: "Get a value from the plugin-scoped key-value store.",
-		Permissions: []string{"kv:read"},
-		Handler:     h.noopHandler(),
-	})
-	p.Register(HostFunction{
-		Name:        "kv_set",
-		Description: "Set a value in the plugin-scoped key-value store.",
-		Permissions: []string{"kv:write"},
-		Handler:     h.noopHandler(),
-	})
-	p.Register(HostFunction{
-		Name:        "kv_delete",
-		Description: "Delete a key from the plugin-scoped key-value store.",
-		Permissions: []string{"kv:write"},
-		Handler:     h.noopHandler(),
-	})
-	p.Register(HostFunction{
-		Name:        "kv_list",
-		Description: "List keys in the plugin-scoped key-value store.",
-		Permissions: []string{"kv:read"},
-		Handler:     h.noopHandler(),
-	})
-
-	p.Register(HostFunction{
-		Name:        "notify_user",
-		Description: "Send a priority-aware notification to a user.",
-		Permissions: []string{"notify:user"},
-		Handler:     h.noopHandler(),
-	})
-	p.Register(HostFunction{
-		Name:        "notify_chat",
-		Description: "Send a priority-aware notification to a chat.",
-		Permissions: []string{"notify:chat"},
-		Handler:     h.noopHandler(),
-	})
-	p.Register(HostFunction{
-		Name:        "notify_project",
-		Description: "Send a priority-aware notification to all chats in a project.",
-		Permissions: []string{"notify:project"},
-		Handler:     h.noopHandler(),
-	})
-
-	return p
-}
-
-func (h *HostAPI) noopHandler() HostFunctionHandler {
-	return func(ctx context.Context, pluginID string, request []byte) ([]byte, error) {
-		return nil, fmt.Errorf("this handler is a placeholder; the wazero-specific binding handles the call")
-	}
-}
-
 func (h *HostAPI) GrantPermissions(pluginID string, permissions []string) {
 	h.perms.Grant(pluginID, permissions)
 }
 
 func (h *HostAPI) RevokePermissions(pluginID string) {
 	h.perms.Revoke(pluginID)
-}
-
-func (h *HostAPI) ForPlugin(pluginID string, permissions []string) {
-	h.perms.Grant(pluginID, permissions)
-}
-
-func (h *HostAPI) GetGrantedPermissions(pluginID string) []string {
-	return h.perms.List(pluginID)
 }
 
 func pluginIDFromContext(ctx context.Context) string {

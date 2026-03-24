@@ -208,7 +208,7 @@ func (h *AdminHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	const probeID = "_upload_probe"
-	h.hostAPI.ForPlugin(probeID, nil)
+	h.hostAPI.GrantPermissions(probeID, nil)
 	compiled.ID = probeID
 
 	meta, err := compiled.CallMeta(r.Context())

@@ -2,19 +2,18 @@ package hostapi
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	"github.com/tetratelabs/wazero/api"
 )
 
 type kvGetRequest struct {
-	Key string `json:"key"`
+	Key string `json:"key" msgpack:"key"`
 }
 
 type kvGetResponse struct {
-	Value *string `json:"value"`
-	Found bool    `json:"found"`
+	Value *string `json:"value" msgpack:"value"`
+	Found bool    `json:"found" msgpack:"found"`
 }
 
 func (h *HostAPI) kvGetFunc() api.GoModuleFunc {
@@ -29,7 +28,7 @@ func (h *HostAPI) kvGetFunc() api.GoModuleFunc {
 			return
 		}
 
-		data, err := readModMemory(mod, offset, length)
+		data, enc, err := readModMemoryAndDetect(mod, offset, length)
 		if err != nil {
 			SetHostCallStatus(ctx, "error")
 			writeErrorResult(ctx, mod, stack, err)
@@ -37,22 +36,22 @@ func (h *HostAPI) kvGetFunc() api.GoModuleFunc {
 		}
 
 		var req kvGetRequest
-		if err := json.Unmarshal(data, &req); err != nil {
+		if err := unmarshalPayload(data, enc, &req); err != nil {
 			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, err)
+			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
 		if h.kvStore == nil {
 			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, errDepNotAvailable("KVStore"))
+			writeErrorResultWithEnc(ctx, mod, stack, errDepNotAvailable("KVStore"), enc)
 			return
 		}
 
 		value, found, err := h.kvStore.Get(pluginID, req.Key)
 		if err != nil {
 			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, err)
+			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
@@ -60,19 +59,19 @@ func (h *HostAPI) kvGetFunc() api.GoModuleFunc {
 		if found {
 			resp.Value = &value
 		}
-		writeJSONResult(ctx, mod, stack, resp)
+		writeEncodedResult(ctx, mod, stack, resp, enc)
 	}
 }
 
 type kvSetRequest struct {
-	Key        string `json:"key"`
-	Value      string `json:"value"`
-	TTLSeconds *int   `json:"ttl_seconds,omitempty"`
+	Key        string `json:"key" msgpack:"key"`
+	Value      string `json:"value" msgpack:"value"`
+	TTLSeconds *int   `json:"ttl_seconds,omitempty" msgpack:"ttl_seconds,omitempty"`
 }
 
 type kvSetResponse struct {
-	OK    bool   `json:"ok"`
-	Error string `json:"error,omitempty"`
+	OK    bool   `json:"ok" msgpack:"ok"`
+	Error string `json:"error,omitempty" msgpack:"error,omitempty"`
 }
 
 func (h *HostAPI) kvSetFunc() api.GoModuleFunc {
@@ -87,7 +86,7 @@ func (h *HostAPI) kvSetFunc() api.GoModuleFunc {
 			return
 		}
 
-		data, err := readModMemory(mod, offset, length)
+		data, enc, err := readModMemoryAndDetect(mod, offset, length)
 		if err != nil {
 			SetHostCallStatus(ctx, "error")
 			writeErrorResult(ctx, mod, stack, err)
@@ -95,15 +94,15 @@ func (h *HostAPI) kvSetFunc() api.GoModuleFunc {
 		}
 
 		var req kvSetRequest
-		if err := json.Unmarshal(data, &req); err != nil {
+		if err := unmarshalPayload(data, enc, &req); err != nil {
 			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, err)
+			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
 		if h.kvStore == nil {
 			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, errDepNotAvailable("KVStore"))
+			writeErrorResultWithEnc(ctx, mod, stack, errDepNotAvailable("KVStore"), enc)
 			return
 		}
 
@@ -114,21 +113,21 @@ func (h *HostAPI) kvSetFunc() api.GoModuleFunc {
 
 		if err := h.kvStore.Set(pluginID, req.Key, req.Value, ttl); err != nil {
 			SetHostCallStatus(ctx, "error")
-			writeJSONResult(ctx, mod, stack, kvSetResponse{OK: false, Error: err.Error()})
+			writeEncodedResult(ctx, mod, stack, kvSetResponse{OK: false, Error: err.Error()}, enc)
 			return
 		}
 
-		writeJSONResult(ctx, mod, stack, kvSetResponse{OK: true})
+		writeEncodedResult(ctx, mod, stack, kvSetResponse{OK: true}, enc)
 	}
 }
 
 type kvDeleteRequest struct {
-	Key string `json:"key"`
+	Key string `json:"key" msgpack:"key"`
 }
 
 type kvDeleteResponse struct {
-	OK    bool   `json:"ok"`
-	Error string `json:"error,omitempty"`
+	OK    bool   `json:"ok" msgpack:"ok"`
+	Error string `json:"error,omitempty" msgpack:"error,omitempty"`
 }
 
 func (h *HostAPI) kvDeleteFunc() api.GoModuleFunc {
@@ -143,7 +142,7 @@ func (h *HostAPI) kvDeleteFunc() api.GoModuleFunc {
 			return
 		}
 
-		data, err := readModMemory(mod, offset, length)
+		data, enc, err := readModMemoryAndDetect(mod, offset, length)
 		if err != nil {
 			SetHostCallStatus(ctx, "error")
 			writeErrorResult(ctx, mod, stack, err)
@@ -151,35 +150,35 @@ func (h *HostAPI) kvDeleteFunc() api.GoModuleFunc {
 		}
 
 		var req kvDeleteRequest
-		if err := json.Unmarshal(data, &req); err != nil {
+		if err := unmarshalPayload(data, enc, &req); err != nil {
 			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, err)
+			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
 		if h.kvStore == nil {
 			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, errDepNotAvailable("KVStore"))
+			writeErrorResultWithEnc(ctx, mod, stack, errDepNotAvailable("KVStore"), enc)
 			return
 		}
 
 		if err := h.kvStore.Delete(pluginID, req.Key); err != nil {
 			SetHostCallStatus(ctx, "error")
-			writeJSONResult(ctx, mod, stack, kvDeleteResponse{OK: false, Error: err.Error()})
+			writeEncodedResult(ctx, mod, stack, kvDeleteResponse{OK: false, Error: err.Error()}, enc)
 			return
 		}
 
-		writeJSONResult(ctx, mod, stack, kvDeleteResponse{OK: true})
+		writeEncodedResult(ctx, mod, stack, kvDeleteResponse{OK: true}, enc)
 	}
 }
 
 type kvListRequest struct {
-	Prefix string `json:"prefix,omitempty"`
+	Prefix string `json:"prefix,omitempty" msgpack:"prefix,omitempty"`
 }
 
 type kvListResponse struct {
-	Keys  []string `json:"keys"`
-	Error string   `json:"error,omitempty"`
+	Keys  []string `json:"keys" msgpack:"keys"`
+	Error string   `json:"error,omitempty" msgpack:"error,omitempty"`
 }
 
 func (h *HostAPI) kvListFunc() api.GoModuleFunc {
@@ -194,7 +193,7 @@ func (h *HostAPI) kvListFunc() api.GoModuleFunc {
 			return
 		}
 
-		data, err := readModMemory(mod, offset, length)
+		data, enc, err := readModMemoryAndDetect(mod, offset, length)
 		if err != nil {
 			SetHostCallStatus(ctx, "error")
 			writeErrorResult(ctx, mod, stack, err)
@@ -202,28 +201,28 @@ func (h *HostAPI) kvListFunc() api.GoModuleFunc {
 		}
 
 		var req kvListRequest
-		if err := json.Unmarshal(data, &req); err != nil {
+		if err := unmarshalPayload(data, enc, &req); err != nil {
 			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, err)
+			writeErrorResultWithEnc(ctx, mod, stack, err, enc)
 			return
 		}
 
 		if h.kvStore == nil {
 			SetHostCallStatus(ctx, "error")
-			writeErrorResult(ctx, mod, stack, errDepNotAvailable("KVStore"))
+			writeErrorResultWithEnc(ctx, mod, stack, errDepNotAvailable("KVStore"), enc)
 			return
 		}
 
 		keys, err := h.kvStore.List(pluginID, req.Prefix)
 		if err != nil {
 			SetHostCallStatus(ctx, "error")
-			writeJSONResult(ctx, mod, stack, kvListResponse{Error: err.Error()})
+			writeEncodedResult(ctx, mod, stack, kvListResponse{Error: err.Error()}, enc)
 			return
 		}
 		if keys == nil {
 			keys = []string{}
 		}
 
-		writeJSONResult(ctx, mod, stack, kvListResponse{Keys: keys})
+		writeEncodedResult(ctx, mod, stack, kvListResponse{Keys: keys}, enc)
 	}
 }

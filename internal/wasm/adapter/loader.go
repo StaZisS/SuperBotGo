@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -76,7 +74,7 @@ func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, conf
 	}
 
 	const probeID = "_temp_probe"
-	l.hostAPI.ForPlugin(probeID, permissions)
+	l.hostAPI.GrantPermissions(probeID, permissions)
 	compiled.ID = probeID
 
 	meta, err := compiled.CallMeta(ctx)
@@ -93,7 +91,7 @@ func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, conf
 		if oldVer == newVer {
 			slog.Warn("wasm: plugin with the same version is already loaded",
 				"id", meta.ID, "version", newVer)
-		} else if compareVersions(newVer, oldVer) < 0 {
+		} else if registry.CompareVersions(newVer, oldVer) < 0 {
 			slog.Warn("wasm: loading older plugin version than currently loaded",
 				"id", meta.ID, "current_version", oldVer, "new_version", newVer)
 		}
@@ -142,7 +140,7 @@ func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, conf
 		}
 	}
 
-	l.hostAPI.ForPlugin(meta.ID, permissions)
+	l.hostAPI.GrantPermissions(meta.ID, permissions)
 	compiled.ID = meta.ID
 	compiled.Version = meta.Version
 
@@ -455,29 +453,4 @@ func (l *Loader) Close(ctx context.Context) error {
 		l.metrics.LoadedPluginsGauge.Set(0)
 	}
 	return firstErr
-}
-
-func compareVersions(a, b string) int {
-	pa := strings.Split(a, ".")
-	pb := strings.Split(b, ".")
-	maxLen := len(pa)
-	if len(pb) > maxLen {
-		maxLen = len(pb)
-	}
-	for i := range maxLen {
-		var va, vb int
-		if i < len(pa) {
-			va, _ = strconv.Atoi(pa[i])
-		}
-		if i < len(pb) {
-			vb, _ = strconv.Atoi(pb[i])
-		}
-		if va < vb {
-			return -1
-		}
-		if va > vb {
-			return 1
-		}
-	}
-	return 0
 }
