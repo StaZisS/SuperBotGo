@@ -175,8 +175,10 @@ func (m *ChannelManager) handleInput(
 		return err
 	}
 
-	if sendErr := m.adapters.SendToChat(ctx, channelType, chatID, result.Message); sendErr != nil {
-		return sendErr
+	if !result.Message.IsEmpty() {
+		if sendErr := m.adapters.SendToChat(ctx, channelType, chatID, result.Message); sendErr != nil {
+			return sendErr
+		}
 	}
 
 	if result.IsComplete {
