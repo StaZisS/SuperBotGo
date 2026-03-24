@@ -57,6 +57,11 @@ type Message struct {
 	Blocks []ContentBlock
 }
 
+// IsEmpty returns true if the message contains no content blocks.
+func (m Message) IsEmpty() bool {
+	return len(m.Blocks) == 0
+}
+
 func NewTextMessage(text string) Message {
 	return Message{
 		Blocks: []ContentBlock{

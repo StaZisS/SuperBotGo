@@ -60,8 +60,9 @@ type LogEntry struct {
 }
 
 type MessageEntry struct {
-	ChatID string `json:"chat_id"`
-	Text   string `json:"text"`
+	ChannelType ChannelType `json:"channel_type,omitempty"`
+	ChatID      string      `json:"chat_id"`
+	Text        string      `json:"text"`
 }
 
 type MessengerTriggerData struct {

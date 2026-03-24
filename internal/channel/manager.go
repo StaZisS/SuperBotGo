@@ -206,7 +206,13 @@ func (m *ChannelManager) handleError(ctx context.Context, channelType model.Chan
 			if msg == "" {
 				msg = "An error occurred."
 			}
-			_ = m.adapters.SendToChat(ctx, channelType, chatID, model.NewTextMessage(msg))
+			if sendErr := m.adapters.SendToChat(ctx, channelType, chatID, model.NewTextMessage(msg)); sendErr != nil {
+				m.logger.Error("failed to send error reply to user",
+					slog.Int64("user_id", int64(userID)),
+					slog.String("chat_id", chatID),
+					slog.Any("send_error", sendErr),
+					slog.Any("original_error", err))
+			}
 
 		case errs.SeveritySilent:
 			m.logger.Debug("silent error",
@@ -219,8 +225,14 @@ func (m *ChannelManager) handleError(ctx context.Context, channelType model.Chan
 				slog.String("code", string(appErr.Code)),
 				slog.Int64("user_id", int64(userID)),
 				slog.Any("error", err))
-			_ = m.adapters.SendToChat(ctx, channelType, chatID,
-				model.NewTextMessage("An error occurred. Please try again."))
+			if sendErr := m.adapters.SendToChat(ctx, channelType, chatID,
+				model.NewTextMessage("An error occurred. Please try again.")); sendErr != nil {
+				m.logger.Error("failed to send error reply to user",
+					slog.Int64("user_id", int64(userID)),
+					slog.String("chat_id", chatID),
+					slog.Any("send_error", sendErr),
+					slog.Any("original_error", err))
+			}
 		}
 		return
 	}
@@ -228,6 +240,12 @@ func (m *ChannelManager) handleError(ctx context.Context, channelType model.Chan
 	m.logger.Error("unexpected error processing update",
 		slog.Int64("user_id", int64(userID)),
 		slog.Any("error", err))
-	_ = m.adapters.SendToChat(ctx, channelType, chatID,
-		model.NewTextMessage("An error occurred. Please try again."))
+	if sendErr := m.adapters.SendToChat(ctx, channelType, chatID,
+		model.NewTextMessage("An error occurred. Please try again.")); sendErr != nil {
+		m.logger.Error("failed to send error reply to user",
+			slog.Int64("user_id", int64(userID)),
+			slog.String("chat_id", chatID),
+			slog.Any("send_error", sendErr),
+			slog.Any("original_error", err))
+	}
 }

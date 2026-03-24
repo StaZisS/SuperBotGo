@@ -25,6 +25,7 @@ import (
 	"SuperBotGo/internal/i18n"
 	"SuperBotGo/internal/metrics"
 	"SuperBotGo/internal/model"
+	"SuperBotGo/internal/notification"
 	"SuperBotGo/internal/plugin"
 	"SuperBotGo/internal/plugin/broadcast"
 	pluginLink "SuperBotGo/internal/plugin/link"
@@ -167,6 +168,7 @@ func main() {
 	var authzStore authz.Store
 	var universityProvider *providers.UniversityProvider
 	var adminBus *pubsub.Bus
+	var notifPrefsRepo notification.PrefsRepository
 
 	connString := fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
@@ -195,6 +197,7 @@ func main() {
 				universityProvider = providers.NewUniversityProvider(pool)
 				adminBus = pubsub.NewBus(pool, connString, generateInstanceID())
 				chatRegistry = chat.NewPgRegistry(pool)
+				notifPrefsRepo = notification.NewPgPrefsRepo(pool)
 				logger.Info("using PostgreSQL stores")
 			}
 		}
@@ -215,6 +218,10 @@ func main() {
 	}
 	if authzStore == nil {
 		authzStore = authz.NewPlaceholderStore()
+	}
+	if notifPrefsRepo == nil {
+		notifPrefsRepo = notification.NewPlaceholderPrefsRepo()
+		logger.Warn("using in-memory notification preferences store (data will be lost on restart)")
 	}
 	if pluginStore == nil {
 		fileStore, fsErr := adminapi.NewFilePluginStore(cfg.Admin.ModulesDir)
@@ -312,17 +319,18 @@ func main() {
 	}()
 
 	senderAPI = plugin.NewSenderAPI(adapterRegistry, userService, chatRegistry)
+	notifyAPI := notification.NewNotifyAPI(adapterRegistry, userService, notifPrefsRepo, chatRegistry)
 
 	projectStore := &placeholderProjectStore{}
 	chatStore := &placeholderChatStore{}
 	accountLinker := user.NewAccountLinker(accountRepo)
 
 	allPlugins := []plugin.Plugin{
-		broadcast.New(senderAPI, projectStore),
+		broadcast.New(senderAPI, notifyAPI, projectStore),
 		pluginLink.New(senderAPI, accountLinker),
 		project.New(senderAPI, projectStore, chatStore),
 		resume.New(senderAPI, stateMgr),
-		settings.New(senderAPI, userService),
+		settings.New(senderAPI, userService, notifPrefsRepo),
 	}
 
 	for _, p := range allPlugins {

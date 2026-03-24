@@ -2,7 +2,9 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 
 	"SuperBotGo/internal/channel"
 	"SuperBotGo/internal/model"
@@ -60,10 +62,19 @@ func (s *SenderAPI) SendToAllChannels(ctx context.Context, userID model.GlobalUs
 		return fmt.Errorf("sender: user %d not found", userID)
 	}
 
+	var errs []error
 	for _, account := range user.Accounts {
 		if err := s.adapters.SendToUser(ctx, account.ChannelType, account.ChannelUserID, msg); err != nil {
-			return fmt.Errorf("sender: send to user %d on %s: %w", userID, account.ChannelType, err)
+			slog.Error("sender: partial failure sending to user",
+				slog.Int64("user_id", int64(userID)),
+				slog.String("channel", string(account.ChannelType)),
+				slog.Any("error", err))
+			errs = append(errs, fmt.Errorf("%s: %w", account.ChannelType, err))
 		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("sender: send to user %d failed on %d/%d channels: %w",
+			userID, len(errs), len(user.Accounts), errors.Join(errs...))
 	}
 	return nil
 }
@@ -74,14 +85,20 @@ func (s *SenderAPI) SendToProject(ctx context.Context, projectID int64, msg mode
 		return fmt.Errorf("sender: find chats for project %d: %w", projectID, err)
 	}
 
+	var sendErrs []error
 	for _, chat := range chats {
-		adapter := s.adapters.Get(chat.ChannelType)
-		if adapter == nil {
-			continue
+		if err := s.adapters.SendToChat(ctx, chat.ChannelType, chat.PlatformChatID, msg); err != nil {
+			slog.Error("sender: partial failure sending to project chat",
+				slog.Int64("project_id", projectID),
+				slog.String("chat_id", chat.PlatformChatID),
+				slog.String("channel_type", string(chat.ChannelType)),
+				slog.Any("error", err))
+			sendErrs = append(sendErrs, fmt.Errorf("chat %s (%s): %w", chat.PlatformChatID, chat.ChannelType, err))
 		}
-		if err := adapter.SendToChat(ctx, chat.PlatformChatID, msg); err != nil {
-			return fmt.Errorf("sender: send to project %d chat %s: %w", projectID, chat.PlatformChatID, err)
-		}
+	}
+	if len(sendErrs) > 0 {
+		return fmt.Errorf("sender: project %d broadcast failed on %d/%d chats: %w",
+			projectID, len(sendErrs), len(chats), errors.Join(sendErrs...))
 	}
 	return nil
 }

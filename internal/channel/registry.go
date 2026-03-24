@@ -39,18 +39,64 @@ func (r *AdapterRegistry) MustGet(channelType model.ChannelType) (ChannelAdapter
 	return adapter, nil
 }
 
+// SendToChat dispatches a message to the appropriate adapter with retry on transient errors.
 func (r *AdapterRegistry) SendToChat(ctx context.Context, channelType model.ChannelType, chatID string, msg model.Message) error {
 	adapter, err := r.MustGet(channelType)
 	if err != nil {
 		return err
 	}
-	return adapter.SendToChat(ctx, chatID, msg)
+	return withRetry(ctx, func() error {
+		return adapter.SendToChat(ctx, chatID, msg)
+	})
 }
 
+// SendToUser dispatches a message to the appropriate adapter with retry on transient errors.
 func (r *AdapterRegistry) SendToUser(ctx context.Context, channelType model.ChannelType, platformUserID model.PlatformUserID, msg model.Message) error {
 	adapter, err := r.MustGet(channelType)
 	if err != nil {
 		return err
 	}
-	return adapter.SendToUser(ctx, platformUserID, msg)
+	return withRetry(ctx, func() error {
+		return adapter.SendToUser(ctx, platformUserID, msg)
+	})
+}
+
+// SendToChatWithOpts dispatches a message applying SendOptions (silent mode, mention stripping)
+// with retry on transient errors.
+func (r *AdapterRegistry) SendToChatWithOpts(ctx context.Context, channelType model.ChannelType, chatID string, msg model.Message, opts model.SendOptions) error {
+	adapter, err := r.MustGet(channelType)
+	if err != nil {
+		return err
+	}
+	if opts.StripMentions {
+		msg = model.StripMentionBlocks(msg)
+	}
+	return withRetry(ctx, func() error {
+		if opts.Silent {
+			if ss, ok := adapter.(SilentSender); ok {
+				return ss.SendToChatSilent(ctx, chatID, msg, true)
+			}
+		}
+		return adapter.SendToChat(ctx, chatID, msg)
+	})
+}
+
+// SendToUserWithOpts dispatches a message applying SendOptions (silent mode, mention stripping)
+// with retry on transient errors.
+func (r *AdapterRegistry) SendToUserWithOpts(ctx context.Context, channelType model.ChannelType, platformUserID model.PlatformUserID, msg model.Message, opts model.SendOptions) error {
+	adapter, err := r.MustGet(channelType)
+	if err != nil {
+		return err
+	}
+	if opts.StripMentions {
+		msg = model.StripMentionBlocks(msg)
+	}
+	return withRetry(ctx, func() error {
+		if opts.Silent {
+			if ss, ok := adapter.(SilentSender); ok {
+				return ss.SendToUserSilent(ctx, platformUserID, msg, true)
+			}
+		}
+		return adapter.SendToUser(ctx, platformUserID, msg)
+	})
 }

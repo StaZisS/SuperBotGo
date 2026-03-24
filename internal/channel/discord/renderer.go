@@ -25,6 +25,8 @@ func NewRenderer() *Renderer {
 	return &Renderer{}
 }
 
+const discordMaxMessageLength = 2000
+
 func (r *Renderer) Render(msg model.Message) RenderedMessage {
 	var textParts []string
 	var imageURLs []string
@@ -48,8 +50,13 @@ func (r *Renderer) Render(msg model.Message) RenderedMessage {
 		}
 	}
 
+	text := strings.Join(textParts, "\n")
+	if len(text) > discordMaxMessageLength {
+		text = text[:discordMaxMessageLength-3] + "..."
+	}
+
 	return RenderedMessage{
-		Text:       strings.Join(textParts, "\n"),
+		Text:       text,
 		ImageURLs:  imageURLs,
 		HasOptions: len(buttons) > 0,
 		Buttons:    buttons,

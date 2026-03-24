@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"strconv"
 
+	"SuperBotGo/internal/channel"
 	"SuperBotGo/internal/model"
 
 	tele "gopkg.in/telebot.v3"
 )
+
+var _ channel.SilentSender = (*Adapter)(nil)
 
 type Adapter struct {
 	bot      *tele.Bot
@@ -27,15 +30,31 @@ func (a *Adapter) Type() model.ChannelType {
 }
 
 func (a *Adapter) SendToUser(ctx context.Context, platformUserID model.PlatformUserID, msg model.Message) error {
-	return a.sendMessage(ctx, string(platformUserID), msg)
+	return a.sendMessage(ctx, string(platformUserID), msg, false)
 }
 
 func (a *Adapter) SendToChat(ctx context.Context, chatID string, msg model.Message) error {
-	return a.sendMessage(ctx, chatID, msg)
+	return a.sendMessage(ctx, chatID, msg, false)
 }
 
-func (a *Adapter) sendMessage(_ context.Context, chatID string, msg model.Message) error {
+func (a *Adapter) SendToUserSilent(ctx context.Context, platformUserID model.PlatformUserID, msg model.Message, silent bool) error {
+	return a.sendMessage(ctx, string(platformUserID), msg, silent)
+}
+
+func (a *Adapter) SendToChatSilent(ctx context.Context, chatID string, msg model.Message, silent bool) error {
+	return a.sendMessage(ctx, chatID, msg, silent)
+}
+
+func (a *Adapter) sendMessage(_ context.Context, chatID string, msg model.Message, silent bool) error {
+	if msg.IsEmpty() {
+		return fmt.Errorf("telegram: refusing to send empty message to chat %s", chatID)
+	}
+
 	rendered := a.renderer.Render(msg)
+
+	if rendered.Text == "" && len(rendered.PhotoURLs) == 0 {
+		return nil // nothing to send after rendering
+	}
 
 	id, err := strconv.ParseInt(chatID, 10, 64)
 	if err != nil {
@@ -46,7 +65,8 @@ func (a *Adapter) sendMessage(_ context.Context, chatID string, msg model.Messag
 
 	if rendered.Text != "" {
 		opts := &tele.SendOptions{
-			ParseMode: tele.ModeHTML,
+			ParseMode:           tele.ModeHTML,
+			DisableNotification: silent,
 		}
 
 		if len(rendered.Keyboard) > 0 {

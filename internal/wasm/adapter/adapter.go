@@ -488,16 +488,42 @@ func (wp *WasmPlugin) HandleEvent(ctx context.Context, event model.Event) (*mode
 
 		if wp.send != nil {
 			if resp.Reply != "" && event.TriggerType == model.TriggerMessenger {
-				if m, err := event.Messenger(); err == nil {
+				if m, mErr := event.Messenger(); mErr == nil {
 					if sendErr := wp.send(ctx, m.ChannelType, m.ChatID, resp.Reply); sendErr != nil {
-						slog.Error("wasm plugin reply failed", "plugin", wp.meta.ID, "error", sendErr)
+						slog.Error("wasm plugin reply failed",
+							"plugin", wp.meta.ID,
+							"channel_type", m.ChannelType,
+							"chat_id", m.ChatID,
+							"error", sendErr)
+						return &resp, fmt.Errorf("wasm plugin %q reply send: %w", wp.meta.ID, sendErr)
 					}
 				}
 			}
 
+			var triggerChannelType model.ChannelType
+			if event.TriggerType == model.TriggerMessenger {
+				if m, mErr := event.Messenger(); mErr == nil {
+					triggerChannelType = m.ChannelType
+				}
+			}
+
 			for _, m := range resp.Messages {
-				if err := wp.send(ctx, "", m.ChatID, m.Text); err != nil {
-					slog.Error("wasm plugin send failed", "plugin", wp.meta.ID, "chat_id", m.ChatID, "error", err)
+				chType := m.ChannelType
+				if chType == "" {
+					chType = triggerChannelType
+				}
+				if chType == "" {
+					slog.Error("wasm plugin send skipped: no channel type",
+						"plugin", wp.meta.ID,
+						"chat_id", m.ChatID)
+					continue
+				}
+				if sendErr := wp.send(ctx, chType, m.ChatID, m.Text); sendErr != nil {
+					slog.Error("wasm plugin send failed",
+						"plugin", wp.meta.ID,
+						"channel_type", chType,
+						"chat_id", m.ChatID,
+						"error", sendErr)
 				}
 			}
 		}

@@ -25,6 +25,8 @@ func NewRenderer() *Renderer {
 	return &Renderer{}
 }
 
+const telegramMaxMessageLength = 4096
+
 func (r *Renderer) Render(msg model.Message) RenderedMessage {
 	var textParts []string
 	var photoURLs []string
@@ -48,8 +50,14 @@ func (r *Renderer) Render(msg model.Message) RenderedMessage {
 		}
 	}
 
+	text := strings.Join(textParts, "\n")
+	if len([]rune(text)) > telegramMaxMessageLength {
+		runes := []rune(text)
+		text = string(runes[:telegramMaxMessageLength-3]) + "..."
+	}
+
 	return RenderedMessage{
-		Text:      strings.Join(textParts, "\n"),
+		Text:      text,
 		ParseMode: "HTML",
 		Keyboard:  keyboard,
 		PhotoURLs: photoURLs,

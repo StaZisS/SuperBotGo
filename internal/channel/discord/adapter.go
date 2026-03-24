@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 
+	"SuperBotGo/internal/channel"
 	"SuperBotGo/internal/model"
 
 	"github.com/bwmarrin/discordgo"
 )
+
+var _ channel.SilentSender = (*Adapter)(nil)
 
 type Adapter struct {
 	session  *discordgo.Session
@@ -30,17 +33,37 @@ func (a *Adapter) SendToUser(ctx context.Context, platformUserID model.PlatformU
 	if err != nil {
 		return fmt.Errorf("discord: create DM channel for user %s: %w", platformUserID, err)
 	}
-	return a.sendMessage(ctx, dmChannel.ID, msg)
+	return a.sendMessage(ctx, dmChannel.ID, msg, false)
 }
 
 func (a *Adapter) SendToChat(ctx context.Context, chatID string, msg model.Message) error {
-	return a.sendMessage(ctx, chatID, msg)
+	return a.sendMessage(ctx, chatID, msg, false)
 }
 
-func (a *Adapter) sendMessage(_ context.Context, channelID string, msg model.Message) error {
+func (a *Adapter) SendToUserSilent(ctx context.Context, platformUserID model.PlatformUserID, msg model.Message, silent bool) error {
+	dmChannel, err := a.session.UserChannelCreate(string(platformUserID))
+	if err != nil {
+		return fmt.Errorf("discord: create DM channel for user %s: %w", platformUserID, err)
+	}
+	return a.sendMessage(ctx, dmChannel.ID, msg, silent)
+}
+
+func (a *Adapter) SendToChatSilent(ctx context.Context, chatID string, msg model.Message, silent bool) error {
+	return a.sendMessage(ctx, chatID, msg, silent)
+}
+
+func (a *Adapter) sendMessage(_ context.Context, channelID string, msg model.Message, silent bool) error {
+	if msg.IsEmpty() {
+		return fmt.Errorf("discord: refusing to send empty message to channel %s", channelID)
+	}
+
 	rendered := a.renderer.Render(msg)
 
 	msgSend := &discordgo.MessageSend{}
+
+	if silent {
+		msgSend.Flags = discordgo.MessageFlagsSuppressNotifications
+	}
 
 	if rendered.Text != "" {
 		msgSend.Content = rendered.Text

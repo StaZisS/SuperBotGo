@@ -7,6 +7,7 @@ import (
 
 	"SuperBotGo/internal/i18n"
 	"SuperBotGo/internal/model"
+	"SuperBotGo/internal/notification"
 	"SuperBotGo/internal/plugin"
 	"SuperBotGo/internal/state"
 )
@@ -18,13 +19,15 @@ type ProjectFinder interface {
 
 type Plugin struct {
 	api      *plugin.SenderAPI
+	notify   *notification.NotifyAPI
 	projects ProjectFinder
 	cmdDef   *state.CommandDefinition
 }
 
-func New(api *plugin.SenderAPI, projects ProjectFinder) *Plugin {
+func New(api *plugin.SenderAPI, notify *notification.NotifyAPI, projects ProjectFinder) *Plugin {
 	return &Plugin{
 		api:      api,
+		notify:   notify,
 		projects: projects,
 		cmdDef:   BroadcastCommand(projects),
 	}
@@ -73,9 +76,13 @@ func (p *Plugin) sendToUser(ctx context.Context, m *model.MessengerTriggerData, 
 		return p.api.Reply(ctx, m, model.NewTextMessage(i18n.Get("broadcast.invalid_user_id", locale)))
 	}
 
-	if err := p.api.SendToAllChannels(ctx, model.GlobalUserID(userID), msg); err != nil {
-		return p.api.Reply(ctx, m, model.NewTextMessage(
-			i18n.Get("broadcast.user_not_found", locale, fmt.Sprintf("%d", userID))))
+	if err := p.notify.NotifyUser(ctx, model.GlobalUserID(userID), msg, model.PriorityNormal); err != nil {
+		return p.api.Reply(ctx, m, model.Message{
+			Blocks: []model.ContentBlock{
+				model.TextBlock{Text: i18n.Get("broadcast.send_error", locale), Style: model.StyleHeader},
+				model.TextBlock{Text: err.Error(), Style: model.StyleCode},
+			},
+		})
 	}
 
 	return p.api.Reply(ctx, m, model.Message{
@@ -98,8 +105,13 @@ func (p *Plugin) sendToProject(ctx context.Context, m *model.MessengerTriggerDat
 		return p.api.Reply(ctx, m, model.NewTextMessage(i18n.Get("broadcast.project_not_found", locale)))
 	}
 
-	if err := p.api.SendToProject(ctx, projectID, msg); err != nil {
-		return err
+	if err := p.notify.NotifyProject(ctx, projectID, msg, model.PriorityNormal); err != nil {
+		return p.api.Reply(ctx, m, model.Message{
+			Blocks: []model.ContentBlock{
+				model.TextBlock{Text: i18n.Get("broadcast.send_error", locale), Style: model.StyleHeader},
+				model.TextBlock{Text: err.Error(), Style: model.StyleCode},
+			},
+		})
 	}
 
 	return p.api.Reply(ctx, m, model.Message{
