@@ -27,7 +27,7 @@ func NewPgAdminChatStore(pool *pgxpool.Pool) *PgAdminChatStore {
 }
 
 func (s *PgAdminChatStore) ListChats(ctx context.Context, filter ChatFilter) ([]model.ChatReference, error) {
-	query := `SELECT id, channel_type, platform_chat_id, chat_kind, COALESCE(title, '') FROM chat_references WHERE 1=1`
+	query := `SELECT id, channel_type, platform_chat_id, chat_kind, COALESCE(title, ''), COALESCE(locale, '') FROM chat_references WHERE 1=1`
 	args := []any{}
 	idx := 1
 
@@ -53,7 +53,7 @@ func (s *PgAdminChatStore) ListChats(ctx context.Context, filter ChatFilter) ([]
 	var chats []model.ChatReference
 	for rows.Next() {
 		var c model.ChatReference
-		if err := rows.Scan(&c.ID, &c.ChannelType, &c.PlatformChatID, &c.ChatKind, &c.Title); err != nil {
+		if err := rows.Scan(&c.ID, &c.ChannelType, &c.PlatformChatID, &c.ChatKind, &c.Title, &c.Locale); err != nil {
 			return nil, fmt.Errorf("scan chat row: %w", err)
 		}
 		chats = append(chats, c)

@@ -107,6 +107,46 @@ func main() {
 	wasmLoader.SetMetrics(m)
 	wasmLoader.SetRegistry(pluginRegistry)
 
+	var localizedUserService plugin.SenderUserService
+	var localizedChatRegistry chat.Registry
+	wasmLoader.SetLocalizedSend(adapter.LocalizedSendFunc(func(ctx context.Context, msg model.MessageEntry, fallbackChannelType model.ChannelType) error {
+		if senderAPI == nil {
+			return fmt.Errorf("sender API not initialized")
+		}
+
+		// Send to user DM — resolve locale from user profile.
+		if msg.UserID != 0 {
+			u, err := localizedUserService.GetUser(ctx, model.GlobalUserID(msg.UserID))
+			if err != nil {
+				return fmt.Errorf("localized send: get user %d: %w", msg.UserID, err)
+			}
+			if u == nil {
+				return fmt.Errorf("localized send: user %d not found", msg.UserID)
+			}
+			text := adapter.ResolveLocalizedText(msg.Texts, u.Locale)
+			return senderAPI.SendToUser(ctx, model.GlobalUserID(msg.UserID), model.NewTextMessage(text))
+		}
+
+		// Send to chat — resolve locale from chat settings.
+		chType := msg.ChannelType
+		if chType == "" {
+			chType = fallbackChannelType
+		}
+		if chType == "" {
+			return fmt.Errorf("localized send: no channel type for chat %s", msg.ChatID)
+		}
+
+		locale := ""
+		if localizedChatRegistry != nil {
+			if chatRef, err := localizedChatRegistry.FindChat(ctx, chType, msg.ChatID); err == nil && chatRef != nil {
+				locale = chatRef.Locale
+			}
+		}
+
+		text := adapter.ResolveLocalizedText(msg.Texts, locale)
+		return senderAPI.ReplyToChat(ctx, chType, msg.ChatID, model.NewTextMessage(text))
+	}))
+
 	triggerRegistry := trigger.NewRegistry()
 	wasmLoader.SetTriggerRegistry(triggerRegistry)
 
@@ -187,6 +227,10 @@ func main() {
 
 	userService := user.NewService(userRepo, accountRepo)
 	roleManager := role.NewManager(roleStore, logger)
+
+	// Wire deferred dependencies for localized send.
+	localizedUserService = userService
+	localizedChatRegistry = chatRegistry
 
 	authorizer := authz.NewAuthorizer(authzStore, logger, universityProvider)
 	schemaBuilder := authz.NewRuleSchemaBuilder(authzStore, universityProvider)

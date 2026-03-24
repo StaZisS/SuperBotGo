@@ -60,8 +60,10 @@ type logEntry struct {
 }
 
 type messageEntry struct {
-	ChatID string `json:"chat_id"`
-	Text   string `json:"text"`
+	ChatID string            `json:"chat_id,omitempty"`
+	UserID int64             `json:"user_id,omitempty"`
+	Text   string            `json:"text,omitempty"`
+	Texts  map[string]string `json:"texts,omitempty"`
 }
 
 // ---------------------------------------------------------------------------

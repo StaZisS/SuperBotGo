@@ -93,6 +93,20 @@ func (ctx *EventContext) SendMessage(chatID string, text string) {
 	ctx.messages = append(ctx.messages, messageEntry{ChatID: chatID, Text: text})
 }
 
+// SendLocalizedMessage queues a localized message to a chat. The host picks
+// the text matching the chat's configured locale. The texts map should be
+// keyed by locale code (e.g. "en", "ru").
+func (ctx *EventContext) SendLocalizedMessage(chatID string, texts map[string]string) {
+	ctx.messages = append(ctx.messages, messageEntry{ChatID: chatID, Texts: texts})
+}
+
+// SendLocalizedToUser queues a localized DM to a user. The host resolves the
+// user's locale and delivers to their primary channel. The texts map should be
+// keyed by locale code (e.g. "en", "ru").
+func (ctx *EventContext) SendLocalizedToUser(userID int64, texts map[string]string) {
+	ctx.messages = append(ctx.messages, messageEntry{UserID: userID, Texts: texts})
+}
+
 // Config returns a config value by key, or the fallback if not set.
 func (ctx *EventContext) Config(key string, fallback string) string {
 	if ctx.config == nil {

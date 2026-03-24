@@ -26,10 +26,15 @@ type Loader struct {
 	rt              *wasmrt.Runtime
 	hostAPI         *hostapi.HostAPI
 	send            SendFunc
+	localizedSend   LocalizedSendFunc
 	plugins         map[string]*loadedPlugin
 	triggerRegistry *trigger.Registry
 	metrics         *metrics.Metrics
 	registry        *registry.PluginRegistry
+}
+
+func (l *Loader) SetLocalizedSend(fn LocalizedSendFunc) {
+	l.localizedSend = fn
 }
 
 func (l *Loader) SetMetrics(m *metrics.Metrics) {
@@ -163,10 +168,11 @@ func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, conf
 		"max_concurrency", compiled.Pool().Stats().PoolSize)
 
 	wp := &WasmPlugin{
-		compiled: compiled,
-		meta:     meta,
-		config:   config,
-		send:     l.send,
+		compiled:      compiled,
+		meta:          meta,
+		config:        config,
+		send:          l.send,
+		localizedSend: l.localizedSend,
 	}
 
 	l.mu.Lock()

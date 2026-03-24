@@ -14,6 +14,7 @@ type ChatReference struct {
 	PlatformChatID string         `json:"platform_chat_id"`
 	ChatKind       ChatKind       `json:"chat_kind"`
 	Title          string         `json:"title"`
+	Locale         string         `json:"locale,omitempty"`
 	Metadata       map[string]any `json:"metadata,omitempty"`
 }
 

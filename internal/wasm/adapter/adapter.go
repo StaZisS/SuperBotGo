@@ -17,11 +17,17 @@ var _ plugin.Plugin = (*WasmPlugin)(nil)
 
 type SendFunc func(ctx context.Context, channelType model.ChannelType, chatID string, text string) error
 
+// LocalizedSendFunc handles delivery of messages that carry a locale→text map.
+// The implementation resolves the target locale (from user or chat settings)
+// and sends the appropriate text.
+type LocalizedSendFunc func(ctx context.Context, msg model.MessageEntry, fallbackChannelType model.ChannelType) error
+
 type WasmPlugin struct {
-	compiled *wasmrt.CompiledModule
-	meta     wasmrt.PluginMeta
-	config   json.RawMessage
-	send     SendFunc
+	compiled      *wasmrt.CompiledModule
+	meta          wasmrt.PluginMeta
+	config        json.RawMessage
+	send          SendFunc
+	localizedSend LocalizedSendFunc
 }
 
 func (wp *WasmPlugin) ID() string {
@@ -508,6 +514,19 @@ func (wp *WasmPlugin) HandleEvent(ctx context.Context, event model.Event) (*mode
 			}
 
 			for _, m := range resp.Messages {
+				// Localized message — delegate to LocalizedSendFunc.
+				if len(m.Texts) > 0 && wp.localizedSend != nil {
+					if sendErr := wp.localizedSend(ctx, m, triggerChannelType); sendErr != nil {
+						slog.Error("wasm plugin localized send failed",
+							"plugin", wp.meta.ID,
+							"chat_id", m.ChatID,
+							"user_id", m.UserID,
+							"error", sendErr)
+					}
+					continue
+				}
+
+				// Plain text message — use existing path.
 				chType := m.ChannelType
 				if chType == "" {
 					chType = triggerChannelType

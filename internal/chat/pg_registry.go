@@ -43,11 +43,11 @@ func (r *PgRegistry) FindOrCreateChat(ctx context.Context, channelType model.Cha
 func (r *PgRegistry) FindChat(ctx context.Context, channelType model.ChannelType, platformChatID string) (*model.ChatReference, error) {
 	var c model.ChatReference
 	err := r.pool.QueryRow(ctx,
-		`SELECT id, channel_type, platform_chat_id, chat_kind, COALESCE(title, '')
+		`SELECT id, channel_type, platform_chat_id, chat_kind, COALESCE(title, ''), COALESCE(locale, '')
 		 FROM chat_references
 		 WHERE channel_type = $1 AND platform_chat_id = $2`,
 		string(channelType), platformChatID,
-	).Scan(&c.ID, &c.ChannelType, &c.PlatformChatID, &c.ChatKind, &c.Title)
+	).Scan(&c.ID, &c.ChannelType, &c.PlatformChatID, &c.ChatKind, &c.Title, &c.Locale)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -59,7 +59,7 @@ func (r *PgRegistry) FindChat(ctx context.Context, channelType model.ChannelType
 
 func (r *PgRegistry) FindChatsByProject(ctx context.Context, projectID int64) ([]model.ChatReference, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT cr.id, cr.channel_type, cr.platform_chat_id, cr.chat_kind, COALESCE(cr.title, '')
+		`SELECT cr.id, cr.channel_type, cr.platform_chat_id, cr.chat_kind, COALESCE(cr.title, ''), COALESCE(cr.locale, '')
 		 FROM chat_references cr
 		 JOIN chat_bindings cb ON cb.chat_ref_id = cr.id
 		 WHERE cb.project_id = $1
@@ -74,7 +74,7 @@ func (r *PgRegistry) FindChatsByProject(ctx context.Context, projectID int64) ([
 	var chats []model.ChatReference
 	for rows.Next() {
 		var c model.ChatReference
-		if err := rows.Scan(&c.ID, &c.ChannelType, &c.PlatformChatID, &c.ChatKind, &c.Title); err != nil {
+		if err := rows.Scan(&c.ID, &c.ChannelType, &c.PlatformChatID, &c.ChatKind, &c.Title, &c.Locale); err != nil {
 			return nil, fmt.Errorf("scan chat row: %w", err)
 		}
 		chats = append(chats, c)
@@ -124,6 +124,17 @@ func (r *PgRegistry) UnregisterChatByPlatformID(ctx context.Context, channelType
 		return nil
 	}
 	return r.UnregisterChat(ctx, ref.ID)
+}
+
+func (r *PgRegistry) UpdateChatLocale(ctx context.Context, chatRefID int64, locale string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE chat_references SET locale = $1 WHERE id = $2`,
+		locale, chatRefID,
+	)
+	if err != nil {
+		return fmt.Errorf("update chat locale: %w", err)
+	}
+	return nil
 }
 
 var _ Registry = (*PgRegistry)(nil)
