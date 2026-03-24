@@ -97,6 +97,32 @@ err := wasmplugin.PublishEvent("orders.created", map[string]interface{}{
 
 **Необходимое разрешение:** `plugins:events`
 
+## Уведомления {#notifications}
+
+Отправка приоритетных уведомлений с учётом предпочтений пользователя (рабочие часы, канал доставки, упоминания).
+
+### Уведомление пользователю
+
+```go
+err := ctx.NotifyUser(userID, "Сборка завершена", wasmplugin.PriorityNormal)
+```
+
+### Уведомление в чат
+
+```go
+err := ctx.NotifyChat("telegram", "123456789", "Новый заказ!", wasmplugin.PriorityHigh)
+```
+
+### Уведомление в проект
+
+```go
+err := ctx.NotifyProject(42, "Релиз опубликован", wasmplugin.PriorityCritical)
+```
+
+**Необходимые разрешения:** `notify:user`, `notify:chat`, `notify:project`
+
+Подробное описание приоритетов и поведения: [Уведомления](/api/notifications).
+
 ## Оптимизация MessagePack {#msgpack}
 
 По умолчанию Host API использует JSON. Переключитесь на MessagePack для лучшей производительности на горячих путях:

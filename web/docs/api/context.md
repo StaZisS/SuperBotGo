@@ -74,6 +74,16 @@ ctx.SendMessage("123456789", "Сборка завершена!")
 Вызов `ctx.Reply("")` или `ctx.SendMessage(chatID, "")` не отправит сообщение. Убедитесь, что текст не пуст.
 :::
 
+### Уведомления
+
+| Метод | Описание |
+|---|---|
+| `ctx.NotifyUser(userID, text, priority)` | Уведомление пользователю с учётом предпочтений |
+| `ctx.NotifyChat(channelType, chatID, text, priority)` | Уведомление в конкретный чат |
+| `ctx.NotifyProject(projectID, text, priority)` | Уведомление во все чаты проекта |
+
+Подробнее: [Уведомления](/api/notifications)
+
 ### HTTP-ответы
 
 | Метод | Описание |

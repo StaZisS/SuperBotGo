@@ -38,6 +38,7 @@ export default defineConfig({
           items: [
             { text: 'EventContext', link: '/api/context' },
             { text: 'KV Store', link: '/api/kv-store' },
+            { text: 'Уведомления', link: '/api/notifications' },
             { text: 'Host API', link: '/api/host-api' },
             { text: 'Справочник', link: '/api/reference' },
           ],

@@ -19,6 +19,9 @@
 | `HTTPPost(url, contentType, body)` | HTTP POST (shortcut) | `network:read` |
 | `CallPlugin(target, method, params)` | Вызов другого плагина | `plugins:events` |
 | `PublishEvent(topic, payload)` | Публикация события | `plugins:events` |
+| `ctx.NotifyUser(userID, text, priority)` | Уведомление пользователю | `notify:user` |
+| `ctx.NotifyChat(channelType, chatID, text, priority)` | Уведомление в чат | `notify:chat` |
+| `ctx.NotifyProject(projectID, text, priority)` | Уведомление в проект | `notify:project` |
 
 ## Кодирование
 
@@ -107,4 +110,8 @@
 | `StyleSubheader` | `"subheader"` | Подзаголовок |
 | `StyleCode` | `"code"` | Моноширинный текст |
 | `StyleQuote` | `"quote"` | Цитата |
+| `PriorityLow` | `0` | Информационное уведомление |
+| `PriorityNormal` | `1` | Стандартное уведомление |
+| `PriorityHigh` | `2` | Важное — с упоминанием |
+| `PriorityCritical` | `3` | Срочное — все каналы |
 | `ProtocolVersion` | `1` | Версия протокола SDK |
