@@ -48,36 +48,43 @@ func handleMeta(p Plugin) {
 		meta.ConfigSchema = json.RawMessage(data)
 	}
 
-	for _, cmd := range p.Commands {
-		cd := commandDef{
-			Name:        cmd.Name,
-			Description: cmd.Description,
-			MinRole:     cmd.MinRole,
+	for _, t := range p.Triggers {
+		td := triggerDef{
+			Name:        t.Name,
+			Type:        t.Type,
+			Description: t.Description,
+			MinRole:     t.MinRole,
+			Path:        t.Path,
+			Methods:     t.Methods,
+			Schedule:    t.Schedule,
+			Topic:       t.Topic,
 		}
 
-		if len(cmd.Nodes) > 0 {
-			reg := make(callbackMap)
-			for _, node := range cmd.Nodes {
-				cd.Nodes = append(cd.Nodes, node.toNodeDef(cmd.Name, reg))
-			}
-		} else {
-			for _, s := range cmd.Steps {
-				sd := stepDef{
-					Param:      s.Param,
-					Prompt:     s.Prompt,
-					Validation: s.Validation,
+		if t.Type == TriggerMessenger {
+			if len(t.Nodes) > 0 {
+				reg := make(callbackMap)
+				for _, node := range t.Nodes {
+					td.Nodes = append(td.Nodes, node.toNodeDef(t.Name, reg))
 				}
-				for _, o := range s.Options {
-					sd.Options = append(sd.Options, optionDef{
-						Label: o.Label,
-						Value: o.Value,
-					})
+			} else {
+				for _, s := range t.Steps {
+					sd := stepDef{
+						Param:      s.Param,
+						Prompt:     s.Prompt,
+						Validation: s.Validation,
+					}
+					for _, o := range s.Options {
+						sd.Options = append(sd.Options, optionDef{
+							Label: o.Label,
+							Value: o.Value,
+						})
+					}
+					td.Steps = append(td.Steps, sd)
 				}
-				cd.Steps = append(cd.Steps, sd)
 			}
 		}
 
-		meta.Commands = append(meta.Commands, cd)
+		meta.Triggers = append(meta.Triggers, td)
 	}
 
 	for _, req := range p.Requirements {
@@ -92,18 +99,6 @@ func handleMeta(p Plugin) {
 			rd.Config = json.RawMessage(data)
 		}
 		meta.Requirements = append(meta.Requirements, rd)
-	}
-
-	for _, t := range p.Triggers {
-		meta.Triggers = append(meta.Triggers, triggerDef{
-			Name:        t.Name,
-			Type:        t.Type,
-			Description: t.Description,
-			Path:        t.Path,
-			Methods:     t.Methods,
-			Schedule:    t.Schedule,
-			Topic:       t.Topic,
-		})
 	}
 
 	data, _ := json.Marshal(meta)
@@ -203,8 +198,7 @@ func handleEvent(p Plugin) {
 	var handler func(ctx *EventContext) error
 
 	switch req.TriggerType {
-	case "messenger":
-		// Messenger command: find command handler by trigger name (= command name).
+	case TriggerMessenger:
 		var m messengerTriggerData
 		if json.Unmarshal(req.Data, &m) == nil {
 			ctx.Messenger = &MessengerData{
@@ -214,12 +208,6 @@ func handleEvent(p Plugin) {
 				CommandName: m.CommandName,
 				Params:      m.Params,
 				Locale:      m.Locale,
-			}
-		}
-		for i := range p.Commands {
-			if p.Commands[i].Name == req.TriggerName {
-				handler = p.Commands[i].Handler
-				break
 			}
 		}
 
@@ -235,12 +223,6 @@ func handleEvent(p Plugin) {
 				RemoteAddr: h.RemoteAddr,
 			}
 		}
-		for i := range p.Triggers {
-			if p.Triggers[i].Name == req.TriggerName {
-				handler = p.Triggers[i].Handler
-				break
-			}
-		}
 
 	case TriggerCron:
 		var c cronTriggerData
@@ -248,12 +230,6 @@ func handleEvent(p Plugin) {
 			ctx.Cron = &CronEventData{
 				ScheduleName: c.ScheduleName,
 				FireTime:     c.FireTime,
-			}
-		}
-		for i := range p.Triggers {
-			if p.Triggers[i].Name == req.TriggerName {
-				handler = p.Triggers[i].Handler
-				break
 			}
 		}
 
@@ -266,11 +242,13 @@ func handleEvent(p Plugin) {
 				Source:  e.Source,
 			}
 		}
-		for i := range p.Triggers {
-			if p.Triggers[i].Name == req.TriggerName {
-				handler = p.Triggers[i].Handler
-				break
-			}
+	}
+
+	// Find handler by trigger name.
+	for i := range p.Triggers {
+		if p.Triggers[i].Name == req.TriggerName {
+			handler = p.Triggers[i].Handler
+			break
 		}
 	}
 
@@ -319,9 +297,11 @@ func handleStepCallback(p Plugin) {
 	}
 
 	reg := make(callbackMap)
-	for _, cmd := range p.Commands {
-		for _, node := range cmd.Nodes {
-			node.toNodeDef(cmd.Name, reg)
+	for _, t := range p.Triggers {
+		if t.Type == TriggerMessenger {
+			for _, node := range t.Nodes {
+				node.toNodeDef(t.Name, reg)
+			}
 		}
 	}
 

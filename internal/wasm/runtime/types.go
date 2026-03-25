@@ -13,7 +13,6 @@ type PluginMeta struct {
 	Name         string           `json:"name"`
 	Version      string           `json:"version"`
 	SDKVersion   int              `json:"sdk_version"`
-	Commands     []CommandDef     `json:"commands,omitempty"`
 	Triggers     []TriggerDef     `json:"triggers,omitempty"`
 	Requirements []RequirementDef `json:"requirements,omitempty"`
 	ConfigSchema json.RawMessage  `json:"config_schema,omitempty"`
@@ -26,19 +25,14 @@ type DependencyDef struct {
 }
 
 type TriggerDef struct {
-	Name        string   `json:"name"`
-	Type        string   `json:"type"`
-	Description string   `json:"description,omitempty"`
-	Path        string   `json:"path,omitempty"`
-	Methods     []string `json:"methods,omitempty"`
-	Schedule    string   `json:"schedule,omitempty"`
-	Topic       string   `json:"topic,omitempty"`
-}
-
-type CommandDef struct {
 	Name        string    `json:"name"`
-	Description string    `json:"description"`
+	Type        string    `json:"type"`
+	Description string    `json:"description,omitempty"`
 	MinRole     string    `json:"min_role,omitempty"`
+	Path        string    `json:"path,omitempty"`
+	Methods     []string  `json:"methods,omitempty"`
+	Schedule    string    `json:"schedule,omitempty"`
+	Topic       string    `json:"topic,omitempty"`
 	Steps       []StepDef `json:"steps,omitempty"`
 	Nodes       []NodeDef `json:"nodes,omitempty"`
 }

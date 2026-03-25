@@ -30,7 +30,7 @@ type uploadResponse struct {
 	ID              string                  `json:"id"`
 	Name            string                  `json:"name"`
 	Version         string                  `json:"version"`
-	Commands        []wasmrt.CommandDef     `json:"commands"`
+	Triggers        []wasmrt.TriggerDef     `json:"triggers"`
 	Requirements    []wasmrt.RequirementDef `json:"requirements"`
 	ConfigSchema    json.RawMessage         `json:"config_schema"`
 	WasmKey         string                  `json:"wasm_key"`
@@ -255,7 +255,7 @@ func (h *AdminHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		ID:              meta.ID,
 		Name:            meta.Name,
 		Version:         meta.Version,
-		Commands:        meta.Commands,
+		Triggers:        meta.Triggers,
 		Requirements:    meta.Requirements,
 		ConfigSchema:    meta.ConfigSchema,
 		WasmKey:         wasmKey,

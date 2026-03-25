@@ -4,7 +4,7 @@ import "encoding/json"
 
 // ---------------------------------------------------------------------------
 // Internal JSON types — mirrors of the host protocol.
-// All types are unexported; the public API uses Plugin / Command / Step, etc.
+// All types are unexported; the public API uses Plugin / Trigger / Step, etc.
 // ---------------------------------------------------------------------------
 
 type pluginMeta struct {
@@ -12,26 +12,20 @@ type pluginMeta struct {
 	Name         string           `json:"name"`
 	Version      string           `json:"version"`
 	SDKVersion   int              `json:"sdk_version"`
-	Commands     []commandDef     `json:"commands,omitempty"`
 	Triggers     []triggerDef     `json:"triggers,omitempty"`
 	Requirements []requirementDef `json:"requirements,omitempty"`
 	ConfigSchema json.RawMessage  `json:"config_schema,omitempty"`
 }
 
 type triggerDef struct {
-	Name        string   `json:"name"`
-	Type        string   `json:"type"`
-	Description string   `json:"description,omitempty"`
-	Path        string   `json:"path,omitempty"`
-	Methods     []string `json:"methods,omitempty"`
-	Schedule    string   `json:"schedule,omitempty"`
-	Topic       string   `json:"topic,omitempty"`
-}
-
-type commandDef struct {
 	Name        string    `json:"name"`
-	Description string    `json:"description"`
+	Type        string    `json:"type"`
+	Description string    `json:"description,omitempty"`
 	MinRole     string    `json:"min_role,omitempty"`
+	Path        string    `json:"path,omitempty"`
+	Methods     []string  `json:"methods,omitempty"`
+	Schedule    string    `json:"schedule,omitempty"`
+	Topic       string    `json:"topic,omitempty"`
 	Steps       []stepDef `json:"steps,omitempty"`
 	Nodes       []nodeDef `json:"nodes,omitempty"`
 }

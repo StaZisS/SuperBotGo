@@ -429,16 +429,16 @@ export default function PluginDetail() {
             </>
           )}
 
-          {/* Triggers */}
-          {plugin.meta?.triggers && plugin.meta.triggers.length > 0 && (
+          {/* Triggers (non-messenger — messenger triggers are shown as commands above) */}
+          {plugin.meta?.triggers && plugin.meta.triggers.filter((t) => t.type !== 'messenger').length > 0 && (
             <>
               <Separator />
               <div>
                 <h4 className="text-sm font-medium mb-2">
-                  Триггеры ({plugin.meta.triggers.length})
+                  Триггеры ({plugin.meta.triggers.filter((t) => t.type !== 'messenger').length})
                 </h4>
                 <div className="space-y-1">
-                  {plugin.meta.triggers.map((t) => {
+                  {plugin.meta.triggers.filter((t) => t.type !== 'messenger').map((t) => {
                     const Icon = triggerIcon[t.type] || Zap
                     return (
                       <div

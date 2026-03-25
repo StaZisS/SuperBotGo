@@ -14,11 +14,9 @@ func main() {
 		Requirements: []wasmplugin.Requirement{
 			wasmplugin.HTTP("Serve schedule via HTTP API").Build(),
 		},
-		Commands: []wasmplugin.Command{
+		Triggers: []wasmplugin.Trigger{
 			scheduleCommand(),
 			findCommand(),
-		},
-		Triggers: []wasmplugin.Trigger{
 			{
 				Name:        "api",
 				Type:        wasmplugin.TriggerHTTP,
@@ -125,9 +123,10 @@ func isDigits(s string) bool {
 	return true
 }
 
-func scheduleCommand() wasmplugin.Command {
-	return wasmplugin.Command{
+func scheduleCommand() wasmplugin.Trigger {
+	return wasmplugin.Trigger{
 		Name:        "schedule",
+		Type:        wasmplugin.TriggerMessenger,
 		Description: "Show today's university schedule",
 		Nodes: []wasmplugin.Node{
 			wasmplugin.NewStep("mode").
@@ -189,9 +188,10 @@ func handleScheduleCmd(ctx *wasmplugin.EventContext) error {
 	return nil
 }
 
-func findCommand() wasmplugin.Command {
-	return wasmplugin.Command{
+func findCommand() wasmplugin.Trigger {
+	return wasmplugin.Trigger{
 		Name:        "find",
+		Type:        wasmplugin.TriggerMessenger,
 		Description: "Find schedule by teacher, subject, or room",
 		Nodes: []wasmplugin.Node{
 

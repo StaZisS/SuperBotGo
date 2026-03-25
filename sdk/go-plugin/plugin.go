@@ -16,7 +16,6 @@ type Plugin struct {
 	ID           string
 	Name         string
 	Version      string
-	Commands     []Command
 	Triggers     []Trigger
 	Requirements []Requirement
 
@@ -52,16 +51,30 @@ type Plugin struct {
 type TriggerType = string
 
 const (
-	TriggerHTTP  TriggerType = "http"
-	TriggerCron  TriggerType = "cron"
-	TriggerEvent TriggerType = "event"
+	TriggerHTTP      TriggerType = "http"
+	TriggerCron      TriggerType = "cron"
+	TriggerEvent     TriggerType = "event"
+	TriggerMessenger TriggerType = "messenger"
 )
 
 // Trigger declares a trigger source this plugin responds to.
+// For messenger triggers this also describes the interactive command flow
+// (steps / nodes) and optional role requirements.
 type Trigger struct {
 	Name        string
 	Type        TriggerType
 	Description string
+
+	// MinRole is an optional minimum role required to execute this trigger.
+	// Applicable to messenger and HTTP triggers; ignored for cron.
+	MinRole string
+
+	// Messenger-specific: interactive command flow.
+	// Use either Steps (simple, flat list) or Nodes (full node tree with
+	// branching, pagination, dynamic options, conditions).
+	// If Nodes is set, Steps is ignored.
+	Steps []Step // simple mode (flat list of steps)
+	Nodes []Node // advanced mode (node tree)
 
 	// HTTP-specific.
 	Path    string   // e.g. "/webhook"
@@ -78,22 +91,9 @@ type Trigger struct {
 	Handler func(ctx *EventContext) error
 }
 
-// Command describes a single slash-command the plugin provides.
-//
-// Use either Steps (simple, flat list) or Nodes (full node tree with branching,
-// pagination, dynamic options, conditions). If Nodes is set, Steps is ignored.
-type Command struct {
-	Name        string
-	Description string
-	MinRole     string // optional: minimum role required
-	Steps       []Step // simple mode (flat list of steps)
-	Nodes       []Node // advanced mode (node tree)
-	Handler     func(ctx *EventContext) error
-}
-
 // Step describes one parameter-collection step in a multi-step command.
 // This is the legacy flat format. For advanced features (branching, pagination,
-// dynamic options, conditions) use [Command.Nodes] with [NewStep] instead.
+// dynamic options, conditions) use [Trigger.Nodes] with [NewStep] instead.
 type Step struct {
 	Param      string   // parameter key
 	Prompt     string   // text shown to the user

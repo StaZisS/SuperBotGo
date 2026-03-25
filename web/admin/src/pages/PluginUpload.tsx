@@ -102,7 +102,7 @@ export default function PluginUpload() {
     setUploading(true)
     try {
       const result = await api.uploadPlugin(file)
-      result.commands = result.commands ?? []
+      result.triggers = result.triggers ?? []
       result.requirements = result.requirements ?? []
       setMeta(result)
       toast.success('Файл загружен, проверьте метаданные ниже')
@@ -193,13 +193,13 @@ export default function PluginUpload() {
               </Card>
             )}
 
-            {meta.commands.length > 0 && (
+            {meta.triggers.filter((t) => t.type === 'messenger').length > 0 && (
               <div>
                 <h4 className="text-sm font-medium text-muted-foreground mb-2">
-                  Команды ({meta.commands.length})
+                  Команды ({meta.triggers.filter((t) => t.type === 'messenger').length})
                 </h4>
                 <div className="space-y-1">
-                  {meta.commands.map((cmd) => (
+                  {meta.triggers.filter((t) => t.type === 'messenger').map((cmd) => (
                     <div
                       key={cmd.name}
                       className="flex items-center gap-3 text-sm p-2 bg-muted/50 rounded"

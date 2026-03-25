@@ -45,41 +45,44 @@ func (wp *WasmPlugin) Version() string {
 func (wp *WasmPlugin) SupportedRoles() []string {
 	seen := make(map[string]bool)
 	var roles []string
-	for _, cmd := range wp.meta.Commands {
-		if cmd.MinRole != "" && !seen[cmd.MinRole] {
-			seen[cmd.MinRole] = true
-			roles = append(roles, cmd.MinRole)
+	for _, t := range wp.meta.Triggers {
+		if t.MinRole != "" && !seen[t.MinRole] {
+			seen[t.MinRole] = true
+			roles = append(roles, t.MinRole)
 		}
 	}
 	return roles
 }
 
 func (wp *WasmPlugin) Commands() []*state.CommandDefinition {
-	defs := make([]*state.CommandDefinition, len(wp.meta.Commands))
-	for i, cmd := range wp.meta.Commands {
-		def := &state.CommandDefinition{
-			Name:        cmd.Name,
-			Description: cmd.Description,
+	var defs []*state.CommandDefinition
+	for _, t := range wp.meta.Triggers {
+		if t.Type != "messenger" {
+			continue
 		}
-		if cmd.MinRole != "" {
+		def := &state.CommandDefinition{
+			Name:        t.Name,
+			Description: t.Description,
+		}
+		if t.MinRole != "" {
 			def.Requirements = &model.RoleRequirements{
-				GlobalRoles: []string{cmd.MinRole},
+				GlobalRoles: []string{t.MinRole},
 			}
 		}
 
-		if len(cmd.Nodes) > 0 {
-			for _, nd := range cmd.Nodes {
+		if len(t.Nodes) > 0 {
+			for _, nd := range t.Nodes {
 				if cn := wp.nodeDefToCommandNode(nd); cn != nil {
 					def.Nodes = append(def.Nodes, cn)
 				}
 			}
 		} else {
-			for _, step := range cmd.Steps {
+			for _, step := range t.Steps {
 				def.Nodes = append(def.Nodes, stepDefToNode(step))
 			}
 		}
 
-		defs[i] = def
+		defs = append(defs, def)
 	}
 	return defs
 }

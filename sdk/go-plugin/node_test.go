@@ -6,8 +6,9 @@ import (
 )
 
 func TestBranchSerialization(t *testing.T) {
-	cmd := Command{
+	trigger := Trigger{
 		Name: "schedule",
+		Type: TriggerMessenger,
 		Nodes: []Node{
 			NewStep("mode").
 				Options("Choose:",
@@ -27,8 +28,8 @@ func TestBranchSerialization(t *testing.T) {
 	// Serialize (as handleMeta does).
 	reg := make(callbackMap)
 	var nodes []nodeDef
-	for _, node := range cmd.Nodes {
-		nodes = append(nodes, node.toNodeDef(cmd.Name, reg))
+	for _, node := range trigger.Nodes {
+		nodes = append(nodes, node.toNodeDef(trigger.Name, reg))
 	}
 
 	if len(nodes) != 4 {

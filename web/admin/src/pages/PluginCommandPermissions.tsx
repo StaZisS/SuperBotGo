@@ -49,14 +49,14 @@ export default function PluginCommandPermissions() {
       } catch {}
 
       const settingMap = new Map(settings.map((s) => [s.command_name, s]))
-      const commands = p.commands ?? p.meta?.commands ?? []
+      const commands = p.commands ?? p.meta?.triggers?.filter((t) => t.type === 'messenger') ?? []
 
       setRows(
         commands.map((cmd) => {
           const setting = settingMap.get(cmd.name)
           return {
             name: cmd.name,
-            description: cmd.description,
+            description: cmd.description ?? '',
             enabled: setting?.enabled ?? true,
             policyExpression: setting?.policy_expression ?? '',
             hasSetting: !!setting,

@@ -66,8 +66,9 @@ export interface PluginInfo {
 
 export interface TriggerDef {
   name: string
-  type: 'cron' | 'http' | 'event'
+  type: 'cron' | 'http' | 'event' | 'messenger'
   description?: string
+  min_role?: string
   schedule?: string
   path?: string
   methods?: string[]
@@ -78,8 +79,7 @@ export interface PluginMeta {
   id: string
   name: string
   version: string
-  commands: { name: string; description: string; min_role?: string }[]
-  triggers?: TriggerDef[]
+  triggers: TriggerDef[]
   requirements: { type: string; description: string; target?: string; required: boolean }[]
   config_schema: Record<string, unknown> | null
   wasm_key: string
