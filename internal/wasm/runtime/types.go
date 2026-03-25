@@ -17,11 +17,20 @@ type PluginMeta struct {
 	Requirements []RequirementDef `json:"requirements,omitempty"`
 	ConfigSchema json.RawMessage  `json:"config_schema,omitempty"`
 	Dependencies []DependencyDef  `json:"dependencies,omitempty"`
+	Migrations   []MigrationDef   `json:"migrations,omitempty"`
 }
 
 type DependencyDef struct {
 	PluginID          string `json:"plugin"`
 	VersionConstraint string `json:"version"`
+}
+
+// MigrationDef describes a single SQL migration declared by a plugin.
+type MigrationDef struct {
+	Version     int    `json:"version"`
+	Description string `json:"description"`
+	Up          string `json:"up"`
+	Down        string `json:"down,omitempty"`
 }
 
 type TriggerDef struct {

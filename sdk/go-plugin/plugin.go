@@ -11,6 +11,16 @@ package wasmplugin
 // (e.g. new env vars, new response fields, changed JSON schema).
 const ProtocolVersion = 1
 
+// SQLMigration describes a single SQL schema migration step.
+// Migrations are declared in the Plugin struct and serialized as part of
+// the meta response. The host applies them via goose before calling configure.
+type SQLMigration struct {
+	Version     int    // Sequential version number (1, 2, 3, ...)
+	Description string // Short description (e.g. "create_schedule_entries")
+	Up          string // SQL to apply
+	Down        string // SQL to rollback (optional)
+}
+
 // Plugin defines a WASM plugin. Fill this struct and pass it to [Run].
 type Plugin struct {
 	ID           string
@@ -45,6 +55,13 @@ type Plugin struct {
 	// version strings plus access to the KV store for data transformation.
 	// If nil, migration is a silent no-op (success).
 	Migrate func(ctx *MigrateContext) error
+
+	// Migrations declares SQL schema migrations that the host will run
+	// via goose before calling OnConfigure. Each migration has a version
+	// number, a description, and Up/Down SQL statements.
+	// This is separate from the Migrate callback (which handles KV data
+	// migration on version changes).
+	Migrations []SQLMigration
 }
 
 // TriggerType identifies the kind of trigger.

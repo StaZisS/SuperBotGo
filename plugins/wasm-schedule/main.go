@@ -1,6 +1,13 @@
 package main
 
-import "github.com/superbot/wasmplugin"
+import (
+	"embed"
+
+	"github.com/superbot/wasmplugin"
+)
+
+//go:embed migrations/*.sql
+var migrationsFS embed.FS
 
 func main() {
 	wasmplugin.Run(wasmplugin.Plugin{
@@ -15,13 +22,14 @@ func main() {
 		Requirements: []wasmplugin.Requirement{
 			wasmplugin.Database("Store and query schedule entries").Build(),
 		},
+		Migrations: wasmplugin.MigrationsFromFS(migrationsFS, "migrations"),
 		OnConfigure: func(config []byte) error {
 			db, err := openDB()
 			if err != nil {
 				return err
 			}
 			defer db.Close()
-			return ensureSchema(db)
+			return seedData(db)
 		},
 		Triggers: []wasmplugin.Trigger{
 			scheduleCommand(),

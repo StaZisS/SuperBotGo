@@ -6,20 +6,7 @@ func openDB() (*sql.DB, error) {
 	return sql.Open("superbot", "")
 }
 
-func ensureSchema(db *sql.DB) error {
-	_, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS schedule_entries (
-			id SERIAL PRIMARY KEY,
-			building TEXT NOT NULL,
-			time_slot TEXT NOT NULL,
-			subject TEXT NOT NULL,
-			teacher TEXT NOT NULL
-		)
-	`)
-	if err != nil {
-		return err
-	}
-
+func seedData(db *sql.DB) error {
 	var count int
 	if err := db.QueryRow("SELECT COUNT(*) FROM schedule_entries").Scan(&count); err != nil {
 		return err

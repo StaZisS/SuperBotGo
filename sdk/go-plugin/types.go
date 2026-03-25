@@ -15,6 +15,7 @@ type pluginMeta struct {
 	Triggers     []triggerDef     `json:"triggers,omitempty"`
 	Requirements []requirementDef `json:"requirements,omitempty"`
 	ConfigSchema json.RawMessage  `json:"config_schema,omitempty"`
+	Migrations   []migrationDef   `json:"migrations,omitempty"`
 }
 
 type triggerDef struct {
@@ -47,6 +48,13 @@ type requirementDef struct {
 	Description string          `json:"description,omitempty"`
 	Target      string          `json:"target,omitempty"`
 	Config      json.RawMessage `json:"config,omitempty"`
+}
+
+type migrationDef struct {
+	Version     int    `json:"version"`
+	Description string `json:"description"`
+	Up          string `json:"up"`
+	Down        string `json:"down,omitempty"`
 }
 
 type logEntry struct {

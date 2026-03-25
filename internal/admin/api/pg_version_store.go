@@ -22,6 +22,11 @@ func (s *PgVersionStore) SaveVersion(ctx context.Context, rec VersionRecord) (in
 		configJSON = rec.ConfigJSON
 	}
 
+	permissions := rec.Permissions
+	if permissions == nil {
+		permissions = []string{}
+	}
+
 	var id int64
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO wasm_plugin_versions (plugin_id, version, wasm_key, wasm_hash, config_json, permissions, changelog)
@@ -33,7 +38,7 @@ func (s *PgVersionStore) SaveVersion(ctx context.Context, rec VersionRecord) (in
 		rec.WasmKey,
 		rec.WasmHash,
 		configJSON,
-		rec.Permissions,
+		permissions,
 		rec.Changelog,
 	).Scan(&id)
 	if err != nil {

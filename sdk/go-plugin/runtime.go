@@ -100,6 +100,15 @@ func handleMeta(p Plugin) {
 		meta.Requirements = append(meta.Requirements, rd)
 	}
 
+	for _, m := range p.Migrations {
+		meta.Migrations = append(meta.Migrations, migrationDef{
+			Version:     m.Version,
+			Description: m.Description,
+			Up:          m.Up,
+			Down:        m.Down,
+		})
+	}
+
 	data, _ := json.Marshal(meta)
 	os.Stdout.Write(data)
 }
