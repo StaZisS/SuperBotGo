@@ -44,7 +44,7 @@ func (h *HostAPI) notifyUserFunc() api.GoModuleFunc {
 			return
 		}
 
-		if err := h.perms.CheckPermission(pluginID, "notify:user"); err != nil {
+		if err := h.perms.CheckPermission(pluginID, "notify"); err != nil {
 			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
@@ -98,7 +98,7 @@ func (h *HostAPI) notifyChatFunc() api.GoModuleFunc {
 			return
 		}
 
-		if err := h.perms.CheckPermission(pluginID, "notify:chat"); err != nil {
+		if err := h.perms.CheckPermission(pluginID, "notify"); err != nil {
 			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}
@@ -151,7 +151,7 @@ func (h *HostAPI) notifyProjectFunc() api.GoModuleFunc {
 			return
 		}
 
-		if err := h.perms.CheckPermission(pluginID, "notify:project"); err != nil {
+		if err := h.perms.CheckPermission(pluginID, "notify"); err != nil {
 			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}

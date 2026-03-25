@@ -13,12 +13,12 @@ const ProtocolVersion = 1
 
 // Plugin defines a WASM plugin. Fill this struct and pass it to [Run].
 type Plugin struct {
-	ID          string
-	Name        string
-	Version     string
-	Commands    []Command
-	Triggers    []Trigger
-	Permissions []Permission
+	ID           string
+	Name         string
+	Version      string
+	Commands     []Command
+	Triggers     []Trigger
+	Requirements []Requirement
 
 	// Config defines the plugin's configuration schema using the builder API.
 	// The admin UI will generate a form from this.
@@ -107,11 +107,65 @@ type Option struct {
 	Value string
 }
 
-// Permission declares a host permission the plugin requires.
-type Permission struct {
-	Key         string
+// Requirement declares a host resource the plugin needs.
+type Requirement struct {
+	Type        string // "database", "http", "kv", "notify", "events", "plugin", "db"
 	Description string
-	Required    bool
+	Target      string       // for "plugin" type: target plugin ID
+	Config      ConfigSchema // config the admin must fill (e.g. DSN for database)
+	Required    bool         // if true, plugin won't load without this fulfilled
+}
+
+// RequirementBuilder provides a fluent API for constructing requirements.
+type RequirementBuilder struct {
+	r Requirement
+}
+
+func (b *RequirementBuilder) Required() *RequirementBuilder {
+	b.r.Required = true
+	return b
+}
+
+func (b *RequirementBuilder) WithConfig(cs ConfigSchema) *RequirementBuilder {
+	b.r.Config = cs
+	return b
+}
+
+func (b *RequirementBuilder) Build() Requirement { return b.r }
+
+// Database declares a requirement for SQL database access.
+func Database(desc string) *RequirementBuilder {
+	return &RequirementBuilder{r: Requirement{Type: "database", Description: desc}}
+}
+
+// HTTP declares a requirement for outbound HTTP requests.
+func HTTP(desc string) *RequirementBuilder {
+	return &RequirementBuilder{r: Requirement{Type: "http", Description: desc}}
+}
+
+// KV declares a requirement for key-value store access.
+func KV(desc string) *RequirementBuilder {
+	return &RequirementBuilder{r: Requirement{Type: "kv", Description: desc}}
+}
+
+// NotifyReq declares a requirement for sending notifications.
+func NotifyReq(desc string) *RequirementBuilder {
+	return &RequirementBuilder{r: Requirement{Type: "notify", Description: desc}}
+}
+
+// EventsReq declares a requirement for publishing events.
+func EventsReq(desc string) *RequirementBuilder {
+	return &RequirementBuilder{r: Requirement{Type: "events", Description: desc}}
+}
+
+// PluginDep declares a requirement for calling another plugin.
+func PluginDep(target, desc string) *RequirementBuilder {
+	return &RequirementBuilder{r: Requirement{Type: "plugin", Description: desc, Target: target}}
+}
+
+// LegacyDB declares a requirement for legacy db_query/db_save host functions.
+func LegacyDB(desc string) *RequirementBuilder {
+	return &RequirementBuilder{r: Requirement{Type: "db", Description: desc}}
 }
 
 // configStore holds the parsed plugin configuration (set during configure action,

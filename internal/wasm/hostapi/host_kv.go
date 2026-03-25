@@ -22,7 +22,7 @@ func (h *HostAPI) kvGetFunc() api.GoModuleFunc {
 		offset := uint32(stack[0])
 		length := uint32(stack[1])
 
-		if err := h.perms.CheckPermission(pluginID, "kv:read"); err != nil {
+		if err := h.perms.CheckPermission(pluginID, "kv"); err != nil {
 			returnError(ctx, mod, stack, err)
 			return
 		}
@@ -75,7 +75,7 @@ func (h *HostAPI) kvSetFunc() api.GoModuleFunc {
 		offset := uint32(stack[0])
 		length := uint32(stack[1])
 
-		if err := h.perms.CheckPermission(pluginID, "kv:write"); err != nil {
+		if err := h.perms.CheckPermission(pluginID, "kv"); err != nil {
 			returnError(ctx, mod, stack, err)
 			return
 		}
@@ -127,7 +127,7 @@ func (h *HostAPI) kvDeleteFunc() api.GoModuleFunc {
 		offset := uint32(stack[0])
 		length := uint32(stack[1])
 
-		if err := h.perms.CheckPermission(pluginID, "kv:write"); err != nil {
+		if err := h.perms.CheckPermission(pluginID, "kv"); err != nil {
 			returnError(ctx, mod, stack, err)
 			return
 		}
@@ -174,7 +174,7 @@ func (h *HostAPI) kvListFunc() api.GoModuleFunc {
 		offset := uint32(stack[0])
 		length := uint32(stack[1])
 
-		if err := h.perms.CheckPermission(pluginID, "kv:read"); err != nil {
+		if err := h.perms.CheckPermission(pluginID, "kv"); err != nil {
 			returnError(ctx, mod, stack, err)
 			return
 		}

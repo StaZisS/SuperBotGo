@@ -6,15 +6,23 @@ import (
 )
 
 var DefaultRateLimits = map[string]int{
-	"db_query":      100,
-	"db_save":       50,
-	"http_request":  20,
-	"call_plugin":   10,
-	"publish_event": 50,
-	"kv_get":        200,
-	"kv_set":        200,
-	"kv_delete":     100,
-	"kv_list":       50,
+	"db_query":       100,
+	"db_save":        50,
+	"http_request":   20,
+	"call_plugin":    10,
+	"publish_event":  50,
+	"kv_get":         200,
+	"kv_set":         200,
+	"kv_delete":      100,
+	"kv_list":        50,
+	"sql_open":       10,
+	"sql_close":      10,
+	"sql_exec":       100,
+	"sql_query":      100,
+	"sql_next":       5000,
+	"sql_rows_close": 100,
+	"sql_begin":      20,
+	"sql_end":        20,
 }
 
 type RateLimiter struct {

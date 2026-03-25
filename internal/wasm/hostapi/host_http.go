@@ -79,11 +79,7 @@ func (h *HostAPI) httpRequestFunc() api.GoModuleFunc {
 			return
 		}
 
-		requiredPerm := "network:read"
-		if payload.Method != "" && payload.Method != http.MethodGet && payload.Method != http.MethodHead {
-			requiredPerm = "network:write"
-		}
-		if err := h.perms.CheckPermission(pluginID, requiredPerm); err != nil {
+		if err := h.perms.CheckPermission(pluginID, "network"); err != nil {
 			returnErrorEnc(ctx, mod, stack, err, enc)
 			return
 		}

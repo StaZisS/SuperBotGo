@@ -8,14 +8,14 @@ import "encoding/json"
 // ---------------------------------------------------------------------------
 
 type pluginMeta struct {
-	ID           string          `json:"id"`
-	Name         string          `json:"name"`
-	Version      string          `json:"version"`
-	SDKVersion   int             `json:"sdk_version"`
-	Commands     []commandDef    `json:"commands,omitempty"`
-	Triggers     []triggerDef    `json:"triggers,omitempty"`
-	Permissions  []permissionDef `json:"permissions,omitempty"`
-	ConfigSchema json.RawMessage `json:"config_schema,omitempty"`
+	ID           string           `json:"id"`
+	Name         string           `json:"name"`
+	Version      string           `json:"version"`
+	SDKVersion   int              `json:"sdk_version"`
+	Commands     []commandDef     `json:"commands,omitempty"`
+	Triggers     []triggerDef     `json:"triggers,omitempty"`
+	Requirements []requirementDef `json:"requirements,omitempty"`
+	ConfigSchema json.RawMessage  `json:"config_schema,omitempty"`
 }
 
 type triggerDef struct {
@@ -48,10 +48,12 @@ type optionDef struct {
 	Value string `json:"value"`
 }
 
-type permissionDef struct {
-	Key         string `json:"key"`
-	Description string `json:"description"`
-	Required    bool   `json:"required"`
+type requirementDef struct {
+	Type        string          `json:"type"`
+	Description string          `json:"description,omitempty"`
+	Target      string          `json:"target,omitempty"`
+	Config      json.RawMessage `json:"config,omitempty"`
+	Required    bool            `json:"required,omitempty"`
 }
 
 type logEntry struct {

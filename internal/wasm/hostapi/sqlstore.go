@@ -1,0 +1,275 @@
+package hostapi
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"sync"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+const (
+	sqlMaxHandlesPerExecution = 16
+)
+
+type handleKind uint8
+
+const (
+	handleConn handleKind = iota
+	handleTx
+	handleRows
+)
+
+type sqlHandle struct {
+	kind       handleKind
+	conn       *pgxpool.Conn
+	tx         pgx.Tx
+	rows       pgx.Rows
+	cols       []string
+	connHandle uint32 // parent conn handle (for tx and rows)
+}
+
+type executionHandles struct {
+	mu      sync.Mutex
+	nextID  uint32
+	handles map[uint32]*sqlHandle
+}
+
+type pluginSQLState struct {
+	mu         sync.Mutex
+	pool       *pgxpool.Pool
+	dsn        string
+	executions map[string]*executionHandles
+}
+
+// SQLHandleStore manages per-plugin SQL connection pools and per-execution handles.
+type SQLHandleStore struct {
+	mu      sync.RWMutex
+	plugins map[string]*pluginSQLState
+}
+
+func NewSQLHandleStore() *SQLHandleStore {
+	return &SQLHandleStore{
+		plugins: make(map[string]*pluginSQLState),
+	}
+}
+
+// RegisterDSN stores the DSN for a plugin. Called during plugin load.
+func (s *SQLHandleStore) RegisterDSN(pluginID, dsn string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ps, ok := s.plugins[pluginID]
+	if !ok {
+		ps = &pluginSQLState{
+			executions: make(map[string]*executionHandles),
+		}
+		s.plugins[pluginID] = ps
+	}
+	ps.dsn = dsn
+}
+
+// UnregisterPlugin closes the pool and removes all state for a plugin.
+func (s *SQLHandleStore) UnregisterPlugin(pluginID string) {
+	s.mu.Lock()
+	ps, ok := s.plugins[pluginID]
+	if !ok {
+		s.mu.Unlock()
+		return
+	}
+	delete(s.plugins, pluginID)
+	s.mu.Unlock()
+
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	// Cleanup all executions.
+	for execID := range ps.executions {
+		cleanupExecutionLocked(ps, execID)
+	}
+
+	if ps.pool != nil {
+		ps.pool.Close()
+		ps.pool = nil
+	}
+}
+
+func (s *SQLHandleStore) getPluginState(pluginID string) (*pluginSQLState, error) {
+	s.mu.RLock()
+	ps, ok := s.plugins[pluginID]
+	s.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("no SQL DSN configured for plugin %q", pluginID)
+	}
+	return ps, nil
+}
+
+// getOrCreatePool lazily creates the pgxpool.Pool from the stored DSN.
+func (s *SQLHandleStore) getOrCreatePool(ctx context.Context, pluginID string) (*pgxpool.Pool, error) {
+	ps, err := s.getPluginState(pluginID)
+	if err != nil {
+		return nil, err
+	}
+
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	if ps.pool != nil {
+		return ps.pool, nil
+	}
+	if ps.dsn == "" {
+		return nil, fmt.Errorf("no SQL DSN configured for plugin %q", pluginID)
+	}
+
+	pool, err := pgxpool.New(ctx, ps.dsn)
+	if err != nil {
+		return nil, fmt.Errorf("create pool for plugin %q: %w", pluginID, err)
+	}
+	ps.pool = pool
+	return pool, nil
+}
+
+func (s *SQLHandleStore) getExecHandles(pluginID, execID string) (*pluginSQLState, *executionHandles, error) {
+	ps, err := s.getPluginState(pluginID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ps.mu.Lock()
+	eh, ok := ps.executions[execID]
+	if !ok {
+		eh = &executionHandles{
+			nextID:  1,
+			handles: make(map[uint32]*sqlHandle),
+		}
+		ps.executions[execID] = eh
+	}
+	ps.mu.Unlock()
+
+	return ps, eh, nil
+}
+
+// Alloc allocates a new handle for the given execution. Returns the handle ID.
+func (s *SQLHandleStore) Alloc(pluginID, execID string, h *sqlHandle) (uint32, error) {
+	_, eh, err := s.getExecHandles(pluginID, execID)
+	if err != nil {
+		return 0, err
+	}
+
+	eh.mu.Lock()
+	defer eh.mu.Unlock()
+
+	if len(eh.handles) >= sqlMaxHandlesPerExecution {
+		return 0, fmt.Errorf("too many open SQL handles: max %d per execution", sqlMaxHandlesPerExecution)
+	}
+
+	id := eh.nextID
+	eh.nextID++
+	eh.handles[id] = h
+	return id, nil
+}
+
+// Get retrieves a handle by ID.
+func (s *SQLHandleStore) Get(pluginID, execID string, id uint32) (*sqlHandle, error) {
+	_, eh, err := s.getExecHandles(pluginID, execID)
+	if err != nil {
+		return nil, err
+	}
+
+	eh.mu.Lock()
+	defer eh.mu.Unlock()
+
+	h, ok := eh.handles[id]
+	if !ok {
+		return nil, fmt.Errorf("SQL handle %d not found", id)
+	}
+	return h, nil
+}
+
+// Remove removes a handle by ID and returns it for the caller to close resources.
+func (s *SQLHandleStore) Remove(pluginID, execID string, id uint32) (*sqlHandle, error) {
+	_, eh, err := s.getExecHandles(pluginID, execID)
+	if err != nil {
+		return nil, err
+	}
+
+	eh.mu.Lock()
+	defer eh.mu.Unlock()
+
+	h, ok := eh.handles[id]
+	if !ok {
+		return nil, fmt.Errorf("SQL handle %d not found", id)
+	}
+	delete(eh.handles, id)
+	return h, nil
+}
+
+// CleanupExecution releases all resources for a given execution.
+// Rolls back transactions, closes rows, releases connections.
+func (s *SQLHandleStore) CleanupExecution(pluginID, execID string) {
+	s.mu.RLock()
+	ps, ok := s.plugins[pluginID]
+	s.mu.RUnlock()
+	if !ok {
+		return
+	}
+
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	cleanupExecutionLocked(ps, execID)
+}
+
+func cleanupExecutionLocked(ps *pluginSQLState, execID string) {
+	eh, ok := ps.executions[execID]
+	if !ok {
+		return
+	}
+	delete(ps.executions, execID)
+
+	eh.mu.Lock()
+	defer eh.mu.Unlock()
+
+	// First pass: close rows.
+	for id, h := range eh.handles {
+		if h.kind == handleRows {
+			if h.rows != nil {
+				h.rows.Close()
+			}
+			delete(eh.handles, id)
+		}
+	}
+
+	// Second pass: rollback transactions.
+	for id, h := range eh.handles {
+		if h.kind == handleTx {
+			if h.tx != nil {
+				if err := h.tx.Rollback(context.Background()); err != nil {
+					slog.Debug("sql cleanup: rollback tx", "exec", execID, "handle", id, "error", err)
+				}
+			}
+			delete(eh.handles, id)
+		}
+	}
+
+	// Third pass: release connections.
+	for id, h := range eh.handles {
+		if h.kind == handleConn {
+			if h.conn != nil {
+				h.conn.Release()
+			}
+			delete(eh.handles, id)
+		}
+	}
+}
+
+// HasDSN checks whether a plugin has a DSN registered.
+func (s *SQLHandleStore) HasDSN(pluginID string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	ps, ok := s.plugins[pluginID]
+	if !ok {
+		return false
+	}
+	return ps.dsn != ""
+}

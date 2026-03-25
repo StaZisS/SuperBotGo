@@ -481,12 +481,12 @@ export default function PluginDetail() {
             </>
           )}
 
-          {/* Permissions */}
+          {/* Permissions (legacy display from DB) */}
           {plugin.permissions && plugin.permissions.length > 0 && (
             <>
               <Separator />
               <div>
-                <h4 className="text-sm font-medium mb-2">Разрешения</h4>
+                <h4 className="text-sm font-medium mb-2">Активные доступы</h4>
                 <div className="flex flex-wrap gap-2">
                   {plugin.permissions.map((p) => (
                     <Badge key={p} variant="secondary" className="font-mono">
@@ -529,7 +529,7 @@ export default function PluginDetail() {
               <Button variant="outline" size="sm" asChild>
                 <Link to={`/admin/plugins/${id}/plugin-permissions`}>
                   <Lock className="mr-1.5 h-4 w-4" />
-                  Права плагина
+                  Требования
                 </Link>
               </Button>
 

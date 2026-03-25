@@ -27,15 +27,15 @@ const maxUploadSize = 50 << 20
 const maxRequestBodySize = 1 << 20
 
 type uploadResponse struct {
-	ID              string                 `json:"id"`
-	Name            string                 `json:"name"`
-	Version         string                 `json:"version"`
-	Commands        []wasmrt.CommandDef    `json:"commands"`
-	Permissions     []wasmrt.PermissionDef `json:"permissions"`
-	ConfigSchema    json.RawMessage        `json:"config_schema"`
-	WasmKey         string                 `json:"wasm_key"`
-	WasmHash        string                 `json:"wasm_hash"`
-	ExistingVersion string                 `json:"existing_version,omitempty"`
+	ID              string                  `json:"id"`
+	Name            string                  `json:"name"`
+	Version         string                  `json:"version"`
+	Commands        []wasmrt.CommandDef     `json:"commands"`
+	Requirements    []wasmrt.RequirementDef `json:"requirements"`
+	ConfigSchema    json.RawMessage         `json:"config_schema"`
+	WasmKey         string                  `json:"wasm_key"`
+	WasmHash        string                  `json:"wasm_hash"`
+	ExistingVersion string                  `json:"existing_version,omitempty"`
 }
 
 type installResponse struct {
@@ -256,7 +256,7 @@ func (h *AdminHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		Name:            meta.Name,
 		Version:         meta.Version,
 		Commands:        meta.Commands,
-		Permissions:     meta.Permissions,
+		Requirements:    meta.Requirements,
 		ConfigSchema:    meta.ConfigSchema,
 		WasmKey:         wasmKey,
 		WasmHash:        hex.EncodeToString(hash[:]),
@@ -268,9 +268,8 @@ func (h *AdminHandler) handleInstall(w http.ResponseWriter, r *http.Request) {
 	pluginID := r.PathValue("id")
 
 	var body struct {
-		Config      json.RawMessage `json:"config"`
-		Permissions []string        `json:"permissions"`
-		WasmKey     string          `json:"wasm_key"`
+		Config  json.RawMessage `json:"config"`
+		WasmKey string          `json:"wasm_key"`
 	}
 	if !decodeJSONBody(w, r, &body) {
 		return
@@ -298,7 +297,7 @@ func (h *AdminHandler) handleInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wp, err := h.loader.LoadPluginFromBytes(r.Context(), wasmBytes, body.Config, body.Permissions)
+	wp, err := h.loader.LoadPluginFromBytes(r.Context(), wasmBytes, body.Config)
 	if err != nil {
 		slog.Error("admin: failed to load plugin", "id", pluginID, "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to load plugin")
@@ -323,7 +322,6 @@ func (h *AdminHandler) handleInstall(w http.ResponseWriter, r *http.Request) {
 		ID:          wp.ID(),
 		WasmKey:     body.WasmKey,
 		ConfigJSON:  body.Config,
-		Permissions: body.Permissions,
 		Enabled:     true,
 		WasmHash:    hex.EncodeToString(hash[:]),
 		InstalledAt: time.Now(),
@@ -336,13 +334,12 @@ func (h *AdminHandler) handleInstall(w http.ResponseWriter, r *http.Request) {
 
 	if h.versions != nil {
 		if _, err := h.versions.SaveVersion(r.Context(), VersionRecord{
-			PluginID:    wp.ID(),
-			Version:     wp.Version(),
-			WasmKey:     body.WasmKey,
-			WasmHash:    record.WasmHash,
-			ConfigJSON:  body.Config,
-			Permissions: body.Permissions,
-			Changelog:   "initial install",
+			PluginID:   wp.ID(),
+			Version:    wp.Version(),
+			WasmKey:    body.WasmKey,
+			WasmHash:   record.WasmHash,
+			ConfigJSON: body.Config,
+			Changelog:  "initial install",
 		}); err != nil {
 			slog.Error("admin: failed to save initial version record", "plugin", wp.ID(), "error", err)
 		}
@@ -466,12 +463,11 @@ func (h *AdminHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 
 		if h.versions != nil {
 			if _, err := h.versions.SaveVersion(r.Context(), VersionRecord{
-				PluginID:    pluginID,
-				Version:     wp.Version(),
-				WasmKey:     newKey,
-				WasmHash:    record.WasmHash,
-				ConfigJSON:  record.ConfigJSON,
-				Permissions: record.Permissions,
+				PluginID:   pluginID,
+				Version:    wp.Version(),
+				WasmKey:    newKey,
+				WasmHash:   record.WasmHash,
+				ConfigJSON: record.ConfigJSON,
 			}); err != nil {
 				slog.Error("admin: failed to save version record on update", "plugin", pluginID, "error", err)
 			}
@@ -584,7 +580,7 @@ func (h *AdminHandler) handleEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wp, err := h.loader.LoadPluginFromBytes(r.Context(), wasmBytes, record.ConfigJSON, record.Permissions)
+	wp, err := h.loader.LoadPluginFromBytes(r.Context(), wasmBytes, record.ConfigJSON)
 	if err != nil {
 		slog.Error("admin: failed to load plugin on enable", "id", pluginID, "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to load plugin")
@@ -729,7 +725,7 @@ func (h *AdminHandler) handleGetPlugin(w http.ResponseWriter, r *http.Request) {
 
 	if storeErr == nil {
 		resp["config"] = record.ConfigJSON
-		resp["permissions"] = record.Permissions
+		resp["permissions"] = record.Permissions // legacy: kept in DB for backward compat
 		resp["wasm_hash"] = record.WasmHash
 		resp["installed_at"] = record.InstalledAt
 		resp["updated_at"] = record.UpdatedAt
@@ -741,39 +737,9 @@ func (h *AdminHandler) handleGetPlugin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (h *AdminHandler) syncPermissionsOnUpdate(pluginID string, record PluginRecord, wp *adapter.WasmPlugin) {
-	meta := wp.Meta()
-
-	currentPerms := make(map[string]bool, len(record.Permissions))
-	for _, p := range record.Permissions {
-		currentPerms[p] = true
-	}
-
-	changed := false
-	for _, decl := range meta.Permissions {
-		if decl.Required && !currentPerms[decl.Key] {
-			currentPerms[decl.Key] = true
-			changed = true
-			slog.Info("admin: auto-granted new required permission on update",
-				"plugin", pluginID, "permission", decl.Key)
-		}
-	}
-
-	if changed {
-		newPerms := make([]string, 0, len(currentPerms))
-		for p := range currentPerms {
-			newPerms = append(newPerms, p)
-		}
-		record.Permissions = newPerms
-		record.UpdatedAt = time.Now()
-		ctx := context.Background()
-		if err := h.store.SavePlugin(ctx, record); err != nil {
-			slog.Error("admin: failed to save updated permissions", "plugin", pluginID, "error", err)
-			return
-		}
-		h.hostAPI.GrantPermissions(pluginID, newPerms)
-		h.loader.UpdatePermissions(pluginID, newPerms)
-	}
+// syncPermissionsOnUpdate is a no-op now — permissions are auto-derived from requirements
+// during plugin load. Kept as a stub to avoid breaking callers.
+func (h *AdminHandler) syncPermissionsOnUpdate(_ string, _ PluginRecord, _ *adapter.WasmPlugin) {
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {

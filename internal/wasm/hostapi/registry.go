@@ -2,27 +2,42 @@ package hostapi
 
 import "strings"
 
+// RequirementType describes a type of resource a plugin can require.
+type RequirementType struct {
+	Type        string `json:"type"`
+	Description string `json:"description"`
+	HasConfig   bool   `json:"has_config"`
+}
+
+// AllRequirementTypes returns the list of supported requirement types.
+func AllRequirementTypes() []RequirementType {
+	return []RequirementType{
+		{Type: "database", Description: "SQL database access (PostgreSQL)", HasConfig: true},
+		{Type: "db", Description: "Legacy db_query/db_save host functions", HasConfig: false},
+		{Type: "http", Description: "Outbound HTTP requests", HasConfig: false},
+		{Type: "kv", Description: "Key-value store", HasConfig: false},
+		{Type: "notify", Description: "Send notifications", HasConfig: false},
+		{Type: "events", Description: "Publish events", HasConfig: false},
+		{Type: "plugin", Description: "Call another plugin", HasConfig: false},
+	}
+}
+
+// PermissionInfo is kept for backward compatibility with admin API.
 type PermissionInfo struct {
 	Key         string `json:"key"`
 	Description string `json:"description"`
 	Category    string `json:"category"`
 }
 
+// AllHostPermissions returns flat internal permission keys (used by admin API).
 func AllHostPermissions() []PermissionInfo {
 	return []PermissionInfo{
-		{Key: "db:read", Description: "Чтение данных из БД (db_query)", Category: "database"},
-		{Key: "db:write", Description: "Запись данных в БД (db_save)", Category: "database"},
-		{Key: "network:read", Description: "HTTP-запросы GET/HEAD", Category: "network"},
-		{Key: "network:write", Description: "HTTP-запросы POST/PUT/DELETE и др.", Category: "network"},
-		{Key: "plugins:events", Description: "Публикация событий (publish_event)", Category: "plugins"},
-		{Key: "triggers:http", Description: "Прием HTTP-запросов (webhooks, API)", Category: "triggers"},
-		{Key: "triggers:cron", Description: "Запуск по расписанию (cron)", Category: "triggers"},
-		{Key: "triggers:events", Description: "Подписка на события других плагинов", Category: "triggers"},
-		{Key: "kv:read", Description: "Чтение из key-value хранилища (kv_get, kv_list)", Category: "kv"},
-		{Key: "kv:write", Description: "Запись в key-value хранилище (kv_set, kv_delete)", Category: "kv"},
-		{Key: "notify:user", Description: "Отправка уведомлений пользователю (notify_user)", Category: "notifications"},
-		{Key: "notify:chat", Description: "Отправка уведомлений в чат (notify_chat)", Category: "notifications"},
-		{Key: "notify:project", Description: "Рассылка уведомлений по проекту (notify_project)", Category: "notifications"},
+		{Key: "db", Description: "Legacy database access (db_query, db_save)", Category: "database"},
+		{Key: "sql", Description: "SQL database access", Category: "database"},
+		{Key: "network", Description: "Outbound HTTP requests", Category: "network"},
+		{Key: "kv", Description: "Key-value store access", Category: "kv"},
+		{Key: "notify", Description: "Send notifications", Category: "notifications"},
+		{Key: "events", Description: "Publish events", Category: "events"},
 	}
 }
 

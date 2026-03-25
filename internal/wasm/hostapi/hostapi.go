@@ -19,19 +19,25 @@ type HostAPI struct {
 	perms      *permissionStore
 	metrics    *metrics.Metrics
 	kvStore    *KVStore
+	sqlStore   *SQLHandleStore
 	rateLimits map[string]int
 }
 
 func NewHostAPI(deps Dependencies) *HostAPI {
 	return &HostAPI{
-		deps:    deps,
-		perms:   newPermissionStore(),
-		kvStore: NewKVStore(),
+		deps:     deps,
+		perms:    newPermissionStore(),
+		kvStore:  NewKVStore(),
+		sqlStore: NewSQLHandleStore(),
 	}
 }
 
 func (h *HostAPI) KVStore() *KVStore {
 	return h.kvStore
+}
+
+func (h *HostAPI) SQLStore() *SQLHandleStore {
+	return h.sqlStore
 }
 
 func (h *HostAPI) SetRateLimits(limits map[string]int) {
@@ -63,6 +69,12 @@ func (h *HostAPI) RegisterHostModule(ctx context.Context, rt *wasmrt.Runtime) er
 	rt.AddContextHook(func(ctx context.Context, pluginID string) context.Context {
 		ctx = h.ContextWithRateLimiter(ctx, pluginID)
 		ctx = ContextWithTraceID(ctx, GenerateTraceID())
+		if h.sqlStore != nil {
+			traceID := TraceIDFromContext(ctx)
+			context.AfterFunc(ctx, func() {
+				h.sqlStore.CleanupExecution(pluginID, traceID)
+			})
+		}
 		return ctx
 	})
 
@@ -115,6 +127,18 @@ func (h *HostAPI) RegisterHostModule(ctx context.Context, rt *wasmrt.Runtime) er
 	builder = h.registerFunc(builder, "notify_project", h.notifyProjectFunc(),
 		[]api.ValueType{api.ValueTypeI32, api.ValueTypeI32},
 		[]api.ValueType{api.ValueTypeI64})
+
+	i32i32 := []api.ValueType{api.ValueTypeI32, api.ValueTypeI32}
+	i64 := []api.ValueType{api.ValueTypeI64}
+
+	builder = h.registerFunc(builder, "sql_open", h.sqlOpenFunc(), i32i32, i64)
+	builder = h.registerFunc(builder, "sql_close", h.sqlCloseFunc(), i32i32, i64)
+	builder = h.registerFunc(builder, "sql_exec", h.sqlExecFunc(), i32i32, i64)
+	builder = h.registerFunc(builder, "sql_query", h.sqlQueryFunc(), i32i32, i64)
+	builder = h.registerFunc(builder, "sql_next", h.sqlNextFunc(), i32i32, i64)
+	builder = h.registerFunc(builder, "sql_rows_close", h.sqlRowsCloseFunc(), i32i32, i64)
+	builder = h.registerFunc(builder, "sql_begin", h.sqlBeginFunc(), i32i32, i64)
+	builder = h.registerFunc(builder, "sql_end", h.sqlEndFunc(), i32i32, i64)
 
 	_, err := builder.Instantiate(ctx)
 	return err

@@ -80,7 +80,7 @@ export interface PluginMeta {
   version: string
   commands: { name: string; description: string; min_role?: string }[]
   triggers?: TriggerDef[]
-  permissions: { key: string; description: string; required: boolean }[]
+  requirements: { type: string; description: string; target?: string; required: boolean }[]
   config_schema: Record<string, unknown> | null
   wasm_key: string
   wasm_hash: string
@@ -138,28 +138,15 @@ export interface RuleSchema {
   field_values: Record<string, RuleParamOption[]>
 }
 
-export interface HostPermissionInfo {
-  key: string
+export interface RequirementInfo {
+  type: string
   description: string
-  category: string
-}
-
-export interface DeclaredPermission {
-  key: string
-  description: string
+  target?: string
   required: boolean
 }
 
-export interface CallablePlugin {
-  id: string
-  name: string
-}
-
-export interface PluginPermissionsDetail {
-  declared: DeclaredPermission[]
-  granted: string[]
-  all_available: HostPermissionInfo[]
-  callable_plugins: CallablePlugin[]
+export interface PluginRequirementsDetail {
+  requirements: RequirementInfo[]
 }
 
 export interface VersionInfo {
@@ -206,7 +193,7 @@ export const api = {
     return request<PluginMeta>('/plugins/upload', { method: 'POST', body: form })
   },
 
-  installPlugin: (id: string, body: { wasm_key: string; config: unknown; permissions: string[] }) =>
+  installPlugin: (id: string, body: { wasm_key: string; config: unknown }) =>
     request<{ id: string; status: string }>(`/plugins/${encodeURIComponent(id)}/install`, {
       method: 'POST',
       body: JSON.stringify(body),
@@ -253,14 +240,8 @@ export const api = {
       { method: 'PUT', body: JSON.stringify({ expression }) },
     ),
 
-  getPluginPermissions: (id: string) =>
-    request<PluginPermissionsDetail>(`/plugins/${encodeURIComponent(id)}/plugin-permissions`),
-
-  updatePluginPermissions: (id: string, permissions: string[]) =>
-    request<{ status: string }>(`/plugins/${encodeURIComponent(id)}/plugin-permissions`, {
-      method: 'PUT',
-      body: JSON.stringify({ permissions }),
-    }),
+  getPluginRequirements: (id: string) =>
+    request<PluginRequirementsDetail>(`/plugins/${encodeURIComponent(id)}/requirements`),
 
   listVersions: (pluginId: string) =>
     request<VersionInfo[]>(`/plugins/${encodeURIComponent(pluginId)}/versions`),

@@ -34,7 +34,7 @@ func AutoloadPlugins(ctx context.Context, store PluginStore, blobs BlobStore, lo
 			continue
 		}
 
-		wp, err := loader.LoadPluginFromBytes(ctx, wasmBytes, rec.ConfigJSON, rec.Permissions)
+		wp, err := loader.LoadPluginFromBytes(ctx, wasmBytes, rec.ConfigJSON)
 		if err != nil {
 			slog.Error("wasm: failed to autoload plugin", "id", rec.ID, "error", err)
 			continue

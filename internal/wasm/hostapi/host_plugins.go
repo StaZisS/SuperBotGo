@@ -174,7 +174,7 @@ func (h *HostAPI) publishEventFunc() api.GoModuleFunc {
 		offset := uint32(stack[0])
 		length := uint32(stack[1])
 
-		if err := h.perms.CheckPermission(pluginID, "plugins:events"); err != nil {
+		if err := h.perms.CheckPermission(pluginID, "events"); err != nil {
 			returnError(ctx, mod, stack, err)
 			return
 		}

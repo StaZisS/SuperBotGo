@@ -3,7 +3,37 @@ package hostapi
 import (
 	"fmt"
 	"sync"
+
+	wasmrt "SuperBotGo/internal/wasm/runtime"
 )
+
+// PermissionsFromRequirements derives flat internal permission strings
+// from plugin requirements. This is the bridge between the new Requirements
+// system (what the plugin developer sees) and the internal permission checks.
+func PermissionsFromRequirements(reqs []wasmrt.RequirementDef) []string {
+	var perms []string
+	for _, r := range reqs {
+		switch r.Type {
+		case "database":
+			perms = append(perms, "sql")
+		case "http":
+			perms = append(perms, "network")
+		case "kv":
+			perms = append(perms, "kv")
+		case "notify":
+			perms = append(perms, "notify")
+		case "events":
+			perms = append(perms, "events")
+		case "plugin":
+			if r.Target != "" {
+				perms = append(perms, "plugins:call:"+r.Target)
+			}
+		case "db":
+			perms = append(perms, "db")
+		}
+	}
+	return perms
+}
 
 var ErrPermissionDenied = fmt.Errorf("permission denied")
 

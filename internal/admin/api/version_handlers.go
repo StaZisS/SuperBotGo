@@ -109,7 +109,6 @@ func (h *AdminHandler) handleRollback(w http.ResponseWriter, r *http.Request) {
 	record.WasmKey = ver.WasmKey
 	record.WasmHash = ver.WasmHash
 	record.ConfigJSON = ver.ConfigJSON
-	record.Permissions = ver.Permissions
 	record.Enabled = true
 	record.UpdatedAt = time.Now()
 	if err := h.store.SavePlugin(r.Context(), record); err != nil {
@@ -123,8 +122,7 @@ func (h *AdminHandler) handleRollback(w http.ResponseWriter, r *http.Request) {
 		h.manager.Register(wp)
 		h.syncCommandsOnUpdate(r.Context(), pluginID, oldCommands, wp)
 
-		h.hostAPI.GrantPermissions(pluginID, ver.Permissions)
-		h.loader.UpdatePermissions(pluginID, ver.Permissions)
+		// Permissions are auto-derived from requirements during reload.
 	}
 
 	h.publish(r.Context(), pubsub.EventPluginUpdated, pluginID)

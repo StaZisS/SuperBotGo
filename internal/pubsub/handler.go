@@ -89,7 +89,7 @@ func (h *AdminEventHandler) handleLoad(ctx context.Context, pluginID string) {
 		return
 	}
 
-	wp, err := h.loader.LoadPluginFromBytes(ctx, wasmBytes, data.ConfigJSON, data.Permissions)
+	wp, err := h.loader.LoadPluginFromBytes(ctx, wasmBytes, data.ConfigJSON)
 	if err != nil {
 		slog.Error("pubsub: failed to load plugin", "id", pluginID, "error", err)
 		return
@@ -167,14 +167,9 @@ func (h *AdminEventHandler) handleConfigChanged(ctx context.Context, pluginID st
 }
 
 func (h *AdminEventHandler) handlePermChanged(ctx context.Context, pluginID string) {
-	data, err := h.fetchPlugin(ctx, pluginID)
-	if err != nil {
-		slog.Error("pubsub: failed to get plugin record for perm update", "id", pluginID, "error", err)
-		return
-	}
-	h.hostAPI.GrantPermissions(pluginID, data.Permissions)
-	h.loader.UpdatePermissions(pluginID, data.Permissions)
-	slog.Info("pubsub: plugin permissions updated", "id", pluginID)
+	// Permissions are now auto-derived from requirements during plugin load.
+	// This handler is kept for backward compatibility but is a no-op.
+	slog.Debug("pubsub: perm change event ignored (auto-derived from requirements)", "id", pluginID)
 }
 
 func (h *AdminEventHandler) unregisterCommands(pluginID string) {

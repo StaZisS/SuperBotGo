@@ -21,7 +21,7 @@ func (h *HostAPI) dbQueryFunc() api.GoModuleFunc {
 		offset := uint32(stack[0])
 		length := uint32(stack[1])
 
-		if err := h.perms.CheckPermission(pluginID, "db:read"); err != nil {
+		if err := h.perms.CheckPermission(pluginID, "db"); err != nil {
 			returnError(ctx, mod, stack, err)
 			return
 		}
@@ -66,7 +66,7 @@ func (h *HostAPI) dbSaveFunc() api.GoModuleFunc {
 		offset := uint32(stack[0])
 		length := uint32(stack[1])
 
-		if err := h.perms.CheckPermission(pluginID, "db:write"); err != nil {
+		if err := h.perms.CheckPermission(pluginID, "db"); err != nil {
 			returnError(ctx, mod, stack, err)
 			return
 		}

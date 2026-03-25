@@ -9,15 +9,15 @@ const MaxSupportedSDKVersion = 1
 const ActionMigrate = "migrate"
 
 type PluginMeta struct {
-	ID           string          `json:"id"`
-	Name         string          `json:"name"`
-	Version      string          `json:"version"`
-	SDKVersion   int             `json:"sdk_version"`
-	Commands     []CommandDef    `json:"commands,omitempty"`
-	Triggers     []TriggerDef    `json:"triggers,omitempty"`
-	Permissions  []PermissionDef `json:"permissions,omitempty"`
-	ConfigSchema json.RawMessage `json:"config_schema,omitempty"`
-	Dependencies []DependencyDef `json:"dependencies,omitempty"`
+	ID           string           `json:"id"`
+	Name         string           `json:"name"`
+	Version      string           `json:"version"`
+	SDKVersion   int              `json:"sdk_version"`
+	Commands     []CommandDef     `json:"commands,omitempty"`
+	Triggers     []TriggerDef     `json:"triggers,omitempty"`
+	Requirements []RequirementDef `json:"requirements,omitempty"`
+	ConfigSchema json.RawMessage  `json:"config_schema,omitempty"`
+	Dependencies []DependencyDef  `json:"dependencies,omitempty"`
 }
 
 type DependencyDef struct {
@@ -55,11 +55,16 @@ type OptionDef struct {
 	Value string `json:"value"`
 }
 
-type PermissionDef struct {
-	Key         string `json:"key"`
-	Description string `json:"description"`
-	Required    bool   `json:"required"`
+type RequirementDef struct {
+	Type        string          `json:"type"`
+	Description string          `json:"description,omitempty"`
+	Target      string          `json:"target,omitempty"`
+	Config      json.RawMessage `json:"config,omitempty"`
+	Required    bool            `json:"required,omitempty"`
 }
+
+// Deprecated: PermissionDef is kept for backward compatibility during migration.
+type PermissionDef = RequirementDef
 
 type NodeDef struct {
 	Type             string               `json:"type"`

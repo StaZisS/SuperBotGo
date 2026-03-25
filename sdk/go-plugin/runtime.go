@@ -80,12 +80,18 @@ func handleMeta(p Plugin) {
 		meta.Commands = append(meta.Commands, cd)
 	}
 
-	for _, perm := range p.Permissions {
-		meta.Permissions = append(meta.Permissions, permissionDef{
-			Key:         perm.Key,
-			Description: perm.Description,
-			Required:    perm.Required,
-		})
+	for _, req := range p.Requirements {
+		rd := requirementDef{
+			Type:        req.Type,
+			Description: req.Description,
+			Target:      req.Target,
+			Required:    req.Required,
+		}
+		if !req.Config.IsEmpty() {
+			data, _ := json.Marshal(req.Config)
+			rd.Config = json.RawMessage(data)
+		}
+		meta.Requirements = append(meta.Requirements, rd)
 	}
 
 	for _, t := range p.Triggers {

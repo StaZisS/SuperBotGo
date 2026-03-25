@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Info, TriangleAlert } from 'lucide-react'
 import { api, PluginMeta } from '@/api/client'
 import WasmUploader from '@/components/WasmUploader'
-import PermissionsPanel from '@/components/PermissionsPanel'
+import RequirementsPanel from '@/components/RequirementsPanel'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -90,7 +90,6 @@ export default function PluginUpload() {
   const [uploading, setUploading] = useState(false)
   const [installing, setInstalling] = useState(false)
   const [meta, setMeta] = useState<PluginMeta | null>(null)
-  const [selectedPerms, setSelectedPerms] = useState<string[]>([])
   const [confirmOpen, setConfirmOpen] = useState(false)
 
   const currentStep = installing ? 3 : meta ? 2 : 1
@@ -104,9 +103,7 @@ export default function PluginUpload() {
     try {
       const result = await api.uploadPlugin(file)
       result.commands = result.commands ?? []
-      result.permissions = result.permissions ?? []
-      const required = result.permissions.filter((p) => p.required).map((p) => p.key)
-      setSelectedPerms(required)
+      result.requirements = result.requirements ?? []
       setMeta(result)
       toast.success('Файл загружен, проверьте метаданные ниже')
     } catch (e: unknown) {
@@ -123,7 +120,6 @@ export default function PluginUpload() {
       await api.installPlugin(meta.id, {
         wasm_key: meta.wasm_key,
         config: {},
-        permissions: selectedPerms,
       })
       toast.success('Плагин успешно установлен')
       navigate(`/admin/plugins/${meta.id}/config`)
@@ -144,7 +140,6 @@ export default function PluginUpload() {
 
   const handleReset = () => {
     setMeta(null)
-    setSelectedPerms([])
   }
 
   return (
@@ -224,12 +219,8 @@ export default function PluginUpload() {
               </div>
             )}
 
-            {meta.permissions.length > 0 && (
-              <PermissionsPanel
-                permissions={meta.permissions}
-                selected={selectedPerms}
-                onChange={setSelectedPerms}
-              />
+            {meta.requirements.length > 0 && (
+              <RequirementsPanel requirements={meta.requirements} />
             )}
 
             {meta.config_schema && Object.keys(meta.config_schema).length > 0 && (

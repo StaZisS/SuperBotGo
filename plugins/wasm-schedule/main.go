@@ -11,8 +11,8 @@ func main() {
 			wasmplugin.String("greeting", "Message shown before the schedule").Default("Welcome! Here is your schedule:"),
 			wasmplugin.String("university_name", "University name shown in the header").Default("University"),
 		),
-		Permissions: []wasmplugin.Permission{
-			{Key: "triggers:http", Description: "Serve schedule via HTTP API", Required: false},
+		Requirements: []wasmplugin.Requirement{
+			wasmplugin.HTTP("Serve schedule via HTTP API").Build(),
 		},
 		Commands: []wasmplugin.Command{
 			scheduleCommand(),

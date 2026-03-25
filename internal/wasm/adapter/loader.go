@@ -43,7 +43,6 @@ type loadedPlugin struct {
 	plugin         *WasmPlugin
 	compiled       *wasmrt.CompiledModule
 	config         json.RawMessage
-	perms          []string
 	draining       atomic.Bool
 	activeRequests atomic.Int64
 	drained        chan struct{}
@@ -58,15 +57,15 @@ func NewLoader(rt *wasmrt.Runtime, hostAPI *hostapi.HostAPI, send SendFunc) *Loa
 	}
 }
 
-func (l *Loader) LoadPlugin(ctx context.Context, wasmPath string, config json.RawMessage, permissions []string) (*WasmPlugin, error) {
+func (l *Loader) LoadPlugin(ctx context.Context, wasmPath string, config json.RawMessage) (*WasmPlugin, error) {
 	data, err := os.ReadFile(wasmPath)
 	if err != nil {
 		return nil, fmt.Errorf("read wasm file %q: %w", wasmPath, err)
 	}
-	return l.LoadPluginFromBytes(ctx, data, config, permissions)
+	return l.LoadPluginFromBytes(ctx, data, config)
 }
 
-func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, config json.RawMessage, permissions []string) (*WasmPlugin, error) {
+func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, config json.RawMessage) (*WasmPlugin, error) {
 
 	compiled, err := l.rt.CompileModule(ctx, wasmBytes)
 	if err != nil {
@@ -74,7 +73,7 @@ func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, conf
 	}
 
 	const probeID = "_temp_probe"
-	l.hostAPI.GrantPermissions(probeID, permissions)
+	l.hostAPI.GrantPermissions(probeID, nil)
 	compiled.ID = probeID
 
 	meta, err := compiled.CallMeta(ctx)
@@ -83,6 +82,9 @@ func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, conf
 		_ = compiled.Close(ctx)
 		return nil, fmt.Errorf("call meta: %w", err)
 	}
+
+	// Derive internal permissions from declared requirements.
+	permissions := hostapi.PermissionsFromRequirements(meta.Requirements)
 
 	l.mu.RLock()
 	if existing, ok := l.plugins[meta.ID]; ok {
@@ -152,6 +154,16 @@ func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, conf
 		}
 	}
 
+	// Extract SQL DSN from plugin config and register with SQLStore.
+	if sqlStore := l.hostAPI.SQLStore(); sqlStore != nil && len(config) > 0 {
+		var cfgMap map[string]any
+		if json.Unmarshal(config, &cfgMap) == nil {
+			if dsn, ok := cfgMap["sql_dsn"].(string); ok && dsn != "" {
+				sqlStore.RegisterDSN(meta.ID, dsn)
+			}
+		}
+	}
+
 	if len(config) > 0 {
 		if err := compiled.CallConfigure(ctx, config); err != nil {
 			_ = compiled.Close(ctx)
@@ -178,7 +190,6 @@ func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, conf
 		plugin:   wp,
 		compiled: compiled,
 		config:   config,
-		perms:    permissions,
 		drained:  make(chan struct{}),
 	}
 	l.mu.Unlock()
@@ -233,6 +244,10 @@ func (l *Loader) UnloadPlugin(ctx context.Context, pluginID string) error {
 	}
 
 	l.hostAPI.RevokePermissions(pluginID)
+
+	if sqlStore := l.hostAPI.SQLStore(); sqlStore != nil {
+		sqlStore.UnregisterPlugin(pluginID)
+	}
 
 	if l.triggerRegistry != nil {
 		l.triggerRegistry.UnregisterTriggers(pluginID)
@@ -291,7 +306,6 @@ func (l *Loader) ReloadPluginFromBytes(ctx context.Context, pluginID string, was
 		reloadStatus = "error"
 		return fmt.Errorf("plugin %q not loaded", pluginID)
 	}
-	perms := old.perms
 	config := newConfig
 	if config == nil {
 		config = old.config
@@ -302,7 +316,7 @@ func (l *Loader) ReloadPluginFromBytes(ctx context.Context, pluginID string, was
 
 	oldVersion := old.plugin.Version()
 
-	newPlugin, err := l.LoadPluginFromBytes(ctx, wasmBytes, config, perms)
+	newPlugin, err := l.LoadPluginFromBytes(ctx, wasmBytes, config)
 	if err != nil {
 		old.draining.Store(false)
 		reloadStatus = "error"
@@ -422,14 +436,6 @@ func (l *Loader) ValidateConfig(pluginID string, config json.RawMessage) error {
 	return ValidateConfigAgainstSchema(lp.plugin.meta.ConfigSchema, config)
 }
 
-func (l *Loader) UpdatePermissions(pluginID string, permissions []string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if lp, ok := l.plugins[pluginID]; ok {
-		lp.perms = permissions
-	}
-}
-
 func (l *Loader) Close(ctx context.Context) error {
 	l.mu.Lock()
 	snapshot := l.plugins
@@ -447,6 +453,9 @@ func (l *Loader) Close(ctx context.Context) error {
 			firstErr = err
 		}
 		l.hostAPI.RevokePermissions(id)
+		if sqlStore := l.hostAPI.SQLStore(); sqlStore != nil {
+			sqlStore.UnregisterPlugin(id)
+		}
 	}
 
 	if l.metrics != nil {
