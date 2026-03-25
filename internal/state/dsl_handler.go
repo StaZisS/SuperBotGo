@@ -3,9 +3,27 @@ package state
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"SuperBotGo/internal/model"
 )
+
+// resolveLocalizedPrompt picks the best text for the given locale from a
+// locale→text map, falling back to fallback if no match is found.
+func resolveLocalizedPrompt(texts map[string]string, fallback, locale string) string {
+	if text, ok := texts[locale]; ok {
+		return text
+	}
+	if idx := strings.IndexByte(locale, '-'); idx > 0 {
+		if text, ok := texts[locale[:idx]]; ok {
+			return text
+		}
+	}
+	if text, ok := texts["en"]; ok {
+		return text
+	}
+	return fallback
+}
 
 const (
 	PageNext = "__page_next"
@@ -186,8 +204,13 @@ func (h *DslStateHandler) applyPagination(message model.Message, step *StepNode,
 	allOptions = append(allOptions, result.Options...)
 	allOptions = append(allOptions, navOptions...)
 
+	prompt := config.Prompt
+	if len(config.Prompts) > 0 {
+		prompt = resolveLocalizedPrompt(config.Prompts, config.Prompt, locale)
+	}
+
 	paginatedBlock := model.OptionsBlock{
-		Prompt:  config.Prompt,
+		Prompt:  prompt,
 		Options: allOptions,
 	}
 

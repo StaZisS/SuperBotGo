@@ -150,8 +150,9 @@ func (wp *WasmPlugin) stepNodeDefToStepNode(nd wasmrt.NodeDef) state.StepNode {
 			for _, b := range blocks {
 				switch b.Type {
 				case "text":
+					text := resolveLocalized(b.Text, b.Texts, ctx.Locale)
 					contentBlocks = append(contentBlocks, model.TextBlock{
-						Text:  b.Text,
+						Text:  text,
 						Style: parseTextStyle(b.Style),
 					})
 				case "options":
@@ -159,14 +160,16 @@ func (wp *WasmPlugin) stepNodeDefToStepNode(nd wasmrt.NodeDef) state.StepNode {
 					for j, o := range b.Options {
 						opts[j] = model.Option{Label: o.Label, Value: o.Value}
 					}
+					prompt := resolveLocalized(b.Prompt, b.Prompts, ctx.Locale)
 					contentBlocks = append(contentBlocks, model.OptionsBlock{
-						Prompt:  b.Prompt,
+						Prompt:  prompt,
 						Options: opts,
 					})
 				case "dynamic_options":
 					opts := wp.callOptionsCallback(b.OptionsFn, ctx)
+					prompt := resolveLocalized(b.Prompt, b.Prompts, ctx.Locale)
 					contentBlocks = append(contentBlocks, model.OptionsBlock{
-						Prompt:  b.Prompt,
+						Prompt:  prompt,
 						Options: opts,
 					})
 				case "link":
@@ -221,6 +224,7 @@ func (wp *WasmPlugin) stepNodeDefToStepNode(nd wasmrt.NodeDef) state.StepNode {
 		cbName := pag.Provider
 		node.Pagination = &state.PaginationConfig{
 			Prompt:   pag.Prompt,
+			Prompts:  pag.Prompts,
 			PageSize: pag.PageSize,
 			PageProvider: func(ctx state.StepContext, page int) state.OptionsPage {
 				return wp.callPaginationCallback(cbName, ctx, page)
@@ -429,6 +433,17 @@ func evalCondition(cond *wasmrt.ConditionDef, params model.OptionMap) bool {
 	}
 
 	return true
+}
+
+// resolveLocalized returns the locale-specific text from the texts map,
+// falling back to the single-string fallback if the map is empty.
+func resolveLocalized(fallback string, texts map[string]string, locale string) string {
+	if len(texts) > 0 {
+		if resolved := ResolveLocalizedText(texts, locale); resolved != "" {
+			return resolved
+		}
+	}
+	return fallback
 }
 
 func parseTextStyle(s string) model.TextStyle {

@@ -79,9 +79,9 @@ type Node interface {
 
 type block struct {
 	typ       string // "text", "options", "dynamic_options", "link", "image"
-	text      string
+	texts     map[string]string
 	style     TextStyle
-	prompt    string
+	prompts   map[string]string
 	options   []Option
 	optionsFn func(ctx *CallbackContext) []Option
 	url       string
@@ -89,7 +89,7 @@ type block struct {
 }
 
 type paginationCfg struct {
-	prompt   string
+	prompts  map[string]string
 	pageSize int
 	provider func(ctx *CallbackContext) OptionsPage
 }
@@ -112,27 +112,52 @@ func NewStep(param string) *StepBuilder {
 
 // Text adds a styled text block.
 func (s *StepBuilder) Text(text string, style TextStyle) *StepBuilder {
-	s.blocks = append(s.blocks, block{typ: "text", text: text, style: style})
+	s.blocks = append(s.blocks, block{typ: "text", texts: map[string]string{"en": text}, style: style})
 	return s
 }
 
 // Options adds a static options block.
 func (s *StepBuilder) Options(prompt string, options ...Option) *StepBuilder {
-	s.blocks = append(s.blocks, block{typ: "options", prompt: prompt, options: options})
+	s.blocks = append(s.blocks, block{typ: "options", prompts: map[string]string{"en": prompt}, options: options})
 	return s
 }
 
 // DynamicOptions adds options resolved at runtime via a WASM callback.
 // The provider function is called each time the step is displayed.
 func (s *StepBuilder) DynamicOptions(prompt string, provider func(ctx *CallbackContext) []Option) *StepBuilder {
-	s.blocks = append(s.blocks, block{typ: "dynamic_options", prompt: prompt, optionsFn: provider})
+	s.blocks = append(s.blocks, block{typ: "dynamic_options", prompts: map[string]string{"en": prompt}, optionsFn: provider})
 	return s
 }
 
 // PaginatedOptions adds paginated option selection. The provider is called
 // each time a page needs to be displayed.
 func (s *StepBuilder) PaginatedOptions(prompt string, pageSize int, provider func(ctx *CallbackContext) OptionsPage) *StepBuilder {
-	s.pagination = &paginationCfg{prompt: prompt, pageSize: pageSize, provider: provider}
+	s.pagination = &paginationCfg{prompts: map[string]string{"en": prompt}, pageSize: pageSize, provider: provider}
+	return s
+}
+
+// LocalizedText adds a text block with locale-specific content.
+// The texts map is keyed by locale code (e.g. "en", "ru").
+func (s *StepBuilder) LocalizedText(texts map[string]string, style TextStyle) *StepBuilder {
+	s.blocks = append(s.blocks, block{typ: "text", texts: texts, style: style})
+	return s
+}
+
+// LocalizedOptions adds static options with a localized prompt.
+func (s *StepBuilder) LocalizedOptions(prompts map[string]string, options ...Option) *StepBuilder {
+	s.blocks = append(s.blocks, block{typ: "options", prompts: prompts, options: options})
+	return s
+}
+
+// LocalizedDynamicOptions adds dynamic options with a localized prompt.
+func (s *StepBuilder) LocalizedDynamicOptions(prompts map[string]string, provider func(ctx *CallbackContext) []Option) *StepBuilder {
+	s.blocks = append(s.blocks, block{typ: "dynamic_options", prompts: prompts, optionsFn: provider})
+	return s
+}
+
+// LocalizedPaginatedOptions adds paginated options with a localized prompt.
+func (s *StepBuilder) LocalizedPaginatedOptions(prompts map[string]string, pageSize int, provider func(ctx *CallbackContext) OptionsPage) *StepBuilder {
+	s.pagination = &paginationCfg{prompts: prompts, pageSize: pageSize, provider: provider}
 	return s
 }
 
@@ -186,15 +211,15 @@ func (s *StepBuilder) toNodeDef(cmdName string, reg callbackMap) nodeDef {
 		bd := blockDef{Type: b.typ}
 		switch b.typ {
 		case "text":
-			bd.Text = b.text
+			bd.Texts = b.texts
 			bd.Style = string(b.style)
 		case "options":
-			bd.Prompt = b.prompt
+			bd.Prompts = b.prompts
 			for _, o := range b.options {
 				bd.Options = append(bd.Options, optionDef{Label: o.Label, Value: o.Value})
 			}
 		case "dynamic_options":
-			bd.Prompt = b.prompt
+			bd.Prompts = b.prompts
 			if b.optionsFn != nil {
 				cbName := cmdName + ":options:" + s.param
 				reg[cbName] = b.optionsFn
@@ -228,7 +253,7 @@ func (s *StepBuilder) toNodeDef(cmdName string, reg callbackMap) nodeDef {
 		cbName := cmdName + ":paginate:" + s.param
 		reg[cbName] = s.pagination.provider
 		nd.Pagination = &paginationDef{
-			Prompt:   s.pagination.prompt,
+			Prompts:  s.pagination.prompts,
 			PageSize: s.pagination.pageSize,
 			Provider: cbName,
 		}

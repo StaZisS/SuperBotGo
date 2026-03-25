@@ -6,7 +6,7 @@ func main() {
 	wasmplugin.Run(wasmplugin.Plugin{
 		ID:      "schedule",
 		Name:    "University Schedule",
-		Version: "1.5.0",
+		Version: "1.5.2",
 		Config: wasmplugin.ConfigFields(
 			wasmplugin.String("greeting", "Message shown before the schedule").Default("Welcome! Here is your schedule:"),
 			wasmplugin.String("university_name", "University name shown in the header").Default("University"),
@@ -36,6 +36,11 @@ func main() {
 			},
 		},
 	})
+}
+
+// l builds a locale map for English and Russian texts.
+func l(en, ru string) map[string]string {
+	return map[string]string{"en": en, "ru": ru}
 }
 
 func handleScheduleHTTP(ctx *wasmplugin.EventContext) error {
@@ -89,9 +94,9 @@ func handleScheduleHTTP(ctx *wasmplugin.EventContext) error {
 
 func buildingPages(ctx *wasmplugin.CallbackContext) wasmplugin.OptionsPage {
 	all := []wasmplugin.Option{
-		{Label: "Building 1", Value: "1"},
-		{Label: "Building 2", Value: "2"},
-		{Label: "Building 3", Value: "3"},
+		{Label: tr(ctx.Locale, "building") + " 1", Value: "1"},
+		{Label: tr(ctx.Locale, "building") + " 2", Value: "2"},
+		{Label: tr(ctx.Locale, "building") + " 3", Value: "3"},
 	}
 	pageSize := 2
 	start := ctx.Page * pageSize
@@ -126,18 +131,20 @@ func scheduleCommand() wasmplugin.Command {
 		Description: "Show today's university schedule",
 		Nodes: []wasmplugin.Node{
 			wasmplugin.NewStep("mode").
-				Text("University Schedule", wasmplugin.StyleHeader).
-				Options("Choose view mode:",
-					wasmplugin.Opt("Quick (today)", "quick"),
-					wasmplugin.Opt("By date", "by_date"),
-				),
+				LocalizedText(l("University Schedule", "Расписание университета"), wasmplugin.StyleHeader).
+				LocalizedDynamicOptions(l("Choose view mode:", "Выберите режим просмотра:"), func(ctx *wasmplugin.CallbackContext) []wasmplugin.Option {
+					return []wasmplugin.Option{
+						{Label: tr(ctx.Locale, "quick_today"), Value: "quick"},
+						{Label: tr(ctx.Locale, "by_date"), Value: "by_date"},
+					}
+				}),
 
 			wasmplugin.NewStep("building").
-				Text("Select building:", wasmplugin.StyleSubheader).
-				PaginatedOptions("Building:", 2, buildingPages),
+				LocalizedText(l("Select building:", "Выберите корпус:"), wasmplugin.StyleSubheader).
+				LocalizedPaginatedOptions(l("Building:", "Корпус:"), 2, buildingPages),
 
 			wasmplugin.NewStep("room").
-				Text("Enter room number:", wasmplugin.StylePlain).
+				LocalizedText(l("Enter room number:", "Введите номер аудитории:"), wasmplugin.StylePlain).
 				ValidateFunc(func(ctx *wasmplugin.CallbackContext) bool {
 					return isDigits(ctx.Input) && len(ctx.Input) <= 4
 				}),
@@ -145,7 +152,7 @@ func scheduleCommand() wasmplugin.Command {
 			wasmplugin.BranchOn("mode",
 				wasmplugin.Case("by_date",
 					wasmplugin.NewStep("date").
-						Text("Enter date (YYYY-MM-DD):", wasmplugin.StylePlain).
+						LocalizedText(l("Enter date (YYYY-MM-DD):", "Введите дату (ГГГГ-ММ-ДД):"), wasmplugin.StylePlain).
 						Validate(`^\d{4}-\d{2}-\d{2}$`),
 				),
 			),
@@ -189,24 +196,26 @@ func findCommand() wasmplugin.Command {
 		Nodes: []wasmplugin.Node{
 
 			wasmplugin.NewStep("what").
-				Text("Search", wasmplugin.StyleHeader).
-				Text("What do you want to find?", wasmplugin.StylePlain).
-				Options("Search by:",
-					wasmplugin.Opt("By teacher", "teacher"),
-					wasmplugin.Opt("By subject", "subject"),
-					wasmplugin.Opt("By room", "room"),
-				),
+				LocalizedText(l("Search", "Поиск"), wasmplugin.StyleHeader).
+				LocalizedText(l("What do you want to find?", "Что вы хотите найти?"), wasmplugin.StylePlain).
+				LocalizedDynamicOptions(l("Search by:", "Искать по:"), func(ctx *wasmplugin.CallbackContext) []wasmplugin.Option {
+					return []wasmplugin.Option{
+						{Label: tr(ctx.Locale, "by_teacher"), Value: "teacher"},
+						{Label: tr(ctx.Locale, "by_subject"), Value: "subject"},
+						{Label: tr(ctx.Locale, "by_room"), Value: "room"},
+					}
+				}),
 
 			wasmplugin.BranchOn("what",
 
 				wasmplugin.Case("teacher",
 					wasmplugin.NewStep("building").
-						Text("Which building?", wasmplugin.StyleSubheader).
-						PaginatedOptions("Building:", 2, buildingPages),
+						LocalizedText(l("Which building?", "Какой корпус?"), wasmplugin.StyleSubheader).
+						LocalizedPaginatedOptions(l("Building:", "Корпус:"), 2, buildingPages),
 
 					wasmplugin.NewStep("teacher").
-						Text("Select teacher:", wasmplugin.StylePlain).
-						DynamicOptions("Teacher:", func(ctx *wasmplugin.CallbackContext) []wasmplugin.Option {
+						LocalizedText(l("Select teacher:", "Выберите преподавателя:"), wasmplugin.StylePlain).
+						LocalizedDynamicOptions(l("Teacher:", "Преподаватель:"), func(ctx *wasmplugin.CallbackContext) []wasmplugin.Option {
 							names := teachers[ctx.Params["building"]]
 							opts := make([]wasmplugin.Option, len(names))
 							for i, name := range names {
@@ -218,8 +227,8 @@ func findCommand() wasmplugin.Command {
 
 				wasmplugin.Case("subject",
 					wasmplugin.NewStep("subject").
-						Text("Select subject:", wasmplugin.StyleSubheader).
-						PaginatedOptions("Subject:", 4, func(ctx *wasmplugin.CallbackContext) wasmplugin.OptionsPage {
+						LocalizedText(l("Select subject:", "Выберите предмет:"), wasmplugin.StyleSubheader).
+						LocalizedPaginatedOptions(l("Subject:", "Предмет:"), 4, func(ctx *wasmplugin.CallbackContext) wasmplugin.OptionsPage {
 							pageSize := 4
 							start := ctx.Page * pageSize
 							if start >= len(allSubjects) {
@@ -231,7 +240,7 @@ func findCommand() wasmplugin.Command {
 							}
 							opts := make([]wasmplugin.Option, end-start)
 							for i, s := range allSubjects[start:end] {
-								opts[i] = wasmplugin.Option{Label: s, Value: s}
+								opts[i] = wasmplugin.Option{Label: tr(ctx.Locale, s), Value: s}
 							}
 							return wasmplugin.OptionsPage{
 								Options: opts,
@@ -242,11 +251,11 @@ func findCommand() wasmplugin.Command {
 
 				wasmplugin.Case("room",
 					wasmplugin.NewStep("building").
-						Text("Which building?", wasmplugin.StyleSubheader).
-						PaginatedOptions("Building:", 2, buildingPages),
+						LocalizedText(l("Which building?", "Какой корпус?"), wasmplugin.StyleSubheader).
+						LocalizedPaginatedOptions(l("Building:", "Корпус:"), 2, buildingPages),
 
 					wasmplugin.NewStep("floor").
-						Text("Enter floor number (1-9):", wasmplugin.StylePlain).
+						LocalizedText(l("Enter floor number (1-9):", "Введите номер этажа (1-9):"), wasmplugin.StylePlain).
 						ValidateFunc(func(ctx *wasmplugin.CallbackContext) bool {
 							return len(ctx.Input) == 1 && ctx.Input[0] >= '1' && ctx.Input[0] <= '9'
 						}),
@@ -255,22 +264,26 @@ func findCommand() wasmplugin.Command {
 						wasmplugin.When(
 							wasmplugin.ParamEq("building", "3"),
 							wasmplugin.NewStep("wing").
-								Text("Building 3 — select wing:", wasmplugin.StylePlain).
-								Options("Wing:",
-									wasmplugin.Opt("East wing", "east"),
-									wasmplugin.Opt("West wing", "west"),
-								),
+								LocalizedText(l("Building 3 — select wing:", "Корпус 3 — выберите крыло:"), wasmplugin.StylePlain).
+								LocalizedDynamicOptions(l("Wing:", "Крыло:"), func(ctx *wasmplugin.CallbackContext) []wasmplugin.Option {
+									return []wasmplugin.Option{
+										{Label: tr(ctx.Locale, "east_wing"), Value: "east"},
+										{Label: tr(ctx.Locale, "west_wing"), Value: "west"},
+									}
+								}),
 						),
 					),
 				),
 			),
 
 			wasmplugin.NewStep("notify").
-				Text("Enable notifications for this search?", wasmplugin.StylePlain).
-				Options("Notify:",
-					wasmplugin.Opt("Yes", "yes"),
-					wasmplugin.Opt("No", "no"),
-				).
+				LocalizedText(l("Enable notifications for this search?", "Включить уведомления для этого поиска?"), wasmplugin.StylePlain).
+				LocalizedDynamicOptions(l("Notify:", "Уведомления:"), func(ctx *wasmplugin.CallbackContext) []wasmplugin.Option {
+					return []wasmplugin.Option{
+						{Label: tr(ctx.Locale, "yes"), Value: "yes"},
+						{Label: tr(ctx.Locale, "no"), Value: "no"},
+					}
+				}).
 				VisibleWhen(wasmplugin.ParamNeq("what", "room")),
 		},
 

@@ -87,14 +87,14 @@ type nodeDef struct {
 }
 
 type blockDef struct {
-	Type      string      `json:"type"`                 // "text", "options", "dynamic_options", "link", "image"
-	Text      string      `json:"text,omitempty"`       // text
-	Style     string      `json:"style,omitempty"`      // text
-	Prompt    string      `json:"prompt,omitempty"`     // options, dynamic_options
-	Options   []optionDef `json:"options,omitempty"`    // options
-	OptionsFn string      `json:"options_fn,omitempty"` // dynamic_options: WASM callback name
-	URL       string      `json:"url,omitempty"`        // link, image
-	Label     string      `json:"label,omitempty"`      // link
+	Type      string            `json:"type"`                 // "text", "options", "dynamic_options", "link", "image"
+	Texts     map[string]string `json:"texts,omitempty"`      // text: localized
+	Style     string            `json:"style,omitempty"`      // text
+	Prompts   map[string]string `json:"prompts,omitempty"`    // options, dynamic_options: localized
+	Options   []optionDef       `json:"options,omitempty"`    // options
+	OptionsFn string            `json:"options_fn,omitempty"` // dynamic_options: WASM callback name
+	URL       string            `json:"url,omitempty"`        // link, image
+	Label     string            `json:"label,omitempty"`      // link
 }
 
 type conditionDef struct {
@@ -109,9 +109,9 @@ type conditionDef struct {
 }
 
 type paginationDef struct {
-	Prompt   string `json:"prompt"`
-	PageSize int    `json:"page_size"`
-	Provider string `json:"provider"` // WASM callback name
+	Prompts  map[string]string `json:"prompts,omitempty"` // localized
+	PageSize int               `json:"page_size"`
+	Provider string            `json:"provider"` // WASM callback name
 }
 
 type condCaseDef struct {

@@ -46,6 +46,16 @@ var t = map[string]map[string]string{
 		"Statistics":       "Statistics",
 		"Algorithms":       "Algorithms",
 		"Seminar":          "Seminar",
+
+		"quick_today": "Quick (today)",
+		"by_date":     "By date",
+		"by_teacher":  "By teacher",
+		"by_subject":  "By subject",
+		"by_room":     "By room",
+		"east_wing":   "East wing",
+		"west_wing":   "West wing",
+		"yes":         "Yes",
+		"no":          "No",
 	},
 	"ru": {
 		"schedule":   "Расписание",
@@ -64,6 +74,16 @@ var t = map[string]map[string]string{
 		"Statistics":       "Статистика",
 		"Algorithms":       "Алгоритмы",
 		"Seminar":          "Семинар",
+
+		"quick_today": "Быстрый (сегодня)",
+		"by_date":     "По дате",
+		"by_teacher":  "По преподавателю",
+		"by_subject":  "По предмету",
+		"by_room":     "По аудитории",
+		"east_wing":   "Восточное крыло",
+		"west_wing":   "Западное крыло",
+		"yes":         "Да",
+		"no":          "Нет",
 	},
 }
 

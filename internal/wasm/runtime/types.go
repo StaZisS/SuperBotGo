@@ -77,14 +77,16 @@ type NodeDef struct {
 }
 
 type BlockDef struct {
-	Type      string      `json:"type"`
-	Text      string      `json:"text,omitempty"`
-	Style     string      `json:"style,omitempty"`
-	Prompt    string      `json:"prompt,omitempty"`
-	Options   []OptionDef `json:"options,omitempty"`
-	OptionsFn string      `json:"options_fn,omitempty"`
-	URL       string      `json:"url,omitempty"`
-	Label     string      `json:"label,omitempty"`
+	Type      string            `json:"type"`
+	Text      string            `json:"text,omitempty"`
+	Texts     map[string]string `json:"texts,omitempty"`
+	Style     string            `json:"style,omitempty"`
+	Prompt    string            `json:"prompt,omitempty"`
+	Prompts   map[string]string `json:"prompts,omitempty"`
+	Options   []OptionDef       `json:"options,omitempty"`
+	OptionsFn string            `json:"options_fn,omitempty"`
+	URL       string            `json:"url,omitempty"`
+	Label     string            `json:"label,omitempty"`
 }
 
 type ConditionDef struct {
@@ -99,9 +101,10 @@ type ConditionDef struct {
 }
 
 type PaginationNodeDef struct {
-	Prompt   string `json:"prompt"`
-	PageSize int    `json:"page_size"`
-	Provider string `json:"provider"`
+	Prompt   string            `json:"prompt"`
+	Prompts  map[string]string `json:"prompts,omitempty"`
+	PageSize int               `json:"page_size"`
+	Provider string            `json:"provider"`
 }
 
 type CondCaseDef struct {
