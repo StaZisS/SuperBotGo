@@ -25,7 +25,10 @@ func (r *UpdateRouter) Route(ctx context.Context, req model.CommandRequest) erro
 			fmt.Sprintf("no plugin found for command: %s", req.CommandName))
 	}
 
-	event := model.NewMessengerEvent(req, p.ID())
+	event, err := model.NewMessengerEvent(req, p.ID())
+	if err != nil {
+		return fmt.Errorf("build messenger event: %w", err)
+	}
 	resp, err := p.HandleEvent(ctx, event)
 	if err != nil {
 		return err

@@ -17,8 +17,8 @@ func VerifyModule(wasmBytes []byte, expectedHash string) bool {
 }
 
 func VerifyOrError(wasmBytes []byte, expectedHash string) error {
-	if !VerifyModule(wasmBytes, expectedHash) {
-		actual := SignModule(wasmBytes)
+	actual := SignModule(wasmBytes)
+	if actual != expectedHash {
 		return fmt.Errorf("wasm integrity check failed: expected hash %s, got %s", expectedHash, actual)
 	}
 	return nil

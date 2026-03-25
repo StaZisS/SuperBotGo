@@ -15,7 +15,11 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-const cronTriggerTimeout = 30 * time.Second
+const (
+	cronTriggerTimeout  = 30 * time.Second
+	cronLockGranularity = 60 // seconds — one lock per minute window
+	cronLockTTL         = 2 * time.Minute
+)
 
 type cronEntry struct {
 	EntryID     cron.EntryID
@@ -107,10 +111,9 @@ func (cs *CronScheduler) tryLock(pluginID, triggerName string, fireTime time.Tim
 		return true
 	}
 
-	key := fmt.Sprintf("cron_lock:%s:%s:%d", pluginID, triggerName, fireTime.Unix()/60)
-	ttl := 2 * time.Minute
+	key := fmt.Sprintf("cron_lock:%s:%s:%d", pluginID, triggerName, fireTime.Unix()/cronLockGranularity)
 
-	ok, err := rc.SetNX(context.Background(), key, 1, ttl).Result()
+	ok, err := rc.SetNX(context.Background(), key, 1, cronLockTTL).Result()
 	if err != nil {
 		slog.Warn("cron: redis lock failed, executing anyway",
 			"plugin", pluginID,
@@ -143,10 +146,18 @@ func (cs *CronScheduler) fire(pluginID, triggerName string) {
 		return
 	}
 
-	data, _ := json.Marshal(model.CronTriggerData{
+	data, err := json.Marshal(model.CronTriggerData{
 		ScheduleName: triggerName,
 		FireTime:     now.UnixMilli(),
 	})
+	if err != nil {
+		slog.Error("cron: marshal trigger data failed",
+			"plugin", pluginID,
+			"trigger", triggerName,
+			"error", err,
+		)
+		return
+	}
 
 	event := model.Event{
 		ID:          generateID(),

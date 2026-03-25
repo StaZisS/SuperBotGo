@@ -195,8 +195,7 @@ func (b *Bus) addToDLQ(topic string, payload []byte, pluginID string, err error)
 	}
 
 	if len(b.dlq) >= b.cfg.DLQMaxSize {
-		copy(b.dlq, b.dlq[1:])
-		b.dlq[len(b.dlq)-1] = entry
+		b.dlq = append(b.dlq[1:], entry)
 	} else {
 		b.dlq = append(b.dlq, entry)
 	}

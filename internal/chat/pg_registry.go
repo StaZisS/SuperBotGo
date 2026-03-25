@@ -25,9 +25,11 @@ func (r *PgRegistry) FindOrCreateChat(ctx context.Context, channelType model.Cha
 	}
 	if existing != nil {
 		if title != "" && existing.Title != title {
-			_, _ = r.pool.Exec(ctx,
+			if _, err := r.pool.Exec(ctx,
 				`UPDATE chat_references SET title = $1 WHERE id = $2`,
-				title, existing.ID)
+				title, existing.ID); err != nil {
+				return nil, fmt.Errorf("update chat title: %w", err)
+			}
 			existing.Title = title
 		}
 		return existing, nil

@@ -25,26 +25,13 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog'
-import { cn } from '@/lib/utils'
+import { cn, compareVersions } from '@/lib/utils'
 
 const steps = [
   { num: 1, label: 'Загрузка файла' },
   { num: 2, label: 'Проверка метаданных' },
   { num: 3, label: 'Установка' },
 ]
-
-function compareVersions(a: string, b: string): number {
-  const pa = a.split('.').map(Number)
-  const pb = b.split('.').map(Number)
-  const len = Math.max(pa.length, pb.length)
-  for (let i = 0; i < len; i++) {
-    const va = pa[i] || 0
-    const vb = pb[i] || 0
-    if (va < vb) return -1
-    if (va > vb) return 1
-  }
-  return 0
-}
 
 function StepIndicator({ current }: { current: number }) {
   return (
@@ -97,6 +84,8 @@ export default function PluginUpload() {
   const versionConflict = meta?.existing_version
     ? compareVersions(meta.version, meta.existing_version)
     : null
+
+  const messengerCommands = meta?.triggers.filter((t) => t.type === 'messenger') ?? []
 
   const handleFile = async (file: File) => {
     setUploading(true)
@@ -193,13 +182,13 @@ export default function PluginUpload() {
               </Card>
             )}
 
-            {meta.triggers.filter((t) => t.type === 'messenger').length > 0 && (
+            {messengerCommands.length > 0 && (
               <div>
                 <h4 className="text-sm font-medium text-muted-foreground mb-2">
-                  Команды ({meta.triggers.filter((t) => t.type === 'messenger').length})
+                  Команды ({messengerCommands.length})
                 </h4>
                 <div className="space-y-1">
-                  {meta.triggers.filter((t) => t.type === 'messenger').map((cmd) => (
+                  {messengerCommands.map((cmd) => (
                     <div
                       key={cmd.name}
                       className="flex items-center gap-3 text-sm p-2 bg-muted/50 rounded"

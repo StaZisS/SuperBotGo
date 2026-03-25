@@ -28,8 +28,8 @@ func (e Event) Messenger() (*MessengerTriggerData, error) {
 	return &data, nil
 }
 
-func NewMessengerEvent(req CommandRequest, pluginID string) Event {
-	data, _ := json.Marshal(MessengerTriggerData{
+func NewMessengerEvent(req CommandRequest, pluginID string) (Event, error) {
+	data, err := json.Marshal(MessengerTriggerData{
 		UserID:      req.UserID,
 		ChannelType: req.ChannelType,
 		ChatID:      req.ChatID,
@@ -37,12 +37,39 @@ func NewMessengerEvent(req CommandRequest, pluginID string) Event {
 		Params:      req.Params,
 		Locale:      req.Locale,
 	})
+	if err != nil {
+		return Event{}, err
+	}
 	return Event{
 		TriggerType: TriggerMessenger,
 		TriggerName: req.CommandName,
 		PluginID:    pluginID,
 		Data:        data,
+	}, nil
+}
+
+func (e Event) HTTP() (*HTTPTriggerData, error) {
+	var data HTTPTriggerData
+	if err := json.Unmarshal(e.Data, &data); err != nil {
+		return nil, err
 	}
+	return &data, nil
+}
+
+func (e Event) Cron() (*CronTriggerData, error) {
+	var data CronTriggerData
+	if err := json.Unmarshal(e.Data, &data); err != nil {
+		return nil, err
+	}
+	return &data, nil
+}
+
+func (e Event) EventTrigger() (*EventTriggerData, error) {
+	var data EventTriggerData
+	if err := json.Unmarshal(e.Data, &data); err != nil {
+		return nil, err
+	}
+	return &data, nil
 }
 
 type EventResponse struct {

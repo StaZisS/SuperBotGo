@@ -41,11 +41,23 @@ func (s *DslState) IsComplete() bool {
 }
 
 func (s *DslState) FinalParams() model.OptionMap {
-	result := make(model.OptionMap, len(s.Params))
-	for k, v := range s.Params {
-		result[k] = v
+	return copyOptionMap(s.Params)
+}
+
+func copyOptionMap(src model.OptionMap) model.OptionMap {
+	dst := make(model.OptionMap, len(src))
+	for k, v := range src {
+		dst[k] = v
 	}
-	return result
+	return dst
+}
+
+func copyPageState(src map[string]int) map[string]int {
+	dst := make(map[string]int, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }
 
 type DslStateHandler struct {
@@ -65,35 +77,19 @@ func (h *DslStateHandler) CreateNewState(_ string) (State, error) {
 }
 
 func (h *DslStateHandler) RestoreState(ds model.DialogState) (State, error) {
-	params := make(model.OptionMap, len(ds.Params))
-	for k, v := range ds.Params {
-		params[k] = v
-	}
-	pageState := make(map[string]int, len(ds.PageState))
-	for k, v := range ds.PageState {
-		pageState[k] = v
-	}
 	return &DslState{
 		Command:   h.command,
-		Params:    params,
-		PageState: pageState,
+		Params:    copyOptionMap(ds.Params),
+		PageState: copyPageState(ds.PageState),
 	}, nil
 }
 
 func (h *DslStateHandler) PersistState(s State) model.DialogState {
 	ds := requireDslState(s)
-	params := make(model.OptionMap, len(ds.Params))
-	for k, v := range ds.Params {
-		params[k] = v
-	}
-	pageState := make(map[string]int, len(ds.PageState))
-	for k, v := range ds.PageState {
-		pageState[k] = v
-	}
 	return model.DialogState{
 		CommandName: h.command.Name,
-		Params:      params,
-		PageState:   pageState,
+		Params:      copyOptionMap(ds.Params),
+		PageState:   copyPageState(ds.PageState),
 	}
 }
 

@@ -64,6 +64,21 @@ func backoffDelay(attempt int) time.Duration {
 	return delay + jitter
 }
 
+var transientPatterns = []string{
+	"429",
+	"too many requests",
+	"retry after",
+	"connection reset",
+	"connection refused",
+	"eof",
+	"timeout",
+	"temporary failure",
+	"service unavailable",
+	"bad gateway",
+	"gateway timeout",
+	"internal server error",
+}
+
 func isTransient(err error) bool {
 	if err == nil {
 		return false
@@ -75,20 +90,6 @@ func isTransient(err error) bool {
 	}
 
 	msg := strings.ToLower(err.Error())
-	transientPatterns := []string{
-		"429",
-		"too many requests",
-		"retry after",
-		"connection reset",
-		"connection refused",
-		"eof",
-		"timeout",
-		"temporary failure",
-		"service unavailable",
-		"bad gateway",
-		"gateway timeout",
-		"internal server error",
-	}
 	for _, pattern := range transientPatterns {
 		if strings.Contains(msg, pattern) {
 			return true

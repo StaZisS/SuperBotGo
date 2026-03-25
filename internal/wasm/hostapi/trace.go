@@ -4,13 +4,16 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"time"
 )
 
 type traceIDKey struct{}
 
 func GenerateTraceID() string {
 	var buf [16]byte
-	_, _ = rand.Read(buf[:])
+	if _, err := rand.Read(buf[:]); err != nil {
+		return fmt.Sprintf("%x", time.Now().UnixNano())
+	}
 	return fmt.Sprintf("%x", buf)
 }
 

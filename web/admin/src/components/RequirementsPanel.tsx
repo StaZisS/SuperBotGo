@@ -1,7 +1,7 @@
 import { Badge } from '@/components/ui/badge'
 import { Database, Globe, HardDrive, Bell, Radio, Puzzle, Archive } from 'lucide-react'
 
-interface Requirement {
+export interface Requirement {
   type: string
   description: string
   target?: string
@@ -12,7 +12,7 @@ interface Props {
   requirements: Requirement[]
 }
 
-const TYPE_META: Record<string, { label: string; icon: React.ReactNode }> = {
+export const TYPE_META: Record<string, { label: string; icon: React.ReactNode }> = {
   database: { label: 'База данных (SQL)', icon: <Database className="h-4 w-4" /> },
   db: { label: 'Legacy БД', icon: <Archive className="h-4 w-4" /> },
   http: { label: 'HTTP-запросы', icon: <Globe className="h-4 w-4" /> },

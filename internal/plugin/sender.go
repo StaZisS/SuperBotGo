@@ -36,13 +36,21 @@ func (s *SenderAPI) Reply(ctx context.Context, m *model.MessengerTriggerData, ms
 	return s.adapters.SendToChat(ctx, m.ChannelType, m.ChatID, msg)
 }
 
-func (s *SenderAPI) SendToUser(ctx context.Context, userID model.GlobalUserID, msg model.Message) error {
+func (s *SenderAPI) resolveUser(ctx context.Context, userID model.GlobalUserID) (*model.GlobalUser, error) {
 	user, err := s.userService.GetUser(ctx, userID)
 	if err != nil {
-		return fmt.Errorf("sender: get user %d: %w", userID, err)
+		return nil, fmt.Errorf("sender: get user %d: %w", userID, err)
 	}
 	if user == nil {
-		return fmt.Errorf("sender: user %d not found", userID)
+		return nil, fmt.Errorf("sender: user %d not found", userID)
+	}
+	return user, nil
+}
+
+func (s *SenderAPI) SendToUser(ctx context.Context, userID model.GlobalUserID, msg model.Message) error {
+	user, err := s.resolveUser(ctx, userID)
+	if err != nil {
+		return err
 	}
 
 	platformID := user.PlatformUserID()
@@ -54,12 +62,9 @@ func (s *SenderAPI) SendToUser(ctx context.Context, userID model.GlobalUserID, m
 }
 
 func (s *SenderAPI) SendToAllChannels(ctx context.Context, userID model.GlobalUserID, msg model.Message) error {
-	user, err := s.userService.GetUser(ctx, userID)
+	user, err := s.resolveUser(ctx, userID)
 	if err != nil {
-		return fmt.Errorf("sender: get user %d: %w", userID, err)
-	}
-	if user == nil {
-		return fmt.Errorf("sender: user %d not found", userID)
+		return err
 	}
 
 	var errs []error
@@ -85,7 +90,7 @@ func (s *SenderAPI) SendToProject(ctx context.Context, projectID int64, msg mode
 		return fmt.Errorf("sender: find chats for project %d: %w", projectID, err)
 	}
 
-	var sendErrs []error
+	var errs []error
 	for _, chat := range chats {
 		if err := s.adapters.SendToChat(ctx, chat.ChannelType, chat.PlatformChatID, msg); err != nil {
 			slog.Error("sender: partial failure sending to project chat",
@@ -93,12 +98,12 @@ func (s *SenderAPI) SendToProject(ctx context.Context, projectID int64, msg mode
 				slog.String("chat_id", chat.PlatformChatID),
 				slog.String("channel_type", string(chat.ChannelType)),
 				slog.Any("error", err))
-			sendErrs = append(sendErrs, fmt.Errorf("chat %s (%s): %w", chat.PlatformChatID, chat.ChannelType, err))
+			errs = append(errs, fmt.Errorf("chat %s (%s): %w", chat.PlatformChatID, chat.ChannelType, err))
 		}
 	}
-	if len(sendErrs) > 0 {
+	if len(errs) > 0 {
 		return fmt.Errorf("sender: project %d broadcast failed on %d/%d chats: %w",
-			projectID, len(sendErrs), len(chats), errors.Join(sendErrs...))
+			projectID, len(errs), len(chats), errors.Join(errs...))
 	}
 	return nil
 }

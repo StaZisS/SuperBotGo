@@ -2,6 +2,7 @@ package hostapi
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -63,21 +64,17 @@ func (s *KVStore) getOrCreatePluginKV(pluginID string) *pluginKV {
 func (s *KVStore) Get(pluginID, key string) (string, bool, error) {
 	pk := s.getOrCreatePluginKV(pluginID)
 
-	pk.mu.RLock()
-	entry, ok := pk.entries[key]
-	pk.mu.RUnlock()
+	pk.mu.Lock()
+	defer pk.mu.Unlock()
 
+	entry, ok := pk.entries[key]
 	if !ok {
 		return "", false, nil
 	}
 
 	if entry.isExpired(time.Now()) {
-		pk.mu.Lock()
-		if e, exists := pk.entries[key]; exists && e.isExpired(time.Now()) {
-			pk.totalSize -= e.size
-			delete(pk.entries, key)
-		}
-		pk.mu.Unlock()
+		pk.totalSize -= entry.size
+		delete(pk.entries, key)
 		return "", false, nil
 	}
 
@@ -150,10 +147,7 @@ func (s *KVStore) List(pluginID, prefix string) ([]string, error) {
 		if entry.isExpired(now) {
 			continue
 		}
-		if prefix != "" && len(k) < len(prefix) {
-			continue
-		}
-		if prefix != "" && k[:len(prefix)] != prefix {
+		if prefix != "" && !strings.HasPrefix(k, prefix) {
 			continue
 		}
 		keys = append(keys, k)

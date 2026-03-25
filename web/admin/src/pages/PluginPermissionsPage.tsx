@@ -2,20 +2,11 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { api, PluginDetail as PluginDetailType, PluginRequirementsDetail } from '@/api/client'
 import { toast } from 'sonner'
-import { ArrowLeft, Database, Globe, HardDrive, Bell, Radio, Puzzle, Archive } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-
-const TYPE_META: Record<string, { label: string; icon: React.ReactNode }> = {
-  database: { label: 'База данных (SQL)', icon: <Database className="h-4 w-4" /> },
-  db: { label: 'Legacy БД', icon: <Archive className="h-4 w-4" /> },
-  http: { label: 'HTTP-запросы', icon: <Globe className="h-4 w-4" /> },
-  kv: { label: 'Key-Value хранилище', icon: <HardDrive className="h-4 w-4" /> },
-  notify: { label: 'Уведомления', icon: <Bell className="h-4 w-4" /> },
-  events: { label: 'Публикация событий', icon: <Radio className="h-4 w-4" /> },
-  plugin: { label: 'Вызов плагина', icon: <Puzzle className="h-4 w-4" /> },
-}
+import { TYPE_META } from '@/components/RequirementsPanel'
 
 export default function PluginPermissionsPage() {
   const { id } = useParams<{ id: string }>()

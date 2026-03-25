@@ -58,15 +58,9 @@ func (r *PluginRegistry) Register(entry PluginEntry) {
 	existing.Signature = entry.Signature
 
 	for _, v := range entry.Versions {
-		found := false
-		for i, ev := range existing.Versions {
-			if ev.Version == v.Version {
-				existing.Versions[i] = v
-				found = true
-				break
-			}
-		}
-		if !found {
+		if i := findVersion(existing.Versions, v.Version); i >= 0 {
+			existing.Versions[i] = v
+		} else {
 			existing.Versions = append(existing.Versions, v)
 		}
 	}
@@ -77,6 +71,16 @@ func (r *PluginRegistry) sortVersions(entry *PluginEntry) {
 	sort.Slice(entry.Versions, func(i, j int) bool {
 		return CompareVersions(entry.Versions[i].Version, entry.Versions[j].Version) > 0
 	})
+}
+
+// findVersion returns the index of the given version in the entry, or -1.
+func findVersion(versions []VersionEntry, version string) int {
+	for i, v := range versions {
+		if v.Version == version {
+			return i
+		}
+	}
+	return -1
 }
 
 func (r *PluginRegistry) Remove(id string) {
@@ -104,10 +108,8 @@ func (r *PluginRegistry) GetVersion(id, version string) (VersionEntry, error) {
 	if !ok {
 		return VersionEntry{}, fmt.Errorf("plugin %q not found in registry", id)
 	}
-	for _, v := range e.Versions {
-		if v.Version == version {
-			return v, nil
-		}
+	if i := findVersion(e.Versions, version); i >= 0 {
+		return e.Versions[i], nil
 	}
 	return VersionEntry{}, fmt.Errorf("version %q not found for plugin %q", version, id)
 }
@@ -164,10 +166,5 @@ func (r *PluginRegistry) HasVersion(id, version string) bool {
 	if !ok {
 		return false
 	}
-	for _, v := range e.Versions {
-		if v.Version == version {
-			return true
-		}
-	}
-	return false
+	return findVersion(e.Versions, version) >= 0
 }

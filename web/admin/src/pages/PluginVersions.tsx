@@ -19,39 +19,7 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog'
-import { cn } from '@/lib/utils'
-
-function formatRelativeDate(dateStr: string): string {
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-
-  if (diffDays === 0) {
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
-    if (diffHours === 0) {
-      const diffMinutes = Math.floor(diffMs / (1000 * 60))
-      if (diffMinutes < 1) return 'только что'
-      if (diffMinutes === 1) return '1 минуту назад'
-      if (diffMinutes < 5) return `${diffMinutes} минуты назад`
-      return `${diffMinutes} минут назад`
-    }
-    if (diffHours === 1) return '1 час назад'
-    if (diffHours < 5) return `${diffHours} часа назад`
-    return `${diffHours} часов назад`
-  }
-  if (diffDays === 1) return 'вчера'
-  if (diffDays < 7) {
-    if (diffDays < 5) return `${diffDays} дня назад`
-    return `${diffDays} дней назад`
-  }
-
-  return date.toLocaleDateString('ru-RU', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  })
-}
+import { cn, formatRelativeDate } from '@/lib/utils'
 
 function LoadingSkeleton() {
   return (

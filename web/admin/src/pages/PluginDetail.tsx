@@ -50,27 +50,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
-
-function compareVersions(a: string, b: string): number {
-  const pa = a.split('.').map(Number)
-  const pb = b.split('.').map(Number)
-  const len = Math.max(pa.length, pb.length)
-  for (let i = 0; i < len; i++) {
-    const va = pa[i] || 0
-    const vb = pb[i] || 0
-    if (va < vb) return -1
-    if (va > vb) return 1
-  }
-  return 0
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('ru-RU', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  })
-}
+import { compareVersions, formatDate } from '@/lib/utils'
 
 function describeCron(expr: string): string {
   const parts = expr.trim().split(/\s+/)
@@ -301,6 +281,8 @@ export default function PluginDetail() {
     )
   }
 
+  const nonMessengerTriggers = plugin.meta?.triggers?.filter((t) => t.type !== 'messenger') ?? []
+
   const statusBorderColor =
     plugin.status === 'active'
       ? 'border-l-green-500'
@@ -430,15 +412,15 @@ export default function PluginDetail() {
           )}
 
           {/* Triggers (non-messenger — messenger triggers are shown as commands above) */}
-          {plugin.meta?.triggers && plugin.meta.triggers.filter((t) => t.type !== 'messenger').length > 0 && (
+          {nonMessengerTriggers.length > 0 && (
             <>
               <Separator />
               <div>
                 <h4 className="text-sm font-medium mb-2">
-                  Триггеры ({plugin.meta.triggers.filter((t) => t.type !== 'messenger').length})
+                  Триггеры ({nonMessengerTriggers.length})
                 </h4>
                 <div className="space-y-1">
-                  {plugin.meta.triggers.filter((t) => t.type !== 'messenger').map((t) => {
+                  {nonMessengerTriggers.map((t) => {
                     const Icon = triggerIcon[t.type] || Zap
                     return (
                       <div

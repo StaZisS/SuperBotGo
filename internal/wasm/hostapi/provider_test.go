@@ -5,6 +5,13 @@ import (
 	"testing"
 )
 
+func mustRegister(t *testing.T, p *HostFunctionProvider, fn HostFunction) {
+	t.Helper()
+	if err := p.Register(fn); err != nil {
+		t.Fatalf("Register(%q): %v", fn.Name, err)
+	}
+}
+
 func TestProviderRegisterAndGet(t *testing.T) {
 	p := NewHostFunctionProvider()
 
@@ -12,7 +19,7 @@ func TestProviderRegisterAndGet(t *testing.T) {
 		return []byte("ok"), nil
 	}
 
-	p.Register(HostFunction{
+	mustRegister(t, p, HostFunction{
 		Name:        "test_func",
 		Description: "A test function.",
 		Permissions: []string{"test:read"},
@@ -57,9 +64,9 @@ func TestProviderFunctionsSorted(t *testing.T) {
 		return nil, nil
 	}
 
-	p.Register(HostFunction{Name: "zebra", Handler: noopH})
-	p.Register(HostFunction{Name: "alpha", Handler: noopH})
-	p.Register(HostFunction{Name: "middle", Handler: noopH})
+	mustRegister(t, p, HostFunction{Name: "zebra", Handler: noopH})
+	mustRegister(t, p, HostFunction{Name: "alpha", Handler: noopH})
+	mustRegister(t, p, HostFunction{Name: "middle", Handler: noopH})
 
 	fns := p.Functions()
 	if len(fns) != 3 {
@@ -79,51 +86,45 @@ func TestProviderLen(t *testing.T) {
 	noopH := func(ctx context.Context, pluginID string, request []byte) ([]byte, error) {
 		return nil, nil
 	}
-	p.Register(HostFunction{Name: "a", Handler: noopH})
-	p.Register(HostFunction{Name: "b", Handler: noopH})
+	mustRegister(t, p, HostFunction{Name: "a", Handler: noopH})
+	mustRegister(t, p, HostFunction{Name: "b", Handler: noopH})
 
 	if p.Len() != 2 {
 		t.Fatalf("expected 2, got %d", p.Len())
 	}
 }
 
-func TestProviderPanicsOnEmptyName(t *testing.T) {
+func TestProviderErrorOnEmptyName(t *testing.T) {
 	p := NewHostFunctionProvider()
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected panic for empty name")
-		}
-	}()
-	p.Register(HostFunction{
+	err := p.Register(HostFunction{
 		Name:    "",
 		Handler: func(ctx context.Context, pluginID string, request []byte) ([]byte, error) { return nil, nil },
 	})
+	if err == nil {
+		t.Fatal("expected error for empty name")
+	}
 }
 
-func TestProviderPanicsOnNilHandler(t *testing.T) {
+func TestProviderErrorOnNilHandler(t *testing.T) {
 	p := NewHostFunctionProvider()
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected panic for nil handler")
-		}
-	}()
-	p.Register(HostFunction{
+	err := p.Register(HostFunction{
 		Name:    "test",
 		Handler: nil,
 	})
+	if err == nil {
+		t.Fatal("expected error for nil handler")
+	}
 }
 
-func TestProviderPanicsOnDuplicate(t *testing.T) {
+func TestProviderErrorOnDuplicate(t *testing.T) {
 	p := NewHostFunctionProvider()
 	noopH := func(ctx context.Context, pluginID string, request []byte) ([]byte, error) {
 		return nil, nil
 	}
-	p.Register(HostFunction{Name: "dup", Handler: noopH})
+	mustRegister(t, p, HostFunction{Name: "dup", Handler: noopH})
 
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected panic for duplicate registration")
-		}
-	}()
-	p.Register(HostFunction{Name: "dup", Handler: noopH})
+	err := p.Register(HostFunction{Name: "dup", Handler: noopH})
+	if err == nil {
+		t.Fatal("expected error for duplicate registration")
+	}
 }

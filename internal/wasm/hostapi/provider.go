@@ -17,21 +17,22 @@ func NewHostFunctionProvider() *HostFunctionProvider {
 	}
 }
 
-func (p *HostFunctionProvider) Register(fn HostFunction) {
+func (p *HostFunctionProvider) Register(fn HostFunction) error {
 	if fn.Name == "" {
-		panic("hostapi: HostFunction.Name must not be empty")
+		return fmt.Errorf("hostapi: HostFunction.Name must not be empty")
 	}
 	if fn.Handler == nil {
-		panic(fmt.Sprintf("hostapi: HostFunction %q has a nil Handler", fn.Name))
+		return fmt.Errorf("hostapi: HostFunction %q has a nil Handler", fn.Name)
 	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	if _, exists := p.functions[fn.Name]; exists {
-		panic(fmt.Sprintf("hostapi: duplicate HostFunction registration: %q", fn.Name))
+		return fmt.Errorf("hostapi: duplicate HostFunction registration: %q", fn.Name)
 	}
 	p.functions[fn.Name] = fn
+	return nil
 }
 
 func (p *HostFunctionProvider) Get(name string) (HostFunction, bool) {
