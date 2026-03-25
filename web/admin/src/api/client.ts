@@ -61,7 +61,7 @@ export interface PluginInfo {
   version: string
   type: 'go' | 'wasm'
   status: 'active' | 'disabled' | 'error'
-  commands: number
+  triggers: number
 }
 
 export interface TriggerDef {
@@ -80,7 +80,7 @@ export interface PluginMeta {
   name: string
   version: string
   triggers: TriggerDef[]
-  requirements: { type: string; description: string; target?: string; required: boolean }[]
+  requirements: { type: string; description: string; target?: string }[]
   config_schema: Record<string, unknown> | null
   wasm_key: string
   wasm_hash: string
@@ -142,7 +142,6 @@ export interface RequirementInfo {
   type: string
   description: string
   target?: string
-  required: boolean
 }
 
 export interface PluginRequirementsDetail {

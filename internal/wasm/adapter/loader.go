@@ -155,11 +155,25 @@ func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, conf
 	}
 
 	// Extract SQL DSN from plugin config and register with SQLStore.
+	var hasSQLDSN bool
 	if sqlStore := l.hostAPI.SQLStore(); sqlStore != nil && len(config) > 0 {
 		var cfgMap map[string]any
 		if json.Unmarshal(config, &cfgMap) == nil {
 			if dsn, ok := cfgMap["sql_dsn"].(string); ok && dsn != "" {
 				sqlStore.RegisterDSN(meta.ID, dsn)
+				hasSQLDSN = true
+			}
+		}
+	}
+
+	// Validate that all declared requirements are fulfilled.
+	for _, req := range meta.Requirements {
+		switch req.Type {
+		case "database":
+			if !hasSQLDSN {
+				_ = compiled.Close(ctx)
+				l.hostAPI.RevokePermissions(meta.ID)
+				return nil, fmt.Errorf("plugin %q requires database access but sql_dsn is not configured", meta.ID)
 			}
 		}
 	}

@@ -47,7 +47,6 @@ type requirementDef struct {
 	Description string          `json:"description,omitempty"`
 	Target      string          `json:"target,omitempty"`
 	Config      json.RawMessage `json:"config,omitempty"`
-	Required    bool            `json:"required,omitempty"`
 }
 
 type logEntry struct {

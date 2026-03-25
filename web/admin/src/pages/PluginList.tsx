@@ -126,7 +126,7 @@ export default function PluginList() {
                 <TableHead className="hidden sm:table-cell">Версия</TableHead>
                 <TableHead>Тип</TableHead>
                 <TableHead>Статус</TableHead>
-                <TableHead className="text-right hidden sm:table-cell">Команды</TableHead>
+                <TableHead className="text-right hidden sm:table-cell">Триггеры</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -210,7 +210,7 @@ export default function PluginList() {
                 <TableHead className="hidden sm:table-cell">Версия</TableHead>
                 <TableHead>Тип</TableHead>
                 <TableHead>Статус</TableHead>
-                <TableHead className="text-right hidden sm:table-cell">Команды</TableHead>
+                <TableHead className="text-right hidden sm:table-cell">Триггеры</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -243,7 +243,7 @@ export default function PluginList() {
                     <PluginStatusBadge status={p.status} />
                   </TableCell>
                   <TableCell className="text-right text-muted-foreground hidden sm:table-cell">
-                    {p.commands}
+                    {p.triggers}
                   </TableCell>
                 </TableRow>
               ))}

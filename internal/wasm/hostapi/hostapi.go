@@ -229,7 +229,12 @@ func (h *HostAPI) registerFunc(builder wazero.HostModuleBuilder, name string, fn
 			if len(callChain) > 0 {
 				logAttrs = append(logAttrs, "call_chain", strings.Join(callChain, " -> "))
 			}
-			slog.Info("host api call", logAttrs...)
+			switch name {
+			case "sql_next", "sql_rows_close":
+				slog.Debug("host api call", logAttrs...)
+			default:
+				slog.Info("host api call", logAttrs...)
+			}
 		}()
 
 		if rl, ok := ctx.Value(rateLimiterKey{}).(*RateLimiter); ok {

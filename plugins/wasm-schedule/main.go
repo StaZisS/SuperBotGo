@@ -6,13 +6,22 @@ func main() {
 	wasmplugin.Run(wasmplugin.Plugin{
 		ID:      "schedule",
 		Name:    "University Schedule",
-		Version: "1.5.2",
+		Version: "1.5.3",
 		Config: wasmplugin.ConfigFields(
+			wasmplugin.String("sql_dsn", "PostgreSQL connection string (e.g. postgres://user:pass@host/db)"),
 			wasmplugin.String("greeting", "Message shown before the schedule").Default("Welcome! Here is your schedule:"),
 			wasmplugin.String("university_name", "University name shown in the header").Default("University"),
 		),
 		Requirements: []wasmplugin.Requirement{
-			wasmplugin.HTTP("Serve schedule via HTTP API").Build(),
+			wasmplugin.Database("Store and query schedule entries").Build(),
+		},
+		OnConfigure: func(config []byte) error {
+			db, err := openDB()
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+			return ensureSchema(db)
 		},
 		Triggers: []wasmplugin.Trigger{
 			scheduleCommand(),
@@ -29,7 +38,7 @@ func main() {
 				Name:        "daily_reminder",
 				Type:        wasmplugin.TriggerCron,
 				Description: "Send daily schedule summary every morning",
-				Schedule:    "* * * * *",
+				Schedule:    "0 7 * * *",
 				Handler:     handleDailyReminder,
 			},
 		},
@@ -62,7 +71,18 @@ func handleScheduleHTTP(ctx *wasmplugin.EventContext) error {
 		locale = "en"
 	}
 
-	entries := schedule[building]
+	db, err := openDB()
+	if err != nil {
+		ctx.JSON(500, map[string]string{"error": "database error"})
+		return nil
+	}
+	defer db.Close()
+
+	entries, err := dbScheduleByBuilding(db, building)
+	if err != nil {
+		ctx.JSON(500, map[string]string{"error": "query error"})
+		return nil
+	}
 
 	type entry struct {
 		Time    string `json:"time"`
@@ -91,11 +111,22 @@ func handleScheduleHTTP(ctx *wasmplugin.EventContext) error {
 }
 
 func buildingPages(ctx *wasmplugin.CallbackContext) wasmplugin.OptionsPage {
-	all := []wasmplugin.Option{
-		{Label: tr(ctx.Locale, "building") + " 1", Value: "1"},
-		{Label: tr(ctx.Locale, "building") + " 2", Value: "2"},
-		{Label: tr(ctx.Locale, "building") + " 3", Value: "3"},
+	db, err := openDB()
+	if err != nil {
+		return wasmplugin.OptionsPage{}
 	}
+	defer db.Close()
+
+	buildings, err := dbAllBuildings(db)
+	if err != nil {
+		return wasmplugin.OptionsPage{}
+	}
+
+	all := make([]wasmplugin.Option, len(buildings))
+	for i, b := range buildings {
+		all[i] = wasmplugin.Option{Label: tr(ctx.Locale, "building") + " " + b, Value: b}
+	}
+
 	pageSize := 2
 	start := ctx.Page * pageSize
 	if start >= len(all) {
@@ -172,6 +203,21 @@ func handleScheduleCmd(ctx *wasmplugin.EventContext) error {
 
 	ctx.Log("schedule: mode=" + mode + " building=" + building + " room=" + room + " date=" + date)
 
+	db, err := openDB()
+	if err != nil {
+		ctx.LogError("db open: " + err.Error())
+		ctx.Reply("Internal error")
+		return nil
+	}
+	defer db.Close()
+
+	entries, err := dbScheduleByBuilding(db, building)
+	if err != nil {
+		ctx.LogError("db query: " + err.Error())
+		ctx.Reply("Internal error")
+		return nil
+	}
+
 	greeting := ctx.Config("greeting", "")
 	uniName := ctx.Config("university_name", "")
 
@@ -182,7 +228,7 @@ func handleScheduleCmd(ctx *wasmplugin.EventContext) error {
 	if uniName != "" {
 		text += uniName + "\n"
 	}
-	text += generateScheduleForBuilding(building, room, date, ctx.Locale())
+	text += generateScheduleForBuilding(entries, building, room, date, ctx.Locale())
 
 	ctx.Reply(text)
 	return nil
@@ -216,7 +262,16 @@ func findCommand() wasmplugin.Trigger {
 					wasmplugin.NewStep("teacher").
 						LocalizedText(l("Select teacher:", "Выберите преподавателя:"), wasmplugin.StylePlain).
 						LocalizedDynamicOptions(l("Teacher:", "Преподаватель:"), func(ctx *wasmplugin.CallbackContext) []wasmplugin.Option {
-							names := teachers[ctx.Params["building"]]
+							building := ctx.Params["building"]
+							db, err := openDB()
+							if err != nil {
+								return fallbackTeacherOptions(building)
+							}
+							defer db.Close()
+							names, err := dbTeachersByBuilding(db, building)
+							if err != nil || len(names) == 0 {
+								return fallbackTeacherOptions(building)
+							}
 							opts := make([]wasmplugin.Option, len(names))
 							for i, name := range names {
 								opts[i] = wasmplugin.Option{Label: name, Value: name}
@@ -229,22 +284,31 @@ func findCommand() wasmplugin.Trigger {
 					wasmplugin.NewStep("subject").
 						LocalizedText(l("Select subject:", "Выберите предмет:"), wasmplugin.StyleSubheader).
 						LocalizedPaginatedOptions(l("Subject:", "Предмет:"), 4, func(ctx *wasmplugin.CallbackContext) wasmplugin.OptionsPage {
+							db, err := openDB()
+							if err != nil {
+								return fallbackSubjectPage(ctx)
+							}
+							defer db.Close()
+							subjects, err := dbAllSubjects(db)
+							if err != nil || len(subjects) == 0 {
+								return fallbackSubjectPage(ctx)
+							}
 							pageSize := 4
 							start := ctx.Page * pageSize
-							if start >= len(allSubjects) {
+							if start >= len(subjects) {
 								return wasmplugin.OptionsPage{}
 							}
 							end := start + pageSize
-							if end > len(allSubjects) {
-								end = len(allSubjects)
+							if end > len(subjects) {
+								end = len(subjects)
 							}
 							opts := make([]wasmplugin.Option, end-start)
-							for i, s := range allSubjects[start:end] {
+							for i, s := range subjects[start:end] {
 								opts[i] = wasmplugin.Option{Label: tr(ctx.Locale, s), Value: s}
 							}
 							return wasmplugin.OptionsPage{
 								Options: opts,
-								HasMore: end < len(allSubjects),
+								HasMore: end < len(subjects),
 							}
 						}),
 				),
@@ -298,6 +362,13 @@ func findCommand() wasmplugin.Trigger {
 func handleDailyReminder(ctx *wasmplugin.EventContext) error {
 	ctx.Log("cron: daily_reminder fired")
 
+	db, err := openDB()
+	if err != nil {
+		ctx.LogError("db open: " + err.Error())
+		return nil
+	}
+	defer db.Close()
+
 	greeting := ctx.Config("greeting", "")
 	uniName := ctx.Config("university_name", "")
 
@@ -310,9 +381,16 @@ func handleDailyReminder(ctx *wasmplugin.EventContext) error {
 	}
 	text += "Daily schedule summary:\n\n"
 
-	for _, bld := range []string{"1", "2", "3"} {
-		entries := schedule[bld]
-		if len(entries) == 0 {
+	buildings, err := dbAllBuildings(db)
+	if err != nil {
+		ctx.LogError("db query: " + err.Error())
+		ctx.Reply(text + "Failed to load schedule.")
+		return nil
+	}
+
+	for _, bld := range buildings {
+		entries, err := dbScheduleByBuilding(db, bld)
+		if err != nil || len(entries) == 0 {
 			continue
 		}
 		text += "Building " + bld + ":\n"

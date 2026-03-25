@@ -22,6 +22,11 @@ func (s *PgPluginStore) SavePlugin(ctx context.Context, record PluginRecord) err
 		configJSON = record.ConfigJSON
 	}
 
+	permissions := record.Permissions
+	if permissions == nil {
+		permissions = []string{}
+	}
+
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO wasm_plugins (id, wasm_key, config_json, permissions, enabled, schema_version, wasm_hash, installed_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -37,7 +42,7 @@ func (s *PgPluginStore) SavePlugin(ctx context.Context, record PluginRecord) err
 		record.ID,
 		record.WasmKey,
 		configJSON,
-		record.Permissions,
+		permissions,
 		record.Enabled,
 		record.SchemaVersion,
 		record.WasmHash,

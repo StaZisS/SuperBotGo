@@ -92,7 +92,6 @@ func handleMeta(p Plugin) {
 			Type:        req.Type,
 			Description: req.Description,
 			Target:      req.Target,
-			Required:    req.Required,
 		}
 		if !req.Config.IsEmpty() {
 			data, _ := json.Marshal(req.Config)

@@ -92,13 +92,7 @@ func (h *AdminHandler) handleRollback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var oldCommands map[string]struct{}
-	if oldPlugin, ok := h.manager.Get(pluginID); ok {
-		oldCommands = make(map[string]struct{}, len(oldPlugin.Commands()))
-		for _, def := range oldPlugin.Commands() {
-			oldCommands[def.Name] = struct{}{}
-		}
-	}
+	oldTriggers := collectConfigurableTriggers(h.manager, pluginID)
 
 	if err := h.loader.ReloadPluginFromBytes(r.Context(), pluginID, wasmBytes, ver.ConfigJSON); err != nil {
 		slog.Error("admin: failed to reload plugin on rollback", "id", pluginID, "error", err)
@@ -120,7 +114,7 @@ func (h *AdminHandler) handleRollback(w http.ResponseWriter, r *http.Request) {
 	h.manager.Remove(pluginID)
 	if wp, ok := h.loader.GetPlugin(pluginID); ok {
 		h.manager.Register(wp)
-		h.syncCommandsOnUpdate(r.Context(), pluginID, oldCommands, wp)
+		h.syncTriggersOnUpdate(r.Context(), pluginID, oldTriggers, wp)
 
 		// Permissions are auto-derived from requirements during reload.
 	}

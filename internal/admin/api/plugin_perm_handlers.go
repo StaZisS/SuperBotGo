@@ -30,7 +30,6 @@ type declaredRequirement struct {
 	Type        string `json:"type"`
 	Description string `json:"description,omitempty"`
 	Target      string `json:"target,omitempty"`
-	Required    bool   `json:"required,omitempty"`
 }
 
 type pluginRequirementsResponse struct {
@@ -49,7 +48,6 @@ func (h *PluginPermHandler) handleGetPluginRequirements(w http.ResponseWriter, r
 				Type:        req.Type,
 				Description: req.Description,
 				Target:      req.Target,
-				Required:    req.Required,
 			})
 		}
 	}

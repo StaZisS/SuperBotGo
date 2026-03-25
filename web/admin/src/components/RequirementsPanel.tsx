@@ -5,7 +5,6 @@ export interface Requirement {
   type: string
   description: string
   target?: string
-  required: boolean
 }
 
 interface Props {
@@ -51,15 +50,9 @@ export default function RequirementsPanel({ requirements }: Props) {
                     {req.target}
                   </Badge>
                 )}
-                {req.required ? (
-                  <Badge variant="destructive" className="text-xs">
-                    Обязательно
-                  </Badge>
-                ) : (
-                  <Badge variant="secondary" className="text-xs">
-                    Опционально
-                  </Badge>
-                )}
+                <Badge variant="destructive" className="text-xs">
+                  Обязательно
+                </Badge>
               </div>
               {req.description && (
                 <div className="text-xs text-muted-foreground mt-0.5">{req.description}</div>

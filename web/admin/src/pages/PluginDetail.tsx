@@ -16,6 +16,7 @@ import {
   Clock,
   Globe,
   Zap,
+  MessageSquare,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import PluginStatusBadge from '@/components/PluginStatusBadge'
@@ -78,12 +79,14 @@ function describeCron(expr: string): string {
 }
 
 const triggerIcon: Record<string, typeof Clock> = {
+  messenger: MessageSquare,
   cron: Clock,
   http: Globe,
   event: Zap,
 }
 
 const triggerLabel: Record<string, string> = {
+  messenger: 'Command',
   cron: 'Cron',
   http: 'HTTP',
   event: 'Event',
@@ -91,6 +94,7 @@ const triggerLabel: Record<string, string> = {
 
 function TriggerBadge({ type }: { type: string }) {
   const colors: Record<string, string> = {
+    messenger: 'bg-violet-500/10 text-violet-600 border-violet-500/20',
     cron: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
     http: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
     event: 'bg-amber-500/10 text-amber-600 border-amber-500/20',
@@ -281,7 +285,7 @@ export default function PluginDetail() {
     )
   }
 
-  const nonMessengerTriggers = plugin.meta?.triggers?.filter((t) => t.type !== 'messenger') ?? []
+  const allTriggers = plugin.meta?.triggers ?? []
 
   const statusBorderColor =
     plugin.status === 'active'
@@ -379,48 +383,16 @@ export default function PluginDetail() {
             )}
           </div>
 
-          {/* Commands */}
-          {plugin.commands && plugin.commands.length > 0 && (
+          {/* Triggers */}
+          {allTriggers.length > 0 && (
             <>
               <Separator />
               <div>
                 <h4 className="text-sm font-medium mb-2">
-                  Команды ({plugin.commands.length})
+                  Триггеры ({allTriggers.length})
                 </h4>
                 <div className="space-y-1">
-                  {plugin.commands.map((cmd) => (
-                    <div
-                      key={cmd.name}
-                      className="flex items-center gap-3 text-sm p-2 bg-muted/50 rounded-md"
-                    >
-                      <span className="font-mono text-primary shrink-0">
-                        /{cmd.name}
-                      </span>
-                      <span className="text-muted-foreground min-w-0 truncate">
-                        {cmd.description}
-                      </span>
-                      {cmd.min_role && (
-                        <Badge variant="outline" className="ml-auto shrink-0">
-                          {cmd.min_role}
-                        </Badge>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Triggers (non-messenger — messenger triggers are shown as commands above) */}
-          {nonMessengerTriggers.length > 0 && (
-            <>
-              <Separator />
-              <div>
-                <h4 className="text-sm font-medium mb-2">
-                  Триггеры ({nonMessengerTriggers.length})
-                </h4>
-                <div className="space-y-1">
-                  {nonMessengerTriggers.map((t) => {
+                  {allTriggers.map((t) => {
                     const Icon = triggerIcon[t.type] || Zap
                     return (
                       <div
@@ -428,13 +400,20 @@ export default function PluginDetail() {
                         className="flex items-center gap-3 text-sm p-2 bg-muted/50 rounded-md"
                       >
                         <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
-                        <span className="font-medium shrink-0">{t.name}</span>
+                        <span className={`shrink-0 ${t.type === 'messenger' ? 'font-mono text-primary' : 'font-medium'}`}>
+                          {t.type === 'messenger' ? `/${t.name}` : t.name}
+                        </span>
                         {t.description && (
                           <span className="text-muted-foreground min-w-0 truncate">
                             {t.description}
                           </span>
                         )}
                         <div className="ml-auto flex items-center gap-2 shrink-0">
+                          {t.type === 'messenger' && t.min_role && (
+                            <Badge variant="outline">
+                              {t.min_role}
+                            </Badge>
+                          )}
                           {t.type === 'cron' && t.schedule && (
                             <span
                               className="font-mono text-xs text-muted-foreground"
@@ -504,7 +483,7 @@ export default function PluginDetail() {
               <Button variant="outline" size="sm" asChild>
                 <Link to={`/admin/plugins/${id}/permissions`}>
                   <Shield className="mr-1.5 h-4 w-4" />
-                  Права команд
+                  Права триггеров
                 </Link>
               </Button>
 

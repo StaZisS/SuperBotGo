@@ -8,7 +8,8 @@ type scheduleEntry struct {
 	Teacher string
 }
 
-var schedule = map[string][]scheduleEntry{
+// seedSchedule is used to populate the database on first run.
+var seedSchedule = map[string][]scheduleEntry{
 	"1": {
 		{"08:30-10:00", "Linear Algebra", "Ivanov A.B."},
 		{"10:15-11:45", "Programming", "Petrov S.D."},
@@ -99,14 +100,13 @@ func tr(locale, key string) string {
 	return key
 }
 
-func generateScheduleForBuilding(building, room, date, locale string) string {
+func generateScheduleForBuilding(entries []scheduleEntry, building, room, date, locale string) string {
 	header := fmt.Sprintf("%s\n%s %s, %s %s, %s\n",
 		tr(locale, "schedule"),
 		tr(locale, "building"), building,
 		tr(locale, "room"), room,
 		date)
 
-	entries := schedule[building]
 	if len(entries) == 0 {
 		return header + "\n" + tr(locale, "no_classes")
 	}

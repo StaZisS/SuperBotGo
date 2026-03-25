@@ -328,6 +328,7 @@ func (h *AdminHandler) handleInstall(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:   time.Now(),
 	}
 	if err := h.store.SavePlugin(r.Context(), record); err != nil {
+		slog.Error("admin: failed to save plugin record", "plugin", record.ID, "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to save plugin record")
 		return
 	}
@@ -419,13 +420,7 @@ func (h *AdminHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var oldCommands map[string]struct{}
-	if oldPlugin, ok := h.manager.Get(pluginID); ok {
-		oldCommands = make(map[string]struct{}, len(oldPlugin.Commands()))
-		for _, def := range oldPlugin.Commands() {
-			oldCommands[def.Name] = struct{}{}
-		}
-	}
+	oldTriggers := collectConfigurableTriggers(h.manager, pluginID)
 
 	wasmBytes, ok := readWasmFromForm(w, r)
 	if !ok {
@@ -458,7 +453,7 @@ func (h *AdminHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	h.manager.Remove(pluginID)
 	if wp, ok := h.loader.GetPlugin(pluginID); ok {
 		h.manager.Register(wp)
-		h.syncCommandsOnUpdate(r.Context(), pluginID, oldCommands, wp)
+		h.syncTriggersOnUpdate(r.Context(), pluginID, oldTriggers, wp)
 		h.syncPermissionsOnUpdate(pluginID, record, wp)
 
 		if h.versions != nil {
@@ -479,28 +474,49 @@ func (h *AdminHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }
 
-func (h *AdminHandler) syncCommandsOnUpdate(ctx context.Context, pluginID string, oldCommands map[string]struct{}, newPlugin plugin.Plugin) {
-	newCommands := make(map[string]struct{}, len(newPlugin.Commands()))
-	for _, def := range newPlugin.Commands() {
-		newCommands[def.Name] = struct{}{}
+// collectConfigurableTriggers returns names of all non-cron triggers for a plugin.
+func collectConfigurableTriggers(mgr *plugin.Manager, pluginID string) map[string]struct{} {
+	p, ok := mgr.Get(pluginID)
+	if !ok {
+		return nil
 	}
+	if wp, ok := p.(*adapter.WasmPlugin); ok {
+		triggers := make(map[string]struct{})
+		for _, t := range wp.Meta().Triggers {
+			if t.Type != "cron" {
+				triggers[t.Name] = struct{}{}
+			}
+		}
+		return triggers
+	}
+	// Go plugins — only messenger commands
+	triggers := make(map[string]struct{}, len(p.Commands()))
+	for _, def := range p.Commands() {
+		triggers[def.Name] = struct{}{}
+	}
+	return triggers
+}
+
+func (h *AdminHandler) syncTriggersOnUpdate(ctx context.Context, pluginID string, oldTriggers map[string]struct{}, newPlugin plugin.Plugin) {
+	newTriggers := collectConfigurableTriggers(h.manager, pluginID)
 
 	h.registerPluginCommands(newPlugin)
 
 	var removed []string
-	for name := range oldCommands {
-		if _, ok := newCommands[name]; !ok {
+	for name := range oldTriggers {
+		if _, ok := newTriggers[name]; !ok {
 			removed = append(removed, name)
 		}
 	}
 
 	var added []string
-	for name := range newCommands {
-		if _, ok := oldCommands[name]; !ok {
+	for name := range newTriggers {
+		if _, ok := oldTriggers[name]; !ok {
 			added = append(added, name)
 		}
 	}
 
+	// Unregister removed messenger commands from state manager
 	if h.stateMgr != nil {
 		for _, name := range removed {
 			h.stateMgr.UnregisterCommand(name)
@@ -509,16 +525,16 @@ func (h *AdminHandler) syncCommandsOnUpdate(ctx context.Context, pluginID string
 
 	if h.cmdStore != nil && len(removed) > 0 {
 		if err := h.cmdStore.DeleteCommandSettings(ctx, pluginID, removed); err != nil {
-			slog.Error("admin: failed to delete orphaned command settings",
-				"plugin", pluginID, "commands", removed, "error", err)
+			slog.Error("admin: failed to delete orphaned trigger settings",
+				"plugin", pluginID, "triggers", removed, "error", err)
 		} else {
-			slog.Info("admin: cleaned up command settings for removed commands",
+			slog.Info("admin: cleaned up settings for removed triggers",
 				"plugin", pluginID, "removed", removed)
 		}
 	}
 
 	if len(added) > 0 {
-		slog.Info("admin: new commands detected (no access settings configured yet)",
+		slog.Info("admin: new triggers detected (no access settings configured yet)",
 			"plugin", pluginID, "added", added)
 	}
 }
@@ -659,15 +675,17 @@ func (h *AdminHandler) handleListPlugins(w http.ResponseWriter, r *http.Request)
 		Version  string `json:"version"`
 		Type     string `json:"type"`
 		Status   string `json:"status"`
-		Commands int    `json:"commands"`
+		Triggers int    `json:"triggers"`
 	}
 
 	result := make([]pluginInfo, 0, len(allPlugins)+len(records))
 
 	for id, p := range allPlugins {
 		pType := "go"
-		if _, ok := p.(*adapter.WasmPlugin); ok {
+		triggerCount := len(p.Commands())
+		if wp, ok := p.(*adapter.WasmPlugin); ok {
 			pType = "wasm"
+			triggerCount = len(wp.Meta().Triggers)
 		}
 		result = append(result, pluginInfo{
 			ID:       id,
@@ -675,7 +693,7 @@ func (h *AdminHandler) handleListPlugins(w http.ResponseWriter, r *http.Request)
 			Version:  p.Version(),
 			Type:     pType,
 			Status:   "active",
-			Commands: len(p.Commands()),
+			Triggers: triggerCount,
 		})
 	}
 

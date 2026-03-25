@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils'
 
 interface CommandRow {
   name: string
+  type: string
   description: string
   enabled: boolean
   policyExpression: string
@@ -49,13 +50,14 @@ export default function PluginCommandPermissions() {
       } catch {}
 
       const settingMap = new Map(settings.map((s) => [s.command_name, s]))
-      const commands = p.commands ?? p.meta?.triggers?.filter((t) => t.type === 'messenger') ?? []
+      const commands = p.meta?.triggers?.filter((t) => t.type !== 'cron') ?? p.commands ?? []
 
       setRows(
         commands.map((cmd) => {
           const setting = settingMap.get(cmd.name)
           return {
             name: cmd.name,
+            type: ('type' in cmd ? cmd.type : 'messenger') as string,
             description: cmd.description ?? '',
             enabled: setting?.enabled ?? true,
             policyExpression: setting?.policy_expression ?? '',
@@ -112,7 +114,7 @@ export default function PluginCommandPermissions() {
           </Link>
         </Button>
         <div className="flex items-center gap-3 mt-2">
-          <h1 className="text-2xl font-semibold">Права доступа к командам</h1>
+          <h1 className="text-2xl font-semibold">Права доступа к триггерам</h1>
           {rows.length > 0 && (
             <Badge variant="secondary" className="font-normal">
               {enabledCount} из {rows.length} включены
@@ -120,7 +122,7 @@ export default function PluginCommandPermissions() {
           )}
         </div>
         <p className="text-sm text-muted-foreground mt-1">
-          Управление доступом к командам <strong>{plugin.name || id}</strong> через политики доступа.
+          Управление доступом к триггерам <strong>{plugin.name || id}</strong> через политики доступа.
         </p>
       </div>
 
@@ -131,10 +133,10 @@ export default function PluginCommandPermissions() {
               <Shield className="h-8 w-8 text-muted-foreground" />
             </div>
             <p className="text-sm font-medium text-muted-foreground mb-1">
-              Нет команд
+              Нет триггеров
             </p>
             <p className="text-xs text-muted-foreground">
-              У этого плагина нет команд
+              У этого плагина нет настраиваемых триггеров
             </p>
           </div>
         </Card>
@@ -212,7 +214,14 @@ function CommandCard({
                   row.enabled ? 'bg-green-500' : 'bg-red-500',
                 )}
               />
-              <span className="font-mono text-sm font-medium">/{row.name}</span>
+              <span className="font-mono text-sm font-medium">
+                {row.type === 'messenger' ? `/${row.name}` : row.name}
+              </span>
+              {row.type !== 'messenger' && (
+                <span className="inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-muted text-muted-foreground">
+                  {row.type}
+                </span>
+              )}
               {row.description && (
                 <span className="text-sm text-muted-foreground">{row.description}</span>
               )}

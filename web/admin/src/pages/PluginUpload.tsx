@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Info, TriangleAlert } from 'lucide-react'
+import { Clock, Globe, Radio, Terminal, TriangleAlert } from 'lucide-react'
 import { api, PluginMeta } from '@/api/client'
 import WasmUploader from '@/components/WasmUploader'
 import RequirementsPanel from '@/components/RequirementsPanel'
+import JsonSchemaForm, { validateSchema } from '@/components/JsonSchemaForm'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -78,6 +79,8 @@ export default function PluginUpload() {
   const [installing, setInstalling] = useState(false)
   const [meta, setMeta] = useState<PluginMeta | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [configValues, setConfigValues] = useState<Record<string, unknown>>({})
+  const [configErrors, setConfigErrors] = useState<Record<string, string>>({})
 
   const currentStep = installing ? 3 : meta ? 2 : 1
 
@@ -85,7 +88,7 @@ export default function PluginUpload() {
     ? compareVersions(meta.version, meta.existing_version)
     : null
 
-  const messengerCommands = meta?.triggers.filter((t) => t.type === 'messenger') ?? []
+  const triggers = meta?.triggers ?? []
 
   const handleFile = async (file: File) => {
     setUploading(true)
@@ -102,16 +105,26 @@ export default function PluginUpload() {
     }
   }
 
+  const hasConfigSchema = meta?.config_schema && Object.keys(meta.config_schema).length > 0
+
   const doInstall = async () => {
     if (!meta) return
+    if (hasConfigSchema) {
+      const errs = validateSchema(meta.config_schema as Record<string, unknown>, configValues)
+      if (Object.keys(errs).length > 0) {
+        setConfigErrors(errs)
+        toast.error('Заполните обязательные поля конфигурации')
+        return
+      }
+    }
     setInstalling(true)
     try {
       await api.installPlugin(meta.id, {
         wasm_key: meta.wasm_key,
-        config: {},
+        config: hasConfigSchema ? configValues : {},
       })
       toast.success('Плагин успешно установлен')
-      navigate(`/admin/plugins/${meta.id}/config`)
+      navigate(`/admin/plugins/${meta.id}`)
     } catch (e: unknown) {
       toast.error((e as Error).message)
     } finally {
@@ -129,6 +142,8 @@ export default function PluginUpload() {
 
   const handleReset = () => {
     setMeta(null)
+    setConfigValues({})
+    setConfigErrors({})
   }
 
   return (
@@ -182,24 +197,35 @@ export default function PluginUpload() {
               </Card>
             )}
 
-            {messengerCommands.length > 0 && (
+            {triggers.length > 0 && (
               <div>
                 <h4 className="text-sm font-medium text-muted-foreground mb-2">
-                  Команды ({messengerCommands.length})
+                  Триггеры ({triggers.length})
                 </h4>
                 <div className="space-y-1">
-                  {messengerCommands.map((cmd) => (
+                  {triggers.map((t) => (
                     <div
-                      key={cmd.name}
+                      key={`${t.type}-${t.name}`}
                       className="flex items-center gap-3 text-sm p-2 bg-muted/50 rounded"
                     >
-                      <span className="font-mono text-primary shrink-0">/{cmd.name}</span>
-                      <span className="text-muted-foreground min-w-0 truncate">
-                        {cmd.description}
+                      <span className="shrink-0 text-muted-foreground">
+                        {t.type === 'messenger' && <Terminal className="h-4 w-4" />}
+                        {t.type === 'http' && <Globe className="h-4 w-4" />}
+                        {t.type === 'cron' && <Clock className="h-4 w-4" />}
+                        {t.type === 'event' && <Radio className="h-4 w-4" />}
                       </span>
-                      {cmd.min_role && (
+                      <span className="font-mono text-primary shrink-0">
+                        {t.type === 'messenger' && `/${t.name}`}
+                        {t.type === 'http' && `${(t.methods ?? ['GET']).join(',')} ${t.path}`}
+                        {t.type === 'cron' && t.schedule}
+                        {t.type === 'event' && t.topic}
+                      </span>
+                      <span className="text-muted-foreground min-w-0 truncate">
+                        {t.description}
+                      </span>
+                      {t.min_role && (
                         <Badge variant="outline" className="ml-auto shrink-0">
-                          {cmd.min_role}
+                          {t.min_role}
                         </Badge>
                       )}
                     </div>
@@ -212,16 +238,16 @@ export default function PluginUpload() {
               <RequirementsPanel requirements={meta.requirements} />
             )}
 
-            {meta.config_schema && Object.keys(meta.config_schema).length > 0 && (
-              <Card className="border-blue-200 bg-blue-50/50">
-                <CardContent className="flex items-start gap-3 p-4">
-                  <Info className="h-5 w-5 text-blue-500 mt-0.5 shrink-0" />
-                  <p className="text-sm text-blue-700">
-                    У этого плагина есть параметры конфигурации. Вы можете настроить их после
-                    установки.
-                  </p>
-                </CardContent>
-              </Card>
+            {hasConfigSchema && (
+              <div>
+                <h4 className="text-sm font-medium text-muted-foreground mb-2">Конфигурация</h4>
+                <JsonSchemaForm
+                  schema={meta.config_schema as Record<string, unknown>}
+                  value={configValues}
+                  onChange={setConfigValues}
+                  errors={configErrors}
+                />
+              </div>
             )}
           </CardContent>
 

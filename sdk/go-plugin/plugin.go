@@ -108,22 +108,18 @@ type Option struct {
 }
 
 // Requirement declares a host resource the plugin needs.
+// All declared requirements are mandatory — the plugin will not load
+// unless every requirement is fulfilled.
 type Requirement struct {
 	Type        string // "database", "http", "kv", "notify", "events", "plugin", "db"
 	Description string
 	Target      string       // for "plugin" type: target plugin ID
 	Config      ConfigSchema // config the admin must fill (e.g. DSN for database)
-	Required    bool         // if true, plugin won't load without this fulfilled
 }
 
 // RequirementBuilder provides a fluent API for constructing requirements.
 type RequirementBuilder struct {
 	r Requirement
-}
-
-func (b *RequirementBuilder) Required() *RequirementBuilder {
-	b.r.Required = true
-	return b
 }
 
 func (b *RequirementBuilder) WithConfig(cs ConfigSchema) *RequirementBuilder {

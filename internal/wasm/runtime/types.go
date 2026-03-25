@@ -54,7 +54,6 @@ type RequirementDef struct {
 	Description string          `json:"description,omitempty"`
 	Target      string          `json:"target,omitempty"`
 	Config      json.RawMessage `json:"config,omitempty"`
-	Required    bool            `json:"required,omitempty"`
 }
 
 // Deprecated: PermissionDef is kept for backward compatibility during migration.

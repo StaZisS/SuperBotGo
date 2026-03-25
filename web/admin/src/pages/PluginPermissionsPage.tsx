@@ -101,15 +101,9 @@ export default function PluginPermissionsPage() {
                           {req.target}
                         </Badge>
                       )}
-                      {req.required ? (
-                        <Badge variant="destructive" className="text-xs">
-                          Обязательно
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary" className="text-xs">
-                          Опционально
-                        </Badge>
-                      )}
+                      <Badge variant="destructive" className="text-xs">
+                        Обязательно
+                      </Badge>
                     </div>
                     {req.description && (
                       <div className="text-xs text-muted-foreground mt-1">{req.description}</div>
