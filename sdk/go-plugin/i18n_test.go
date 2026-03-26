@@ -135,14 +135,17 @@ func TestCatalog_Merge_NoOverwrite(t *testing.T) {
 	base := NewCatalog("en").
 		Add("en", map[string]string{"yes": "Agree"})
 
-	base.Merge(CommonMessages)
+	other := NewCatalog("en").
+		Add("en", map[string]string{"yes": "Yes", "no": "No"})
+
+	base.Merge(other)
 
 	if got := base.T("en", "yes"); got != "Agree" {
 		t.Errorf("after Merge, T(en, yes) = %q, want Agree (not overwritten)", got)
 	}
-	// But new keys from CommonMessages are available.
+	// But new keys from other are available.
 	if got := base.T("en", "no"); got != "No" {
-		t.Errorf("after Merge, T(en, no) = %q, want No (from CommonMessages)", got)
+		t.Errorf("after Merge, T(en, no) = %q, want No (from other)", got)
 	}
 }
 
@@ -168,20 +171,6 @@ func TestCatalog_Add_OverwritesExisting(t *testing.T) {
 
 	if got := cat.T("en", "ok"); got != "Okay" {
 		t.Errorf("T(en, ok) = %q, want Okay (overwritten by second Add)", got)
-	}
-}
-
-func TestCommonMessages_HasBasicKeys(t *testing.T) {
-	keys := []string{"yes", "no", "back", "next", "cancel", "done", "error"}
-	for _, key := range keys {
-		en := CommonMessages.T("en", key)
-		ru := CommonMessages.T("ru", key)
-		if en == key {
-			t.Errorf("CommonMessages.T(en, %q) returned key itself", key)
-		}
-		if ru == key {
-			t.Errorf("CommonMessages.T(ru, %q) returned key itself", key)
-		}
 	}
 }
 

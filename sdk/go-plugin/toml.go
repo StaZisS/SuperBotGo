@@ -22,7 +22,6 @@ import (
 //	var i18nFS embed.FS
 //
 //	var cat = wasmplugin.NewCatalog("en").
-//	    Merge(wasmplugin.CommonMessages).
 //	    LoadFS(i18nFS, "i18n")
 func (c *Catalog) LoadFS(fsys fs.FS, dir string) *Catalog {
 	entries, err := fs.ReadDir(fsys, dir)

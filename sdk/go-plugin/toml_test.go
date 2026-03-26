@@ -127,15 +127,18 @@ func TestCatalog_LoadFS_MergeOrder(t *testing.T) {
 		"i18n/en.toml": {Data: []byte(`yes = "Agree"`)},
 	}
 
+	other := NewCatalog("en").
+		Add("en", map[string]string{"yes": "Yes", "no": "No"})
+
 	// LoadFS first, then Merge — plugin's "Agree" should survive.
 	cat := NewCatalog("en").
 		LoadFS(fsys, "i18n").
-		Merge(CommonMessages)
+		Merge(other)
 
 	if got := cat.T("en", "yes"); got != "Agree" {
 		t.Errorf("T(en, yes) = %q, want Agree (not overwritten by Merge)", got)
 	}
-	// CommonMessages "no" should still be available.
+	// other's "no" should still be available.
 	if got := cat.T("en", "no"); got != "No" {
 		t.Errorf("T(en, no) = %q, want No", got)
 	}

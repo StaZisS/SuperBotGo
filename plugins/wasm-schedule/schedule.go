@@ -38,7 +38,6 @@ var seedSchedule = map[string][]scheduleEntry{
 var i18nFS embed.FS
 
 var cat = wasmplugin.NewCatalog("en").
-	Merge(wasmplugin.CommonMessages).
 	LoadFS(i18nFS, "i18n")
 
 func generateScheduleForBuilding(entries []scheduleEntry, building, room, date, locale string) string {
