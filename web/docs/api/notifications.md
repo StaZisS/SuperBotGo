@@ -102,7 +102,7 @@ wasmplugin.NotifyReq("уведомления мониторинга")
 ```go
 package main
 
-import wasmplugin "github.com/superbot/wasmplugin"
+import wasmplugin "github.com/StaZisS/SuperBotGo/sdk/go-plugin"
 
 func main() {
     wasmplugin.Run(wasmplugin.Plugin{

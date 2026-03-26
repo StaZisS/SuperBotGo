@@ -7,7 +7,7 @@
 Схема задаётся в поле `Config` структуры `Plugin` с помощью `ConfigFields`:
 
 ```go
-import wasmplugin "github.com/superbot/wasmplugin"
+import wasmplugin "github.com/StaZisS/SuperBotGo/sdk/go-plugin"
 
 wasmplugin.Plugin{
     // ...

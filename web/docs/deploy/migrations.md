@@ -14,7 +14,7 @@ SuperBotGo поддерживает два типа миграций:
 KV-миграции описываются через колбэк `Migrate` в структуре `Plugin`. Хост вызывает его при загрузке плагина, если версия изменилась.
 
 ```go
-import wasmplugin "github.com/superbot/wasmplugin"
+import wasmplugin "github.com/StaZisS/SuperBotGo/sdk/go-plugin"
 
 wasmplugin.Plugin{
     ID:      "notes",
@@ -133,7 +133,7 @@ package main
 import (
     "embed"
 
-    wasmplugin "github.com/superbot/wasmplugin"
+    wasmplugin "github.com/StaZisS/SuperBotGo/sdk/go-plugin"
 )
 
 //go:embed migrations/*.sql
@@ -204,7 +204,7 @@ ctx.KVDelete("old_key")
 При поддержке обновления через несколько версий используйте последовательные проверки:
 
 ```go
-import wasmplugin "github.com/superbot/wasmplugin"
+import wasmplugin "github.com/StaZisS/SuperBotGo/sdk/go-plugin"
 
 wasmplugin.Plugin{
     ID:      "tasks",

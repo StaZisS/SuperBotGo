@@ -1,4 +1,4 @@
-module github.com/superbot/wasmplugin
+module github.com/StaZisS/SuperBotGo/sdk/go-plugin
 
 go 1.24.0
 
