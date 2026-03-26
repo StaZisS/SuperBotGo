@@ -31,14 +31,6 @@ type Loader struct {
 	registry        *registry.PluginRegistry
 }
 
-func (l *Loader) SetLocalizedSend(fn LocalizedSendFunc) {
-	l.localizedSend = fn
-}
-
-func (l *Loader) SetMetrics(m *metrics.Metrics) {
-	l.metrics = m
-}
-
 type loadedPlugin struct {
 	plugin         *WasmPlugin
 	compiled       *wasmrt.CompiledModule
@@ -56,6 +48,12 @@ func NewLoader(rt *wasmrt.Runtime, hostAPI *hostapi.HostAPI, send SendFunc) *Loa
 		plugins: make(map[string]*loadedPlugin),
 	}
 }
+
+func (l *Loader) SetLocalizedSend(fn LocalizedSendFunc)    { l.localizedSend = fn }
+func (l *Loader) SetMetrics(m *metrics.Metrics)            { l.metrics = m }
+func (l *Loader) SetTriggerRegistry(tr *trigger.Registry)  { l.triggerRegistry = tr }
+func (l *Loader) SetRegistry(reg *registry.PluginRegistry) { l.registry = reg }
+func (l *Loader) Registry() *registry.PluginRegistry       { return l.registry }
 
 func (l *Loader) LoadPlugin(ctx context.Context, wasmPath string, config json.RawMessage) (*WasmPlugin, error) {
 	data, err := os.ReadFile(wasmPath)
@@ -100,46 +98,8 @@ func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, conf
 	}
 	l.mu.RUnlock()
 
-	if l.registry != nil && len(meta.Dependencies) > 0 {
-		installedPlugins := make([]registry.InstalledPlugin, 0, len(l.plugins))
-		l.mu.RLock()
-		for id, lp := range l.plugins {
-			installedPlugins = append(installedPlugins, registry.InstalledPlugin{
-				ID:      id,
-				Version: lp.plugin.Version(),
-			})
-		}
-		l.mu.RUnlock()
-
-		deps := make([]registry.Dependency, len(meta.Dependencies))
-		for i, d := range meta.Dependencies {
-			deps[i] = registry.Dependency{
-				PluginID:          d.PluginID,
-				VersionConstraint: d.VersionConstraint,
-			}
-		}
-		tempEntry := registry.PluginEntry{
-			ID:           meta.ID,
-			Name:         meta.Name,
-			Dependencies: deps,
-			Versions:     []registry.VersionEntry{{Version: meta.Version}},
-		}
-		l.registry.Register(tempEntry)
-
-		if err := registry.ResolveDependencies(l.registry, meta.ID, meta.Version, installedPlugins); err != nil {
-			_ = compiled.Close(ctx)
-			return nil, fmt.Errorf("plugin %q dependency check failed: %w", meta.ID, err)
-		}
-	}
-
-	if l.registry != nil {
-		if ve, err := l.registry.GetVersion(meta.ID, meta.Version); err == nil && ve.WasmHash != "" {
-			if verifyErr := registry.VerifyOrError(wasmBytes, ve.WasmHash); verifyErr != nil {
-				_ = compiled.Close(ctx)
-				return nil, fmt.Errorf("plugin %q: %w", meta.ID, verifyErr)
-			}
-			slog.Debug("wasm: integrity check passed", "plugin", meta.ID, "version", meta.Version)
-		}
+	if err := l.checkDependencies(ctx, compiled, &meta, wasmBytes); err != nil {
+		return nil, err
 	}
 
 	l.hostAPI.GrantPermissions(meta.ID, permissions)
@@ -154,19 +114,7 @@ func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, conf
 		}
 	}
 
-	// Extract SQL DSN from plugin config and register with SQLStore.
-	var hasSQLDSN bool
-	var pluginDSN string
-	if sqlStore := l.hostAPI.SQLStore(); sqlStore != nil && len(config) > 0 {
-		var cfgMap map[string]any
-		if json.Unmarshal(config, &cfgMap) == nil {
-			if dsn, ok := cfgMap["sql_dsn"].(string); ok && dsn != "" {
-				sqlStore.RegisterDSN(meta.ID, dsn)
-				hasSQLDSN = true
-				pluginDSN = dsn
-			}
-		}
-	}
+	hasSQLDSN, pluginDSN := l.registerSQLDSN(meta.ID, config)
 
 	// Validate that all declared requirements are fulfilled.
 	for _, req := range meta.Requirements {
@@ -228,76 +176,92 @@ func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, conf
 		slog.Info("wasm: registered triggers", "plugin", meta.ID, "count", len(meta.Triggers))
 	}
 
-	if l.registry != nil {
-		deps := make([]registry.Dependency, len(meta.Dependencies))
-		for i, d := range meta.Dependencies {
-			deps[i] = registry.Dependency{
-				PluginID:          d.PluginID,
-				VersionConstraint: d.VersionConstraint,
-			}
-		}
-		l.registry.Register(registry.PluginEntry{
-			ID:           meta.ID,
-			Name:         meta.Name,
-			Dependencies: deps,
-			Signature:    registry.SignModule(wasmBytes),
-			Versions: []registry.VersionEntry{{
-				Version:       meta.Version,
-				WasmHash:      registry.SignModule(wasmBytes),
-				UploadedAt:    time.Now(),
-				MinSDKVersion: meta.SDKVersion,
-			}},
-		})
-	}
+	l.registerInRegistry(&meta, wasmBytes)
 
 	slog.Info("wasm: plugin loaded", "id", meta.ID, "name", meta.Name, "version", meta.Version)
 	return wp, nil
 }
 
-func (l *Loader) UnloadPlugin(ctx context.Context, pluginID string) error {
-	l.mu.Lock()
-	lp, ok := l.plugins[pluginID]
-	if !ok {
-		l.mu.Unlock()
-		return fmt.Errorf("plugin %q not loaded", pluginID)
-	}
-	delete(l.plugins, pluginID)
-	l.mu.Unlock()
+// checkDependencies resolves plugin dependencies and verifies integrity if a registry is configured.
+func (l *Loader) checkDependencies(ctx context.Context, compiled *wasmrt.CompiledModule, meta *wasmrt.PluginMeta, wasmBytes []byte) error {
+	if l.registry != nil && len(meta.Dependencies) > 0 {
+		installedPlugins := make([]registry.InstalledPlugin, 0, len(l.plugins))
+		l.mu.RLock()
+		for id, lp := range l.plugins {
+			installedPlugins = append(installedPlugins, registry.InstalledPlugin{
+				ID:      id,
+				Version: lp.plugin.Version(),
+			})
+		}
+		l.mu.RUnlock()
 
-	if l.metrics != nil {
-		l.metrics.LoadedPluginsGauge.Dec()
-	}
+		tempEntry := registry.PluginEntry{
+			ID:           meta.ID,
+			Name:         meta.Name,
+			Dependencies: convertDependencies(meta.Dependencies),
+			Versions:     []registry.VersionEntry{{Version: meta.Version}},
+		}
+		l.registry.Register(tempEntry)
 
-	l.hostAPI.RevokePermissions(pluginID)
-
-	if sqlStore := l.hostAPI.SQLStore(); sqlStore != nil {
-		sqlStore.UnregisterPlugin(pluginID)
-	}
-
-	if l.triggerRegistry != nil {
-		l.triggerRegistry.UnregisterTriggers(pluginID)
-	}
-
-	l.drainPlugin(lp, pluginID)
-
-	if err := lp.compiled.Close(ctx); err != nil {
-		slog.Error("wasm: error closing compiled module", "plugin", pluginID, "error", err)
+		if err := registry.ResolveDependencies(l.registry, meta.ID, meta.Version, installedPlugins); err != nil {
+			_ = compiled.Close(ctx)
+			return fmt.Errorf("plugin %q dependency check failed: %w", meta.ID, err)
+		}
 	}
 
-	slog.Info("wasm: plugin unloaded", "id", pluginID)
+	if l.registry != nil {
+		if ve, err := l.registry.GetVersion(meta.ID, meta.Version); err == nil && ve.WasmHash != "" {
+			if verifyErr := registry.VerifyOrError(wasmBytes, ve.WasmHash); verifyErr != nil {
+				_ = compiled.Close(ctx)
+				return fmt.Errorf("plugin %q: %w", meta.ID, verifyErr)
+			}
+			slog.Debug("wasm: integrity check passed", "plugin", meta.ID, "version", meta.Version)
+		}
+	}
 	return nil
 }
 
-func (l *Loader) SetTriggerRegistry(tr *trigger.Registry) {
-	l.triggerRegistry = tr
+func (l *Loader) registerSQLDSN(pluginID string, config json.RawMessage) (bool, string) {
+	if sqlStore := l.hostAPI.SQLStore(); sqlStore != nil && len(config) > 0 {
+		var cfgMap map[string]any
+		if json.Unmarshal(config, &cfgMap) == nil {
+			if dsn, ok := cfgMap["sql_dsn"].(string); ok && dsn != "" {
+				sqlStore.RegisterDSN(pluginID, dsn)
+				return true, dsn
+			}
+		}
+	}
+	return false, ""
 }
 
-func (l *Loader) SetRegistry(reg *registry.PluginRegistry) {
-	l.registry = reg
+func (l *Loader) registerInRegistry(meta *wasmrt.PluginMeta, wasmBytes []byte) {
+	if l.registry == nil {
+		return
+	}
+	hash := registry.SignModule(wasmBytes)
+	l.registry.Register(registry.PluginEntry{
+		ID:           meta.ID,
+		Name:         meta.Name,
+		Dependencies: convertDependencies(meta.Dependencies),
+		Signature:    hash,
+		Versions: []registry.VersionEntry{{
+			Version:       meta.Version,
+			WasmHash:      hash,
+			UploadedAt:    time.Now(),
+			MinSDKVersion: meta.SDKVersion,
+		}},
+	})
 }
 
-func (l *Loader) Registry() *registry.PluginRegistry {
-	return l.registry
+func convertDependencies(deps []wasmrt.DependencyDef) []registry.Dependency {
+	result := make([]registry.Dependency, len(deps))
+	for i, d := range deps {
+		result[i] = registry.Dependency{
+			PluginID:          d.PluginID,
+			VersionConstraint: d.VersionConstraint,
+		}
+	}
+	return result
 }
 
 func (l *Loader) ReloadPlugin(ctx context.Context, pluginID string, newWasmPath string, newConfig json.RawMessage) error {
@@ -386,105 +350,4 @@ func (l *Loader) ReloadPluginFromBytes(ctx context.Context, pluginID string, was
 
 	slog.Info("wasm: plugin reloaded", "id", pluginID, "new_version", newPlugin.Version())
 	return nil
-}
-
-func (l *Loader) AcquirePlugin(pluginID string) (*WasmPlugin, func()) {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	lp, ok := l.plugins[pluginID]
-	if !ok || lp.draining.Load() {
-		return nil, func() {}
-	}
-	lp.activeRequests.Add(1)
-	var once sync.Once
-	return lp.plugin, func() {
-		once.Do(func() {
-			if lp.activeRequests.Add(-1) <= 0 && lp.draining.Load() {
-				select {
-				case <-lp.drained:
-				default:
-					close(lp.drained)
-				}
-			}
-		})
-	}
-}
-
-func (l *Loader) GetPlugin(pluginID string) (*WasmPlugin, bool) {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	lp, ok := l.plugins[pluginID]
-	if !ok {
-		return nil, false
-	}
-	return lp.plugin, true
-}
-
-func (l *Loader) drainPlugin(lp *loadedPlugin, pluginID string) {
-	lp.draining.Store(true)
-
-	if lp.activeRequests.Load() <= 0 {
-		select {
-		case <-lp.drained:
-		default:
-			close(lp.drained)
-		}
-	}
-
-	select {
-	case <-lp.drained:
-		slog.Info("wasm: plugin drained gracefully", "plugin", pluginID)
-	case <-time.After(pluginDrainTimeout):
-		slog.Warn("wasm: plugin drain timed out, force closing",
-			"plugin", pluginID,
-			"active_requests", lp.activeRequests.Load())
-	}
-}
-
-func (l *Loader) AllPlugins() []*WasmPlugin {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	result := make([]*WasmPlugin, 0, len(l.plugins))
-	for _, lp := range l.plugins {
-		result = append(result, lp.plugin)
-	}
-	return result
-}
-
-func (l *Loader) ValidateConfig(pluginID string, config json.RawMessage) error {
-	l.mu.RLock()
-	lp, ok := l.plugins[pluginID]
-	l.mu.RUnlock()
-	if !ok {
-		return fmt.Errorf("plugin %q not loaded", pluginID)
-	}
-	return ValidateConfigAgainstSchema(lp.plugin.meta.ConfigSchema, config)
-}
-
-func (l *Loader) Close(ctx context.Context) error {
-	l.mu.Lock()
-	snapshot := l.plugins
-	l.plugins = make(map[string]*loadedPlugin)
-	l.mu.Unlock()
-
-	for _, lp := range snapshot {
-		lp.draining.Store(true)
-	}
-
-	var firstErr error
-	for id, lp := range snapshot {
-		l.drainPlugin(lp, id)
-		if err := lp.compiled.Close(ctx); err != nil && firstErr == nil {
-			firstErr = err
-		}
-		l.hostAPI.RevokePermissions(id)
-		if sqlStore := l.hostAPI.SQLStore(); sqlStore != nil {
-			sqlStore.UnregisterPlugin(id)
-		}
-	}
-
-	if l.metrics != nil {
-		l.metrics.LoadedPluginsGauge.Set(0)
-	}
-	return firstErr
 }

@@ -39,11 +39,7 @@ func (a *Adapter) Type() model.ChannelType {
 }
 
 func (a *Adapter) SendToUser(ctx context.Context, platformUserID model.PlatformUserID, msg model.Message) error {
-	dmChannel, err := a.session.UserChannelCreate(string(platformUserID))
-	if err != nil {
-		return fmt.Errorf("discord: create DM channel for user %s: %w", platformUserID, err)
-	}
-	return a.sendMessage(ctx, dmChannel.ID, msg, false)
+	return a.sendToUser(ctx, platformUserID, msg, false)
 }
 
 func (a *Adapter) SendToChat(ctx context.Context, chatID string, msg model.Message) error {
@@ -51,15 +47,19 @@ func (a *Adapter) SendToChat(ctx context.Context, chatID string, msg model.Messa
 }
 
 func (a *Adapter) SendToUserSilent(ctx context.Context, platformUserID model.PlatformUserID, msg model.Message, silent bool) error {
+	return a.sendToUser(ctx, platformUserID, msg, silent)
+}
+
+func (a *Adapter) SendToChatSilent(ctx context.Context, chatID string, msg model.Message, silent bool) error {
+	return a.sendMessage(ctx, chatID, msg, silent)
+}
+
+func (a *Adapter) sendToUser(ctx context.Context, platformUserID model.PlatformUserID, msg model.Message, silent bool) error {
 	dmChannel, err := a.session.UserChannelCreate(string(platformUserID))
 	if err != nil {
 		return fmt.Errorf("discord: create DM channel for user %s: %w", platformUserID, err)
 	}
 	return a.sendMessage(ctx, dmChannel.ID, msg, silent)
-}
-
-func (a *Adapter) SendToChatSilent(ctx context.Context, chatID string, msg model.Message, silent bool) error {
-	return a.sendMessage(ctx, chatID, msg, silent)
 }
 
 func (a *Adapter) sendMessage(_ context.Context, channelID string, msg model.Message, silent bool) error {

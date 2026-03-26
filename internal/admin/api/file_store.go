@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
 )
 
@@ -13,31 +12,6 @@ type FilePluginStore struct {
 	mu   sync.RWMutex
 	path string
 	data map[string]PluginRecord
-}
-
-func NewFilePluginStore(modulesDir string) (*FilePluginStore, error) {
-	if err := os.MkdirAll(modulesDir, 0o755); err != nil {
-		return nil, fmt.Errorf("create modules dir: %w", err)
-	}
-
-	path := filepath.Join(modulesDir, "plugins.json")
-	s := &FilePluginStore{
-		path: path,
-		data: make(map[string]PluginRecord),
-	}
-
-	raw, err := os.ReadFile(path)
-	if err == nil && len(raw) > 0 {
-		var records []PluginRecord
-		if err := json.Unmarshal(raw, &records); err != nil {
-			return nil, fmt.Errorf("parse %s: %w", path, err)
-		}
-		for _, r := range records {
-			s.data[r.ID] = r
-		}
-	}
-
-	return s, nil
 }
 
 func (s *FilePluginStore) SavePlugin(_ context.Context, record PluginRecord) error {

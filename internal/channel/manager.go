@@ -226,13 +226,7 @@ func (m *ChannelManager) handleError(ctx context.Context, channelType model.Chan
 			if msg == "" {
 				msg = "An error occurred."
 			}
-			if sendErr := m.adapters.SendToChat(ctx, channelType, chatID, model.NewTextMessage(msg)); sendErr != nil {
-				m.logger.Error("failed to send error reply to user",
-					slog.Int64("user_id", int64(userID)),
-					slog.String("chat_id", chatID),
-					slog.Any("send_error", sendErr),
-					slog.Any("original_error", err))
-			}
+			m.sendErrorReply(ctx, channelType, chatID, userID, msg, err)
 
 		case errs.SeveritySilent:
 			m.logger.Debug("silent error",
@@ -245,14 +239,7 @@ func (m *ChannelManager) handleError(ctx context.Context, channelType model.Chan
 				slog.String("code", string(appErr.Code)),
 				slog.Int64("user_id", int64(userID)),
 				slog.Any("error", err))
-			if sendErr := m.adapters.SendToChat(ctx, channelType, chatID,
-				model.NewTextMessage("An error occurred. Please try again.")); sendErr != nil {
-				m.logger.Error("failed to send error reply to user",
-					slog.Int64("user_id", int64(userID)),
-					slog.String("chat_id", chatID),
-					slog.Any("send_error", sendErr),
-					slog.Any("original_error", err))
-			}
+			m.sendErrorReply(ctx, channelType, chatID, userID, "An error occurred. Please try again.", err)
 		}
 		return
 	}
@@ -260,12 +247,15 @@ func (m *ChannelManager) handleError(ctx context.Context, channelType model.Chan
 	m.logger.Error("unexpected error processing update",
 		slog.Int64("user_id", int64(userID)),
 		slog.Any("error", err))
-	if sendErr := m.adapters.SendToChat(ctx, channelType, chatID,
-		model.NewTextMessage("An error occurred. Please try again.")); sendErr != nil {
+	m.sendErrorReply(ctx, channelType, chatID, userID, "An error occurred. Please try again.", err)
+}
+
+func (m *ChannelManager) sendErrorReply(ctx context.Context, channelType model.ChannelType, chatID string, userID model.GlobalUserID, msg string, originalErr error) {
+	if sendErr := m.adapters.SendToChat(ctx, channelType, chatID, model.NewTextMessage(msg)); sendErr != nil {
 		m.logger.Error("failed to send error reply to user",
 			slog.Int64("user_id", int64(userID)),
 			slog.String("chat_id", chatID),
 			slog.Any("send_error", sendErr),
-			slog.Any("original_error", err))
+			slog.Any("original_error", originalErr))
 	}
 }

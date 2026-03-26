@@ -77,3 +77,14 @@ func fieldLocation(parts []string) string {
 	}
 	return strings.Join(parts, ".")
 }
+
+// ValidateConfig validates config against the loaded plugin's config schema.
+func (l *Loader) ValidateConfig(pluginID string, config json.RawMessage) error {
+	l.mu.RLock()
+	lp, ok := l.plugins[pluginID]
+	l.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("plugin %q not loaded", pluginID)
+	}
+	return ValidateConfigAgainstSchema(lp.plugin.meta.ConfigSchema, config)
+}
