@@ -12,7 +12,7 @@ wasmplugin.Trigger{
     Schedule:    "0 9 * * *",
     Handler: func(ctx *wasmplugin.EventContext) error {
         report := generateReport()
-        ctx.SendMessage("CHAT_ID", report)
+        ctx.NotifyChat("telegram", "CHAT_ID", report, wasmplugin.PriorityNormal)
         return nil
     },
 }
@@ -40,5 +40,5 @@ wasmplugin.Trigger{
 | `FireTime` | `int64` | Unix timestamp момента срабатывания |
 
 ::: warning ctx.Reply() не работает в cron-триггерах
-`ctx.Reply()` доступен только в messenger-триггерах. Для отправки сообщений из cron используйте `ctx.SendMessage(chatID, text)` с явным ID чата.
+`ctx.Reply()` доступен только в messenger-триггерах. Для отправки сообщений из cron используйте `ctx.NotifyChat(channelType, chatID, text, priority)`.
 :::

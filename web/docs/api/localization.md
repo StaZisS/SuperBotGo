@@ -86,7 +86,7 @@ combined := base.Merge(extra)
 
 ### Все локали: `.L(key, args...)`
 
-Возвращает `map[string]string` со значениями для всех локалей. Используется с `ReplyLocalized` и `SendLocalizedMessage`.
+Возвращает `map[string]string` со значениями для всех локалей. Используется с `ReplyLocalized`.
 
 ```go
 texts := catalog.L("greeting", "name", "Алиса")
@@ -142,18 +142,6 @@ Handler: func(ctx *wasmplugin.EventContext) error {
     ctx.ReplyLocalized(catalog.L("task_done"))
     return nil
 }
-```
-
-### Локализованная отправка в чат
-
-```go
-ctx.SendLocalizedMessage("123456789", catalog.L("new_order"))
-```
-
-### Отправка пользователю
-
-```go
-ctx.SendLocalizedToUser(42, catalog.L("welcome"))
 ```
 
 ## Локализованные опции

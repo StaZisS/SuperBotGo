@@ -54,13 +54,6 @@ type logEntry struct {
 	Msg   string `json:"msg"`
 }
 
-type messageEntry struct {
-	ChatID string            `json:"chat_id,omitempty"`
-	UserID int64             `json:"user_id,omitempty"`
-	Text   string            `json:"text,omitempty"`
-	Texts  map[string]string `json:"texts,omitempty"`
-}
-
 // ---------------------------------------------------------------------------
 // Node tree types — used by both meta (serialization) and step_callback
 // (callback registry reconstruction).
@@ -169,7 +162,6 @@ type eventResponseJSON struct {
 	ReplyTexts map[string]string `json:"reply_texts,omitempty"`
 	Data       json.RawMessage   `json:"data,omitempty"`
 	Logs       []logEntry        `json:"logs,omitempty"`
-	Messages   []messageEntry    `json:"messages,omitempty"`
 }
 
 type messengerTriggerData struct {

@@ -261,7 +261,6 @@ func handleEvent(p Plugin) {
 		Reply:      ctx.reply,
 		ReplyTexts: ctx.replyTexts,
 		Logs:       ctx.logs,
-		Messages:   ctx.messages,
 	}
 	if ctx.httpResp != nil {
 		respData, _ := json.Marshal(ctx.httpResp)

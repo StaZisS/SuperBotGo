@@ -27,9 +27,6 @@
 |---|---|
 | `Reply` | `(text string)` |
 | `ReplyLocalized` | `(texts map[string]string)` |
-| `SendMessage` | `(chatID string, text string)` |
-| `SendLocalizedMessage` | `(chatID string, texts map[string]string)` |
-| `SendLocalizedToUser` | `(userID int64, texts map[string]string)` |
 
 ### HTTP-ответы
 

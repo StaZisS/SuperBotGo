@@ -470,45 +470,6 @@ func (wp *WasmPlugin) HandleEvent(ctx context.Context, event model.Event) (*mode
 				}
 			}
 
-			var triggerChannelType model.ChannelType
-			if event.TriggerType == model.TriggerMessenger {
-				if m, mErr := event.Messenger(); mErr == nil {
-					triggerChannelType = m.ChannelType
-				}
-			}
-
-			for _, m := range resp.Messages {
-				// Localized message — delegate to LocalizedSendFunc.
-				if len(m.Texts) > 0 && wp.localizedSend != nil {
-					if sendErr := wp.localizedSend(ctx, m, triggerChannelType); sendErr != nil {
-						slog.Error("wasm plugin localized send failed",
-							"plugin", wp.meta.ID,
-							"chat_id", m.ChatID,
-							"user_id", m.UserID,
-							"error", sendErr)
-					}
-					continue
-				}
-
-				// Plain text message — use existing path.
-				chType := m.ChannelType
-				if chType == "" {
-					chType = triggerChannelType
-				}
-				if chType == "" {
-					slog.Error("wasm plugin send skipped: no channel type",
-						"plugin", wp.meta.ID,
-						"chat_id", m.ChatID)
-					continue
-				}
-				if sendErr := wp.send(ctx, chType, m.ChatID, m.Text); sendErr != nil {
-					slog.Error("wasm plugin send failed",
-						"plugin", wp.meta.ID,
-						"channel_type", chType,
-						"chat_id", m.ChatID,
-						"error", sendErr)
-				}
-			}
 		}
 	}
 
