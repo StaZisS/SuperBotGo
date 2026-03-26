@@ -2,6 +2,7 @@ import { defineConfig } from 'vitepress'
 import { withMermaid } from 'vitepress-plugin-mermaid'
 
 export default withMermaid(defineConfig({
+  base: '/SuperBotGo/',
   title: 'SuperBotGo SDK',
   description: 'Документация по SDK для WASM-плагинов SuperBotGo',
   lang: 'ru-RU',
