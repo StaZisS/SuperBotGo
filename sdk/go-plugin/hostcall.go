@@ -3,9 +3,10 @@
 package wasmplugin
 
 import (
-	"encoding/json"
 	"fmt"
 	"unsafe"
+
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 // ---------------------------------------------------------------------------
@@ -23,71 +24,13 @@ func _callPlugin(ptr uint32, length uint32) uint64
 func _publishEvent(ptr uint32, length uint32) uint64
 
 // ---------------------------------------------------------------------------
-// Encoding support
-// ---------------------------------------------------------------------------
-
-// hostEncoding controls the wire encoding used for host function calls.
-// Default is JSON for backward compatibility. Set to EncodingMsgpack via
-// UseMessagePack() for better performance on hot paths.
-var hostEncoding encodingType = encodingJSON
-
-type encodingType byte
-
-const (
-	encodingJSON    encodingType = 0x00
-	encodingMsgpack encodingType = 0x01
-)
-
-// UseMessagePack switches host function calls to use MessagePack encoding.
-// Call this from init() or at the start of main() before any host calls.
-// The host will auto-detect the encoding and respond in the same format.
-func UseMessagePack() {
-	hostEncoding = encodingMsgpack
-}
-
-// UseJSON switches host function calls back to JSON encoding (the default).
-func UseJSON() {
-	hostEncoding = encodingJSON
-}
-
-// marshalForHost serializes v using the configured encoding and prepends the
-// encoding prefix byte.
-func marshalForHost(v any) ([]byte, error) {
-	switch hostEncoding {
-	case encodingMsgpack:
-		return marshalMsgpack(v)
-	default:
-		// JSON: no prefix needed for backward compatibility with older hosts.
-		return json.Marshal(v)
-	}
-}
-
-// unmarshalFromHost deserializes response data from the host. It auto-detects
-// the encoding by examining the first byte.
-func unmarshalFromHost(data []byte, v any) error {
-	if len(data) == 0 {
-		return fmt.Errorf("empty response from host")
-	}
-	switch data[0] {
-	case byte(encodingMsgpack):
-		return unmarshalMsgpackPayload(data[1:], v)
-	case byte(encodingJSON):
-		// Explicit JSON prefix — strip it.
-		return json.Unmarshal(data[1:], v)
-	default:
-		// Legacy raw JSON (starts with '{', '[', '"', etc.).
-		return json.Unmarshal(data, v)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // Host call helpers
 // ---------------------------------------------------------------------------
 
 // callHost marshals the payload, writes it to WASM memory, calls the host
 // function, and reads + unmarshals the response.
 func callHost(hostFn func(uint32, uint32) uint64, payload any) ([]byte, error) {
-	data, err := marshalForHost(payload)
+	data, err := marshalMsgpack(payload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal host call payload: %w", err)
 	}
@@ -114,20 +57,30 @@ func callHostWithResult(hostFn func(uint32, uint32) uint64, payload any, v any) 
 	if raw == nil {
 		return nil
 	}
+
+	data := stripPrefix(raw)
+
 	// Check for error response.
 	var errResp struct {
-		Error string `json:"error" msgpack:"error"`
+		Error string `msgpack:"error"`
 	}
-	// Try to unmarshal as error first with a copy.
-	errData := make([]byte, len(raw))
-	copy(errData, raw)
-	if unmarshalFromHost(errData, &errResp) == nil && errResp.Error != "" {
+	errData := make([]byte, len(data))
+	copy(errData, data)
+	if msgpack.Unmarshal(errData, &errResp) == nil && errResp.Error != "" {
 		return fmt.Errorf("host: %s", errResp.Error)
 	}
 	if v == nil {
 		return nil
 	}
-	return unmarshalFromHost(raw, v)
+	return msgpack.Unmarshal(data, v)
+}
+
+// stripPrefix removes the wire prefix byte (0x01) if present.
+func stripPrefix(data []byte) []byte {
+	if len(data) > 0 && data[0] == 0x01 {
+		return data[1:]
+	}
+	return data
 }
 
 // ---------------------------------------------------------------------------
@@ -136,17 +89,17 @@ func callHostWithResult(hostFn func(uint32, uint32) uint64, payload any, v any) 
 
 // httpRequestPayload is the request payload for http_request.
 type httpRequestPayload struct {
-	Method  string            `json:"method" msgpack:"method"`
-	URL     string            `json:"url" msgpack:"url"`
-	Headers map[string]string `json:"headers,omitempty" msgpack:"headers,omitempty"`
-	Body    string            `json:"body,omitempty" msgpack:"body,omitempty"`
+	Method  string            `msgpack:"method"`
+	URL     string            `msgpack:"url"`
+	Headers map[string]string `msgpack:"headers,omitempty"`
+	Body    string            `msgpack:"body,omitempty"`
 }
 
 // HTTPResponse is the response from an HTTP request.
 type HTTPResponse struct {
-	StatusCode int               `json:"status_code" msgpack:"status_code"`
-	Headers    map[string]string `json:"headers,omitempty" msgpack:"headers,omitempty"`
-	Body       string            `json:"body" msgpack:"body"`
+	StatusCode int               `msgpack:"status_code"`
+	Headers    map[string]string `msgpack:"headers,omitempty"`
+	Body       string            `msgpack:"body"`
 }
 
 // HTTPRequest makes an HTTP request through the host.
@@ -176,17 +129,17 @@ func HTTPPost(url string, contentType string, body string) (*HTTPResponse, error
 
 // callPluginPayload is the request payload for call_plugin.
 type callPluginPayload struct {
-	Target string          `json:"target" msgpack:"target"`
-	Method string          `json:"method" msgpack:"method"`
-	Params json.RawMessage `json:"params,omitempty" msgpack:"params,omitempty"`
+	Target string `msgpack:"target"`
+	Method string `msgpack:"method"`
+	Params []byte `msgpack:"params,omitempty"`
 }
 
 // CallPlugin calls another plugin through the host.
 func CallPlugin(target, method string, params interface{}) ([]byte, error) {
-	var rawParams json.RawMessage
+	var rawParams []byte
 	if params != nil {
 		var err error
-		rawParams, err = json.Marshal(params)
+		rawParams, err = msgpack.Marshal(params)
 		if err != nil {
 			return nil, fmt.Errorf("marshal call_plugin params: %w", err)
 		}
@@ -201,29 +154,30 @@ func CallPlugin(target, method string, params interface{}) ([]byte, error) {
 
 // publishEventPayload is the request payload for publish_event.
 type publishEventPayload struct {
-	Topic   string          `json:"topic" msgpack:"topic"`
-	Payload json.RawMessage `json:"payload" msgpack:"payload"`
+	Topic   string `msgpack:"topic"`
+	Payload []byte `msgpack:"payload"`
 }
 
 // PublishEvent publishes an event through the host event bus.
 func PublishEvent(topic string, payload interface{}) error {
-	rawPayload, err := json.Marshal(payload)
+	rawPayload, err := msgpack.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal event payload: %w", err)
 	}
 	p := publishEventPayload{
 		Topic:   topic,
-		Payload: json.RawMessage(rawPayload),
+		Payload: rawPayload,
 	}
 	raw, err := callHost(_publishEvent, p)
 	if err != nil {
 		return err
 	}
 	if raw != nil {
+		data := stripPrefix(raw)
 		var errResp struct {
-			Error string `json:"error" msgpack:"error"`
+			Error string `msgpack:"error"`
 		}
-		if unmarshalFromHost(raw, &errResp) == nil && errResp.Error != "" {
+		if msgpack.Unmarshal(data, &errResp) == nil && errResp.Error != "" {
 			return fmt.Errorf("host: %s", errResp.Error)
 		}
 	}

@@ -15,6 +15,7 @@ import (
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 
 	"github.com/tetratelabs/wazero/api"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 var wasmHTTPMaxTimeout = time.Duration(wasmrt.DefaultHostHTTPTimeoutSeconds) * time.Second
@@ -48,16 +49,16 @@ func isBlockedHost(rawURL string) bool {
 }
 
 type httpRequestPayload struct {
-	Method  string            `json:"method" msgpack:"method"`
-	URL     string            `json:"url" msgpack:"url"`
-	Headers map[string]string `json:"headers,omitempty" msgpack:"headers,omitempty"`
-	Body    string            `json:"body,omitempty" msgpack:"body,omitempty"`
+	Method  string            `msgpack:"method"`
+	URL     string            `msgpack:"url"`
+	Headers map[string]string `msgpack:"headers,omitempty"`
+	Body    string            `msgpack:"body,omitempty"`
 }
 
 type httpResponsePayload struct {
-	StatusCode int               `json:"status_code" msgpack:"status_code"`
-	Headers    map[string]string `json:"headers,omitempty" msgpack:"headers,omitempty"`
-	Body       string            `json:"body" msgpack:"body"`
+	StatusCode int               `msgpack:"status_code"`
+	Headers    map[string]string `msgpack:"headers,omitempty"`
+	Body       string            `msgpack:"body"`
 }
 
 func (h *HostAPI) httpRequestFunc() api.GoModuleFunc {
@@ -67,30 +68,30 @@ func (h *HostAPI) httpRequestFunc() api.GoModuleFunc {
 		offset := uint32(stack[0])
 		length := uint32(stack[1])
 
-		data, enc, err := readModMemoryAndDetect(mod, offset, length)
+		data, err := readPayload(mod, offset, length)
 		if err != nil {
 			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var payload httpRequestPayload
-		if err := unmarshalPayload(data, enc, &payload); err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+		if err := msgpack.Unmarshal(data, &payload); err != nil {
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		if err := h.perms.CheckPermission(pluginID, "network"); err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		if h.deps.HTTP == nil {
-			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("HTTP"), enc)
+			returnError(ctx, mod, stack, errDepNotAvailable("HTTP"))
 			return
 		}
 
 		if isBlockedHost(payload.URL) {
-			returnErrorEnc(ctx, mod, stack, fmt.Errorf("requests to internal/private addresses are not allowed"), enc)
+			returnError(ctx, mod, stack, fmt.Errorf("requests to internal/private addresses are not allowed"))
 			return
 		}
 
@@ -109,7 +110,7 @@ func (h *HostAPI) httpRequestFunc() api.GoModuleFunc {
 
 		req, err := http.NewRequestWithContext(reqCtx, method, payload.URL, body)
 		if err != nil {
-			returnErrorEnc(ctx, mod, stack, fmt.Errorf("create request: %w", err), enc)
+			returnError(ctx, mod, stack, fmt.Errorf("create request: %w", err))
 			return
 		}
 
@@ -119,7 +120,7 @@ func (h *HostAPI) httpRequestFunc() api.GoModuleFunc {
 
 		resp, err := h.deps.HTTP.Do(req)
 		if err != nil {
-			returnErrorEnc(ctx, mod, stack, fmt.Errorf("http request: %w", err), enc)
+			returnError(ctx, mod, stack, fmt.Errorf("http request: %w", err))
 			return
 		}
 		defer resp.Body.Close()
@@ -140,6 +141,6 @@ func (h *HostAPI) httpRequestFunc() api.GoModuleFunc {
 			Body:       string(respBody),
 		}
 
-		writeEncodedResult(ctx, mod, stack, result, enc)
+		writeResult(ctx, mod, stack, result)
 	}
 }

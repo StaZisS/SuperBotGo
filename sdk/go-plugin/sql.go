@@ -46,61 +46,61 @@ func _sql_end(ptr uint32, length uint32) uint64
 type sqlOpenReq struct{}
 
 type sqlOpenResp struct {
-	Handle uint32 `json:"handle" msgpack:"handle"`
+	Handle uint32 `msgpack:"handle"`
 }
 
 type sqlCloseReq struct {
-	Handle uint32 `json:"handle" msgpack:"handle"`
+	Handle uint32 `msgpack:"handle"`
 }
 
 type sqlExecReq struct {
-	Handle uint32 `json:"handle" msgpack:"handle"`
-	SQL    string `json:"sql" msgpack:"sql"`
-	Args   []any  `json:"args,omitempty" msgpack:"args,omitempty"`
+	Handle uint32 `msgpack:"handle"`
+	SQL    string `msgpack:"sql"`
+	Args   []any  `msgpack:"args,omitempty"`
 }
 
 type sqlExecResp struct {
-	LastID   int64 `json:"last_id" msgpack:"last_id"`
-	Affected int64 `json:"affected" msgpack:"affected"`
+	LastID   int64 `msgpack:"last_id"`
+	Affected int64 `msgpack:"affected"`
 }
 
 type sqlQueryReq struct {
-	Handle uint32 `json:"handle" msgpack:"handle"`
-	SQL    string `json:"sql" msgpack:"sql"`
-	Args   []any  `json:"args,omitempty" msgpack:"args,omitempty"`
+	Handle uint32 `msgpack:"handle"`
+	SQL    string `msgpack:"sql"`
+	Args   []any  `msgpack:"args,omitempty"`
 }
 
 type sqlQueryResp struct {
-	Cursor  uint32   `json:"cursor" msgpack:"cursor"`
-	Columns []string `json:"columns" msgpack:"columns"`
+	Cursor  uint32   `msgpack:"cursor"`
+	Columns []string `msgpack:"columns"`
 }
 
 type sqlNextReq struct {
-	Cursor uint32 `json:"cursor" msgpack:"cursor"`
+	Cursor uint32 `msgpack:"cursor"`
 }
 
 type sqlNextResp struct {
-	Row  []any `json:"row,omitempty" msgpack:"row,omitempty"`
-	Done bool  `json:"done" msgpack:"done"`
+	Row  []any `msgpack:"row,omitempty"`
+	Done bool  `msgpack:"done"`
 }
 
 type sqlRowsCloseReq struct {
-	Cursor uint32 `json:"cursor" msgpack:"cursor"`
+	Cursor uint32 `msgpack:"cursor"`
 }
 
 type sqlBeginReq struct {
-	Handle    uint32 `json:"handle" msgpack:"handle"`
-	ReadOnly  bool   `json:"read_only,omitempty" msgpack:"read_only,omitempty"`
-	Isolation string `json:"isolation,omitempty" msgpack:"isolation,omitempty"`
+	Handle    uint32 `msgpack:"handle"`
+	ReadOnly  bool   `msgpack:"read_only,omitempty"`
+	Isolation string `msgpack:"isolation,omitempty"`
 }
 
 type sqlBeginResp struct {
-	TX uint32 `json:"tx" msgpack:"tx"`
+	TX uint32 `msgpack:"tx"`
 }
 
 type sqlEndReq struct {
-	TX     uint32 `json:"tx" msgpack:"tx"`
-	Commit bool   `json:"commit" msgpack:"commit"`
+	TX     uint32 `msgpack:"tx"`
+	Commit bool   `msgpack:"commit"`
 }
 
 // ---------------------------------------------------------------------------
@@ -323,8 +323,8 @@ func valuesToNamed(vals []driver.Value) []driver.NamedValue {
 	return named
 }
 
-// normalizeDriverValue converts JSON-deserialized values to types that
-// database/sql can scan. JSON numbers come as float64.
+// normalizeDriverValue converts msgpack-deserialized values to types that
+// database/sql can scan.
 func normalizeDriverValue(v any) driver.Value {
 	if v == nil {
 		return nil
@@ -341,7 +341,6 @@ func normalizeDriverValue(v any) driver.Value {
 	case string:
 		return val
 	case []any:
-		// JSON arrays — serialize back to string for scanning.
 		return fmt.Sprintf("%v", val)
 	default:
 		return fmt.Sprintf("%v", val)

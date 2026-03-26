@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/tetratelabs/wazero/api"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 const wasmSQLMaxTimeout = 4 * time.Second
@@ -20,73 +21,73 @@ const wasmSQLMaxTimeout = 4 * time.Second
 type sqlOpenRequest struct{}
 
 type sqlOpenResponse struct {
-	Handle uint32 `json:"handle" msgpack:"handle"`
+	Handle uint32 `msgpack:"handle"`
 }
 
 type sqlCloseRequest struct {
-	Handle uint32 `json:"handle" msgpack:"handle"`
+	Handle uint32 `msgpack:"handle"`
 }
 
 type sqlCloseResponse struct {
-	OK bool `json:"ok" msgpack:"ok"`
+	OK bool `msgpack:"ok"`
 }
 
 type sqlExecRequest struct {
-	Handle uint32 `json:"handle" msgpack:"handle"`
-	SQL    string `json:"sql" msgpack:"sql"`
-	Args   []any  `json:"args,omitempty" msgpack:"args,omitempty"`
+	Handle uint32 `msgpack:"handle"`
+	SQL    string `msgpack:"sql"`
+	Args   []any  `msgpack:"args,omitempty"`
 }
 
 type sqlExecResponse struct {
-	LastID   int64 `json:"last_id" msgpack:"last_id"`
-	Affected int64 `json:"affected" msgpack:"affected"`
+	LastID   int64 `msgpack:"last_id"`
+	Affected int64 `msgpack:"affected"`
 }
 
 type sqlQueryRequest struct {
-	Handle uint32 `json:"handle" msgpack:"handle"`
-	SQL    string `json:"sql" msgpack:"sql"`
-	Args   []any  `json:"args,omitempty" msgpack:"args,omitempty"`
+	Handle uint32 `msgpack:"handle"`
+	SQL    string `msgpack:"sql"`
+	Args   []any  `msgpack:"args,omitempty"`
 }
 
 type sqlQueryResponse struct {
-	Cursor  uint32   `json:"cursor" msgpack:"cursor"`
-	Columns []string `json:"columns" msgpack:"columns"`
+	Cursor  uint32   `msgpack:"cursor"`
+	Columns []string `msgpack:"columns"`
 }
 
 type sqlNextRequest struct {
-	Cursor uint32 `json:"cursor" msgpack:"cursor"`
+	Cursor uint32 `msgpack:"cursor"`
 }
 
 type sqlNextResponse struct {
-	Row  []any `json:"row,omitempty" msgpack:"row,omitempty"`
-	Done bool  `json:"done" msgpack:"done"`
+	Row  []any `msgpack:"row,omitempty"`
+	Done bool  `msgpack:"done"`
 }
 
 type sqlRowsCloseRequest struct {
-	Cursor uint32 `json:"cursor" msgpack:"cursor"`
+	Cursor uint32 `msgpack:"cursor"`
 }
 
 type sqlRowsCloseResponse struct {
-	OK bool `json:"ok" msgpack:"ok"`
+	OK bool `msgpack:"ok"`
 }
 
 type sqlBeginRequest struct {
-	Handle    uint32 `json:"handle" msgpack:"handle"`
-	ReadOnly  bool   `json:"read_only,omitempty" msgpack:"read_only,omitempty"`
-	Isolation string `json:"isolation,omitempty" msgpack:"isolation,omitempty"`
+	Handle    uint32 `msgpack:"handle"`
+	ReadOnly  bool   `msgpack:"read_only,omitempty"`
+	Isolation string `msgpack:"isolation,omitempty"`
 }
 
 type sqlBeginResponse struct {
-	TX uint32 `json:"tx" msgpack:"tx"`
+	TX uint32 `msgpack:"tx"`
 }
 
 type sqlEndRequest struct {
-	TX     uint32 `json:"tx" msgpack:"tx"`
-	Commit bool   `json:"commit" msgpack:"commit"`
+	TX     uint32 `msgpack:"tx"`
+	Commit bool   `msgpack:"commit"`
 }
 
 type sqlEndResponse struct {
-	OK bool `json:"ok" msgpack:"ok"`
+	OK bool `msgpack:"ok"`
 }
 
 // ── sql_open ──────────────────────────────────────────────────────────
@@ -103,14 +104,14 @@ func (h *HostAPI) sqlOpenFunc() api.GoModuleFunc {
 			return
 		}
 
-		_, enc, err := readModMemoryAndDetect(mod, offset, length)
+		_, err := readPayload(mod, offset, length)
 		if err != nil {
 			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		if h.sqlStore == nil {
-			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("SQLStore"), enc)
+			returnError(ctx, mod, stack, errDepNotAvailable("SQLStore"))
 			return
 		}
 
@@ -119,13 +120,13 @@ func (h *HostAPI) sqlOpenFunc() api.GoModuleFunc {
 
 		pool, err := h.sqlStore.getOrCreatePool(sqlCtx, pluginID)
 		if err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		conn, err := pool.Acquire(sqlCtx)
 		if err != nil {
-			returnErrorEnc(ctx, mod, stack, fmt.Errorf("acquire connection: %w", err), enc)
+			returnError(ctx, mod, stack, fmt.Errorf("acquire connection: %w", err))
 			return
 		}
 
@@ -135,11 +136,11 @@ func (h *HostAPI) sqlOpenFunc() api.GoModuleFunc {
 		})
 		if err != nil {
 			conn.Release()
-			returnErrorEnc(ctx, mod, stack, err, enc)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
-		writeEncodedResult(ctx, mod, stack, sqlOpenResponse{Handle: handle}, enc)
+		writeResult(ctx, mod, stack, sqlOpenResponse{Handle: handle})
 	}
 }
 
@@ -157,26 +158,26 @@ func (h *HostAPI) sqlCloseFunc() api.GoModuleFunc {
 			return
 		}
 
-		data, enc, err := readModMemoryAndDetect(mod, offset, length)
+		data, err := readPayload(mod, offset, length)
 		if err != nil {
 			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var req sqlCloseRequest
-		if err := unmarshalPayload(data, enc, &req); err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+		if err := msgpack.Unmarshal(data, &req); err != nil {
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		if h.sqlStore == nil {
-			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("SQLStore"), enc)
+			returnError(ctx, mod, stack, errDepNotAvailable("SQLStore"))
 			return
 		}
 
 		sh, err := h.sqlStore.Remove(pluginID, execID, req.Handle)
 		if err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
@@ -184,7 +185,7 @@ func (h *HostAPI) sqlCloseFunc() api.GoModuleFunc {
 			sh.conn.Release()
 		}
 
-		writeEncodedResult(ctx, mod, stack, sqlCloseResponse{OK: true}, enc)
+		writeResult(ctx, mod, stack, sqlCloseResponse{OK: true})
 	}
 }
 
@@ -202,26 +203,26 @@ func (h *HostAPI) sqlExecFunc() api.GoModuleFunc {
 			return
 		}
 
-		data, enc, err := readModMemoryAndDetect(mod, offset, length)
+		data, err := readPayload(mod, offset, length)
 		if err != nil {
 			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var req sqlExecRequest
-		if err := unmarshalPayload(data, enc, &req); err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+		if err := msgpack.Unmarshal(data, &req); err != nil {
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		if h.sqlStore == nil {
-			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("SQLStore"), enc)
+			returnError(ctx, mod, stack, errDepNotAvailable("SQLStore"))
 			return
 		}
 
 		sh, err := h.sqlStore.Get(pluginID, execID, req.Handle)
 		if err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
@@ -235,17 +236,17 @@ func (h *HostAPI) sqlExecFunc() api.GoModuleFunc {
 		case handleTx:
 			tag, err = sh.tx.Exec(sqlCtx, req.SQL, req.Args...)
 		default:
-			returnErrorEnc(ctx, mod, stack, fmt.Errorf("handle %d is not a connection or transaction", req.Handle), enc)
+			returnError(ctx, mod, stack, fmt.Errorf("handle %d is not a connection or transaction", req.Handle))
 			return
 		}
 		if err != nil {
-			returnErrorEnc(ctx, mod, stack, fmt.Errorf("sql exec: %w", err), enc)
+			returnError(ctx, mod, stack, fmt.Errorf("sql exec: %w", err))
 			return
 		}
 
-		writeEncodedResult(ctx, mod, stack, sqlExecResponse{
+		writeResult(ctx, mod, stack, sqlExecResponse{
 			Affected: tag.RowsAffected(),
-		}, enc)
+		})
 	}
 }
 
@@ -263,26 +264,26 @@ func (h *HostAPI) sqlQueryFunc() api.GoModuleFunc {
 			return
 		}
 
-		data, enc, err := readModMemoryAndDetect(mod, offset, length)
+		data, err := readPayload(mod, offset, length)
 		if err != nil {
 			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var req sqlQueryRequest
-		if err := unmarshalPayload(data, enc, &req); err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+		if err := msgpack.Unmarshal(data, &req); err != nil {
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		if h.sqlStore == nil {
-			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("SQLStore"), enc)
+			returnError(ctx, mod, stack, errDepNotAvailable("SQLStore"))
 			return
 		}
 
 		sh, err := h.sqlStore.Get(pluginID, execID, req.Handle)
 		if err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
@@ -296,11 +297,11 @@ func (h *HostAPI) sqlQueryFunc() api.GoModuleFunc {
 		case handleTx:
 			rows, err = sh.tx.Query(sqlCtx, req.SQL, req.Args...)
 		default:
-			returnErrorEnc(ctx, mod, stack, fmt.Errorf("handle %d is not a connection or transaction", req.Handle), enc)
+			returnError(ctx, mod, stack, fmt.Errorf("handle %d is not a connection or transaction", req.Handle))
 			return
 		}
 		if err != nil {
-			returnErrorEnc(ctx, mod, stack, fmt.Errorf("sql query: %w", err), enc)
+			returnError(ctx, mod, stack, fmt.Errorf("sql query: %w", err))
 			return
 		}
 
@@ -317,14 +318,14 @@ func (h *HostAPI) sqlQueryFunc() api.GoModuleFunc {
 		})
 		if err != nil {
 			rows.Close()
-			returnErrorEnc(ctx, mod, stack, err, enc)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
-		writeEncodedResult(ctx, mod, stack, sqlQueryResponse{
+		writeResult(ctx, mod, stack, sqlQueryResponse{
 			Cursor:  cursorID,
 			Columns: cols,
-		}, enc)
+		})
 	}
 }
 
@@ -342,48 +343,48 @@ func (h *HostAPI) sqlNextFunc() api.GoModuleFunc {
 			return
 		}
 
-		data, enc, err := readModMemoryAndDetect(mod, offset, length)
+		data, err := readPayload(mod, offset, length)
 		if err != nil {
 			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var req sqlNextRequest
-		if err := unmarshalPayload(data, enc, &req); err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+		if err := msgpack.Unmarshal(data, &req); err != nil {
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		if h.sqlStore == nil {
-			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("SQLStore"), enc)
+			returnError(ctx, mod, stack, errDepNotAvailable("SQLStore"))
 			return
 		}
 
 		sh, err := h.sqlStore.Get(pluginID, execID, req.Cursor)
 		if err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 		if sh.kind != handleRows {
-			returnErrorEnc(ctx, mod, stack, fmt.Errorf("handle %d is not a cursor", req.Cursor), enc)
+			returnError(ctx, mod, stack, fmt.Errorf("handle %d is not a cursor", req.Cursor))
 			return
 		}
 
 		if !sh.rows.Next() {
 			if err := sh.rows.Err(); err != nil {
-				returnErrorEnc(ctx, mod, stack, fmt.Errorf("sql next: %w", err), enc)
+				returnError(ctx, mod, stack, fmt.Errorf("sql next: %w", err))
 				return
 			}
 			// Auto-close and remove the cursor handle.
 			sh.rows.Close()
 			_, _ = h.sqlStore.Remove(pluginID, execID, req.Cursor)
-			writeEncodedResult(ctx, mod, stack, sqlNextResponse{Done: true}, enc)
+			writeResult(ctx, mod, stack, sqlNextResponse{Done: true})
 			return
 		}
 
 		values, err := sh.rows.Values()
 		if err != nil {
-			returnErrorEnc(ctx, mod, stack, fmt.Errorf("sql row values: %w", err), enc)
+			returnError(ctx, mod, stack, fmt.Errorf("sql row values: %w", err))
 			return
 		}
 
@@ -392,7 +393,7 @@ func (h *HostAPI) sqlNextFunc() api.GoModuleFunc {
 			row[i] = normalizeValue(v)
 		}
 
-		writeEncodedResult(ctx, mod, stack, sqlNextResponse{Row: row}, enc)
+		writeResult(ctx, mod, stack, sqlNextResponse{Row: row})
 	}
 }
 
@@ -410,33 +411,33 @@ func (h *HostAPI) sqlRowsCloseFunc() api.GoModuleFunc {
 			return
 		}
 
-		data, enc, err := readModMemoryAndDetect(mod, offset, length)
+		data, err := readPayload(mod, offset, length)
 		if err != nil {
 			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var req sqlRowsCloseRequest
-		if err := unmarshalPayload(data, enc, &req); err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+		if err := msgpack.Unmarshal(data, &req); err != nil {
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		if h.sqlStore == nil {
-			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("SQLStore"), enc)
+			returnError(ctx, mod, stack, errDepNotAvailable("SQLStore"))
 			return
 		}
 
 		sh, err := h.sqlStore.Remove(pluginID, execID, req.Cursor)
 		if err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 		if sh.kind == handleRows && sh.rows != nil {
 			sh.rows.Close()
 		}
 
-		writeEncodedResult(ctx, mod, stack, sqlRowsCloseResponse{OK: true}, enc)
+		writeResult(ctx, mod, stack, sqlRowsCloseResponse{OK: true})
 	}
 }
 
@@ -454,30 +455,30 @@ func (h *HostAPI) sqlBeginFunc() api.GoModuleFunc {
 			return
 		}
 
-		data, enc, err := readModMemoryAndDetect(mod, offset, length)
+		data, err := readPayload(mod, offset, length)
 		if err != nil {
 			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var req sqlBeginRequest
-		if err := unmarshalPayload(data, enc, &req); err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+		if err := msgpack.Unmarshal(data, &req); err != nil {
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		if h.sqlStore == nil {
-			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("SQLStore"), enc)
+			returnError(ctx, mod, stack, errDepNotAvailable("SQLStore"))
 			return
 		}
 
 		sh, err := h.sqlStore.Get(pluginID, execID, req.Handle)
 		if err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 		if sh.kind != handleConn {
-			returnErrorEnc(ctx, mod, stack, fmt.Errorf("handle %d is not a connection", req.Handle), enc)
+			returnError(ctx, mod, stack, fmt.Errorf("handle %d is not a connection", req.Handle))
 			return
 		}
 
@@ -501,7 +502,7 @@ func (h *HostAPI) sqlBeginFunc() api.GoModuleFunc {
 
 		tx, err := sh.conn.BeginTx(sqlCtx, txOpts)
 		if err != nil {
-			returnErrorEnc(ctx, mod, stack, fmt.Errorf("begin tx: %w", err), enc)
+			returnError(ctx, mod, stack, fmt.Errorf("begin tx: %w", err))
 			return
 		}
 
@@ -512,11 +513,11 @@ func (h *HostAPI) sqlBeginFunc() api.GoModuleFunc {
 		})
 		if err != nil {
 			_ = tx.Rollback(ctx)
-			returnErrorEnc(ctx, mod, stack, err, enc)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
-		writeEncodedResult(ctx, mod, stack, sqlBeginResponse{TX: txHandle}, enc)
+		writeResult(ctx, mod, stack, sqlBeginResponse{TX: txHandle})
 	}
 }
 
@@ -534,30 +535,30 @@ func (h *HostAPI) sqlEndFunc() api.GoModuleFunc {
 			return
 		}
 
-		data, enc, err := readModMemoryAndDetect(mod, offset, length)
+		data, err := readPayload(mod, offset, length)
 		if err != nil {
 			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var req sqlEndRequest
-		if err := unmarshalPayload(data, enc, &req); err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+		if err := msgpack.Unmarshal(data, &req); err != nil {
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		if h.sqlStore == nil {
-			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("SQLStore"), enc)
+			returnError(ctx, mod, stack, errDepNotAvailable("SQLStore"))
 			return
 		}
 
 		sh, err := h.sqlStore.Remove(pluginID, execID, req.TX)
 		if err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 		if sh.kind != handleTx {
-			returnErrorEnc(ctx, mod, stack, fmt.Errorf("handle %d is not a transaction", req.TX), enc)
+			returnError(ctx, mod, stack, fmt.Errorf("handle %d is not a transaction", req.TX))
 			return
 		}
 
@@ -570,17 +571,17 @@ func (h *HostAPI) sqlEndFunc() api.GoModuleFunc {
 			err = sh.tx.Rollback(sqlCtx)
 		}
 		if err != nil {
-			returnErrorEnc(ctx, mod, stack, fmt.Errorf("sql end: %w", err), enc)
+			returnError(ctx, mod, stack, fmt.Errorf("sql end: %w", err))
 			return
 		}
 
-		writeEncodedResult(ctx, mod, stack, sqlEndResponse{OK: true}, enc)
+		writeResult(ctx, mod, stack, sqlEndResponse{OK: true})
 	}
 }
 
 // ── value normalization ───────────────────────────────────────────────
 
-// normalizeValue converts pgx types to JSON/msgpack-safe types.
+// normalizeValue converts pgx types to msgpack-safe types.
 func normalizeValue(v any) any {
 	if v == nil {
 		return nil

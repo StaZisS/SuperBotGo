@@ -25,21 +25,12 @@ func readModMemory(mod api.Module, offset, length uint32) ([]byte, error) {
 	return result, nil
 }
 
-func readModMemoryAndDetect(mod api.Module, offset, length uint32) ([]byte, EncodingType, error) {
+func readPayload(mod api.Module, offset, length uint32) ([]byte, error) {
 	raw, err := readModMemory(mod, offset, length)
 	if err != nil {
-		return nil, EncodingJSON, err
+		return nil, err
 	}
-	enc, payload := detectEncoding(raw)
-	return payload, enc, nil
-}
-
-func unmarshalPayload(data []byte, enc EncodingType, v any) error {
-	codec, err := CodecFor(enc)
-	if err != nil {
-		return err
-	}
-	return codec.Unmarshal(data, v)
+	return stripWirePrefix(raw), nil
 }
 
 func writeModMemory(ctx context.Context, mod api.Module, data []byte) (uint32, uint32, error) {

@@ -196,7 +196,7 @@ func (h *HostAPI) registerFunc(builder wazero.HostModuleBuilder, name string, fn
 							stack[0] = 0
 						}
 					}()
-					writeErrorResult(ctx, mod, stack,
+					returnError(ctx, mod, stack,
 						fmt.Errorf("host function %q panicked: %v", name, r))
 				}()
 			}
@@ -237,7 +237,7 @@ func (h *HostAPI) registerFunc(builder wazero.HostModuleBuilder, name string, fn
 					"plugin_id", pluginID,
 					"function", name,
 				)
-				writeErrorResult(ctx, mod, stack, err)
+				returnError(ctx, mod, stack, err)
 				return
 			}
 		}

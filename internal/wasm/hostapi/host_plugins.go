@@ -2,7 +2,6 @@ package hostapi
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 
 	"github.com/tetratelabs/wazero/api"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 var wasmCallPluginMaxTimeout = time.Duration(wasmrt.DefaultHostCallPluginTimeoutSeconds) * time.Second
@@ -64,14 +64,14 @@ func checkCallCycle(chain []string, target string) error {
 }
 
 type callPluginPayload struct {
-	Target string          `json:"target" msgpack:"target"`
-	Method string          `json:"method" msgpack:"method"`
-	Params json.RawMessage `json:"params,omitempty" msgpack:"params,omitempty"`
+	Target string `msgpack:"target"`
+	Method string `msgpack:"method"`
+	Params []byte `msgpack:"params,omitempty"`
 }
 
 type publishEventPayload struct {
-	Topic   string          `json:"topic" msgpack:"topic"`
-	Payload json.RawMessage `json:"payload" msgpack:"payload"`
+	Topic   string `msgpack:"topic"`
+	Payload []byte `msgpack:"payload"`
 }
 
 func (h *HostAPI) callPluginFunc() api.GoModuleFunc {
@@ -82,26 +82,26 @@ func (h *HostAPI) callPluginFunc() api.GoModuleFunc {
 		offset := uint32(stack[0])
 		length := uint32(stack[1])
 
-		data, enc, err := readModMemoryAndDetect(mod, offset, length)
+		data, err := readPayload(mod, offset, length)
 		if err != nil {
 			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var payload callPluginPayload
-		if err := unmarshalPayload(data, enc, &payload); err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+		if err := msgpack.Unmarshal(data, &payload); err != nil {
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		perm := fmt.Sprintf("plugins:call:%s", payload.Target)
 		if err := h.perms.CheckPermission(pluginID, perm); err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		if h.deps.PluginRegistry == nil {
-			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("PluginRegistry"), enc)
+			returnError(ctx, mod, stack, errDepNotAvailable("PluginRegistry"))
 			return
 		}
 
@@ -118,7 +118,7 @@ func (h *HostAPI) callPluginFunc() api.GoModuleFunc {
 				"target", payload.Target,
 				"chain", chain,
 			)
-			returnErrorEnc(ctx, mod, stack, err, enc)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
@@ -130,7 +130,7 @@ func (h *HostAPI) callPluginFunc() api.GoModuleFunc {
 				"target", payload.Target,
 				"depth", depth,
 			)
-			returnErrorEnc(ctx, mod, stack, fmt.Errorf("inter-plugin call depth exceeded (max %d)", MaxCallDepth), enc)
+			returnError(ctx, mod, stack, fmt.Errorf("inter-plugin call depth exceeded (max %d)", MaxCallDepth))
 			return
 		}
 
@@ -154,13 +154,13 @@ func (h *HostAPI) callPluginFunc() api.GoModuleFunc {
 			} else {
 				err = fmt.Errorf("call_plugin %q.%s: %w", payload.Target, payload.Method, err)
 			}
-			returnErrorEnc(ctx, mod, stack, err, enc)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		offset2, length2, err := writeModMemory(ctx, mod, result)
 		if err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 		stack[0] = uint64(offset2)<<32 | uint64(length2)
@@ -179,20 +179,20 @@ func (h *HostAPI) publishEventFunc() api.GoModuleFunc {
 			return
 		}
 
-		data, enc, err := readModMemoryAndDetect(mod, offset, length)
+		data, err := readPayload(mod, offset, length)
 		if err != nil {
 			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var payload publishEventPayload
-		if err := unmarshalPayload(data, enc, &payload); err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+		if err := msgpack.Unmarshal(data, &payload); err != nil {
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		if h.deps.Events == nil {
-			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("EventBus"), enc)
+			returnError(ctx, mod, stack, errDepNotAvailable("EventBus"))
 			return
 		}
 
@@ -207,7 +207,7 @@ func (h *HostAPI) publishEventFunc() api.GoModuleFunc {
 			} else {
 				err = fmt.Errorf("publish event %q: %w", payload.Topic, err)
 			}
-			returnErrorEnc(ctx, mod, stack, err, enc)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 

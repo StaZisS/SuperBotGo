@@ -33,27 +33,27 @@ const (
 // ---------------------------------------------------------------------------
 
 type notifyUserReq struct {
-	UserID   int64  `json:"user_id" msgpack:"user_id"`
-	Text     string `json:"text" msgpack:"text"`
-	Priority int    `json:"priority" msgpack:"priority"`
+	UserID   int64  `msgpack:"user_id"`
+	Text     string `msgpack:"text"`
+	Priority int    `msgpack:"priority"`
 }
 
 type notifyChatReq struct {
-	ChannelType string `json:"channel_type" msgpack:"channel_type"`
-	ChatID      string `json:"chat_id" msgpack:"chat_id"`
-	Text        string `json:"text" msgpack:"text"`
-	Priority    int    `json:"priority" msgpack:"priority"`
+	ChannelType string `msgpack:"channel_type"`
+	ChatID      string `msgpack:"chat_id"`
+	Text        string `msgpack:"text"`
+	Priority    int    `msgpack:"priority"`
 }
 
 type notifyProjectReq struct {
-	ProjectID int64  `json:"project_id" msgpack:"project_id"`
-	Text      string `json:"text" msgpack:"text"`
-	Priority  int    `json:"priority" msgpack:"priority"`
+	ProjectID int64  `msgpack:"project_id"`
+	Text      string `msgpack:"text"`
+	Priority  int    `msgpack:"priority"`
 }
 
 type notifyResp struct {
-	OK    bool   `json:"ok" msgpack:"ok"`
-	Error string `json:"error,omitempty" msgpack:"error,omitempty"`
+	OK    bool   `msgpack:"ok"`
+	Error string `msgpack:"error,omitempty"`
 }
 
 // ---------------------------------------------------------------------------

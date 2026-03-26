@@ -3,7 +3,6 @@
 package wasmplugin
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -29,42 +28,42 @@ func _kv_list(offset, length uint32) uint64
 // ---------------------------------------------------------------------------
 
 type kvGetRequest struct {
-	Key string `json:"key"`
+	Key string `msgpack:"key"`
 }
 
 type kvGetResponse struct {
-	Value *string `json:"value"`
-	Found bool    `json:"found"`
-	Error string  `json:"error,omitempty"`
+	Value *string `msgpack:"value"`
+	Found bool    `msgpack:"found"`
+	Error string  `msgpack:"error,omitempty"`
 }
 
 type kvSetRequest struct {
-	Key        string `json:"key"`
-	Value      string `json:"value"`
-	TTLSeconds *int   `json:"ttl_seconds,omitempty"`
+	Key        string `msgpack:"key"`
+	Value      string `msgpack:"value"`
+	TTLSeconds *int   `msgpack:"ttl_seconds,omitempty"`
 }
 
 type kvSetResponse struct {
-	OK    bool   `json:"ok"`
-	Error string `json:"error,omitempty"`
+	OK    bool   `msgpack:"ok"`
+	Error string `msgpack:"error,omitempty"`
 }
 
 type kvDeleteRequest struct {
-	Key string `json:"key"`
+	Key string `msgpack:"key"`
 }
 
 type kvDeleteResponse struct {
-	OK    bool   `json:"ok"`
-	Error string `json:"error,omitempty"`
+	OK    bool   `msgpack:"ok"`
+	Error string `msgpack:"error,omitempty"`
 }
 
 type kvListRequest struct {
-	Prefix string `json:"prefix,omitempty"`
+	Prefix string `msgpack:"prefix,omitempty"`
 }
 
 type kvListResponse struct {
-	Keys  []string `json:"keys"`
-	Error string   `json:"error,omitempty"`
+	Keys  []string `msgpack:"keys"`
+	Error string   `msgpack:"error,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -75,21 +74,9 @@ type kvListResponse struct {
 // Returns the value and true if found, or ("", false, nil) if the key does
 // not exist. Returns a non-nil error only on host communication failures.
 func (ctx *EventContext) KVGet(key string) (string, bool, error) {
-	req, _ := json.Marshal(kvGetRequest{Key: key})
-	ptr, length := bytesToPtr(req)
-
-	packed := _kv_get(ptr, length)
-	if packed == 0 {
-		return "", false, fmt.Errorf("kv_get: host returned null")
-	}
-
-	respOffset := uint32(packed >> 32)
-	respLength := uint32(packed & 0xFFFFFFFF)
-	respData := ptrToBytes(respOffset, respLength)
-
 	var resp kvGetResponse
-	if err := json.Unmarshal(respData, &resp); err != nil {
-		return "", false, fmt.Errorf("kv_get: unmarshal response: %w", err)
+	if err := callHostWithResult(_kv_get, kvGetRequest{Key: key}, &resp); err != nil {
+		return "", false, fmt.Errorf("kv_get: %w", err)
 	}
 	if resp.Error != "" {
 		return "", false, fmt.Errorf("kv_get: %s", resp.Error)
@@ -104,21 +91,9 @@ func (ctx *EventContext) KVGet(key string) (string, bool, error) {
 // The value persists in host memory across plugin executions (until the host
 // restarts or the plugin is unloaded).
 func (ctx *EventContext) KVSet(key, value string) error {
-	req, _ := json.Marshal(kvSetRequest{Key: key, Value: value})
-	ptr, length := bytesToPtr(req)
-
-	packed := _kv_set(ptr, length)
-	if packed == 0 {
-		return fmt.Errorf("kv_set: host returned null")
-	}
-
-	respOffset := uint32(packed >> 32)
-	respLength := uint32(packed & 0xFFFFFFFF)
-	respData := ptrToBytes(respOffset, respLength)
-
 	var resp kvSetResponse
-	if err := json.Unmarshal(respData, &resp); err != nil {
-		return fmt.Errorf("kv_set: unmarshal response: %w", err)
+	if err := callHostWithResult(_kv_set, kvSetRequest{Key: key, Value: value}, &resp); err != nil {
+		return fmt.Errorf("kv_set: %w", err)
 	}
 	if resp.Error != "" {
 		return fmt.Errorf("kv_set: %s", resp.Error)
@@ -133,21 +108,9 @@ func (ctx *EventContext) KVSetWithTTL(key, value string, ttl time.Duration) erro
 	if seconds <= 0 {
 		seconds = 1
 	}
-	req, _ := json.Marshal(kvSetRequest{Key: key, Value: value, TTLSeconds: &seconds})
-	ptr, length := bytesToPtr(req)
-
-	packed := _kv_set(ptr, length)
-	if packed == 0 {
-		return fmt.Errorf("kv_set: host returned null")
-	}
-
-	respOffset := uint32(packed >> 32)
-	respLength := uint32(packed & 0xFFFFFFFF)
-	respData := ptrToBytes(respOffset, respLength)
-
 	var resp kvSetResponse
-	if err := json.Unmarshal(respData, &resp); err != nil {
-		return fmt.Errorf("kv_set: unmarshal response: %w", err)
+	if err := callHostWithResult(_kv_set, kvSetRequest{Key: key, Value: value, TTLSeconds: &seconds}, &resp); err != nil {
+		return fmt.Errorf("kv_set: %w", err)
 	}
 	if resp.Error != "" {
 		return fmt.Errorf("kv_set: %s", resp.Error)
@@ -158,21 +121,9 @@ func (ctx *EventContext) KVSetWithTTL(key, value string, ttl time.Duration) erro
 // KVDelete removes a key from the plugin-scoped key-value store.
 // It is a no-op if the key does not exist.
 func (ctx *EventContext) KVDelete(key string) error {
-	req, _ := json.Marshal(kvDeleteRequest{Key: key})
-	ptr, length := bytesToPtr(req)
-
-	packed := _kv_delete(ptr, length)
-	if packed == 0 {
-		return fmt.Errorf("kv_delete: host returned null")
-	}
-
-	respOffset := uint32(packed >> 32)
-	respLength := uint32(packed & 0xFFFFFFFF)
-	respData := ptrToBytes(respOffset, respLength)
-
 	var resp kvDeleteResponse
-	if err := json.Unmarshal(respData, &resp); err != nil {
-		return fmt.Errorf("kv_delete: unmarshal response: %w", err)
+	if err := callHostWithResult(_kv_delete, kvDeleteRequest{Key: key}, &resp); err != nil {
+		return fmt.Errorf("kv_delete: %w", err)
 	}
 	if resp.Error != "" {
 		return fmt.Errorf("kv_delete: %s", resp.Error)
@@ -183,21 +134,9 @@ func (ctx *EventContext) KVDelete(key string) error {
 // KVList returns all keys in the plugin-scoped key-value store that match
 // the given prefix. Pass an empty string to list all keys.
 func (ctx *EventContext) KVList(prefix string) ([]string, error) {
-	req, _ := json.Marshal(kvListRequest{Prefix: prefix})
-	ptr, length := bytesToPtr(req)
-
-	packed := _kv_list(ptr, length)
-	if packed == 0 {
-		return nil, fmt.Errorf("kv_list: host returned null")
-	}
-
-	respOffset := uint32(packed >> 32)
-	respLength := uint32(packed & 0xFFFFFFFF)
-	respData := ptrToBytes(respOffset, respLength)
-
 	var resp kvListResponse
-	if err := json.Unmarshal(respData, &resp); err != nil {
-		return nil, fmt.Errorf("kv_list: unmarshal response: %w", err)
+	if err := callHostWithResult(_kv_list, kvListRequest{Prefix: prefix}, &resp); err != nil {
+		return nil, fmt.Errorf("kv_list: %w", err)
 	}
 	if resp.Error != "" {
 		return nil, fmt.Errorf("kv_list: %s", resp.Error)
@@ -212,21 +151,9 @@ func (ctx *EventContext) KVList(prefix string) ([]string, error) {
 
 // KVGet retrieves a value from the plugin-scoped key-value store.
 func (ctx *MigrateContext) KVGet(key string) (string, bool, error) {
-	req, _ := json.Marshal(kvGetRequest{Key: key})
-	ptr, length := bytesToPtr(req)
-
-	packed := _kv_get(ptr, length)
-	if packed == 0 {
-		return "", false, fmt.Errorf("kv_get: host returned null")
-	}
-
-	respOffset := uint32(packed >> 32)
-	respLength := uint32(packed & 0xFFFFFFFF)
-	respData := ptrToBytes(respOffset, respLength)
-
 	var resp kvGetResponse
-	if err := json.Unmarshal(respData, &resp); err != nil {
-		return "", false, fmt.Errorf("kv_get: unmarshal response: %w", err)
+	if err := callHostWithResult(_kv_get, kvGetRequest{Key: key}, &resp); err != nil {
+		return "", false, fmt.Errorf("kv_get: %w", err)
 	}
 	if resp.Error != "" {
 		return "", false, fmt.Errorf("kv_get: %s", resp.Error)
@@ -239,21 +166,9 @@ func (ctx *MigrateContext) KVGet(key string) (string, bool, error) {
 
 // KVSet stores a key-value pair in the plugin-scoped key-value store.
 func (ctx *MigrateContext) KVSet(key, value string) error {
-	req, _ := json.Marshal(kvSetRequest{Key: key, Value: value})
-	ptr, length := bytesToPtr(req)
-
-	packed := _kv_set(ptr, length)
-	if packed == 0 {
-		return fmt.Errorf("kv_set: host returned null")
-	}
-
-	respOffset := uint32(packed >> 32)
-	respLength := uint32(packed & 0xFFFFFFFF)
-	respData := ptrToBytes(respOffset, respLength)
-
 	var resp kvSetResponse
-	if err := json.Unmarshal(respData, &resp); err != nil {
-		return fmt.Errorf("kv_set: unmarshal response: %w", err)
+	if err := callHostWithResult(_kv_set, kvSetRequest{Key: key, Value: value}, &resp); err != nil {
+		return fmt.Errorf("kv_set: %w", err)
 	}
 	if resp.Error != "" {
 		return fmt.Errorf("kv_set: %s", resp.Error)
@@ -263,21 +178,9 @@ func (ctx *MigrateContext) KVSet(key, value string) error {
 
 // KVDelete removes a key from the plugin-scoped key-value store.
 func (ctx *MigrateContext) KVDelete(key string) error {
-	req, _ := json.Marshal(kvDeleteRequest{Key: key})
-	ptr, length := bytesToPtr(req)
-
-	packed := _kv_delete(ptr, length)
-	if packed == 0 {
-		return fmt.Errorf("kv_delete: host returned null")
-	}
-
-	respOffset := uint32(packed >> 32)
-	respLength := uint32(packed & 0xFFFFFFFF)
-	respData := ptrToBytes(respOffset, respLength)
-
 	var resp kvDeleteResponse
-	if err := json.Unmarshal(respData, &resp); err != nil {
-		return fmt.Errorf("kv_delete: unmarshal response: %w", err)
+	if err := callHostWithResult(_kv_delete, kvDeleteRequest{Key: key}, &resp); err != nil {
+		return fmt.Errorf("kv_delete: %w", err)
 	}
 	if resp.Error != "" {
 		return fmt.Errorf("kv_delete: %s", resp.Error)
@@ -287,21 +190,9 @@ func (ctx *MigrateContext) KVDelete(key string) error {
 
 // KVList returns all keys matching the given prefix.
 func (ctx *MigrateContext) KVList(prefix string) ([]string, error) {
-	req, _ := json.Marshal(kvListRequest{Prefix: prefix})
-	ptr, length := bytesToPtr(req)
-
-	packed := _kv_list(ptr, length)
-	if packed == 0 {
-		return nil, fmt.Errorf("kv_list: host returned null")
-	}
-
-	respOffset := uint32(packed >> 32)
-	respLength := uint32(packed & 0xFFFFFFFF)
-	respData := ptrToBytes(respOffset, respLength)
-
 	var resp kvListResponse
-	if err := json.Unmarshal(respData, &resp); err != nil {
-		return nil, fmt.Errorf("kv_list: unmarshal response: %w", err)
+	if err := callHostWithResult(_kv_list, kvListRequest{Prefix: prefix}, &resp); err != nil {
+		return nil, fmt.Errorf("kv_list: %w", err)
 	}
 	if resp.Error != "" {
 		return nil, fmt.Errorf("kv_list: %s", resp.Error)

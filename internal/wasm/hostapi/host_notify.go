@@ -7,6 +7,7 @@ import (
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 
 	"github.com/tetratelabs/wazero/api"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 var wasmNotifyMaxTimeout = time.Duration(wasmrt.DefaultHostNotifyTimeoutSeconds) * time.Second
@@ -16,14 +17,14 @@ var wasmNotifyMaxTimeout = time.Duration(wasmrt.DefaultHostNotifyTimeoutSeconds)
 // ---------------------------------------------------------------------------
 
 type notifyUserRequest struct {
-	UserID   int64  `json:"user_id" msgpack:"user_id"`
-	Text     string `json:"text" msgpack:"text"`
-	Priority int    `json:"priority" msgpack:"priority"`
+	UserID   int64  `msgpack:"user_id"`
+	Text     string `msgpack:"text"`
+	Priority int    `msgpack:"priority"`
 }
 
 type notifyResponse struct {
-	OK    bool   `json:"ok" msgpack:"ok"`
-	Error string `json:"error,omitempty" msgpack:"error,omitempty"`
+	OK    bool   `msgpack:"ok"`
+	Error string `msgpack:"error,omitempty"`
 }
 
 func (h *HostAPI) notifyUserFunc() api.GoModuleFunc {
@@ -32,25 +33,25 @@ func (h *HostAPI) notifyUserFunc() api.GoModuleFunc {
 		offset := uint32(stack[0])
 		length := uint32(stack[1])
 
-		data, enc, err := readModMemoryAndDetect(mod, offset, length)
+		data, err := readPayload(mod, offset, length)
 		if err != nil {
 			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var req notifyUserRequest
-		if err := unmarshalPayload(data, enc, &req); err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+		if err := msgpack.Unmarshal(data, &req); err != nil {
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		if err := h.perms.CheckPermission(pluginID, "notify"); err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		if h.deps.Notifier == nil {
-			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("Notifier"), enc)
+			returnError(ctx, mod, stack, errDepNotAvailable("Notifier"))
 			return
 		}
 
@@ -61,11 +62,11 @@ func (h *HostAPI) notifyUserFunc() api.GoModuleFunc {
 
 		if err := h.deps.Notifier.NotifyUser(reqCtx, req.UserID, req.Text, priority); err != nil {
 			SetHostCallStatus(ctx, "error")
-			writeEncodedResult(ctx, mod, stack, notifyResponse{OK: false, Error: err.Error()}, enc)
+			writeResult(ctx, mod, stack, notifyResponse{OK: false, Error: err.Error()})
 			return
 		}
 
-		writeEncodedResult(ctx, mod, stack, notifyResponse{OK: true}, enc)
+		writeResult(ctx, mod, stack, notifyResponse{OK: true})
 	}
 }
 
@@ -74,10 +75,10 @@ func (h *HostAPI) notifyUserFunc() api.GoModuleFunc {
 // ---------------------------------------------------------------------------
 
 type notifyChatRequest struct {
-	ChannelType string `json:"channel_type" msgpack:"channel_type"`
-	ChatID      string `json:"chat_id" msgpack:"chat_id"`
-	Text        string `json:"text" msgpack:"text"`
-	Priority    int    `json:"priority" msgpack:"priority"`
+	ChannelType string `msgpack:"channel_type"`
+	ChatID      string `msgpack:"chat_id"`
+	Text        string `msgpack:"text"`
+	Priority    int    `msgpack:"priority"`
 }
 
 func (h *HostAPI) notifyChatFunc() api.GoModuleFunc {
@@ -86,25 +87,25 @@ func (h *HostAPI) notifyChatFunc() api.GoModuleFunc {
 		offset := uint32(stack[0])
 		length := uint32(stack[1])
 
-		data, enc, err := readModMemoryAndDetect(mod, offset, length)
+		data, err := readPayload(mod, offset, length)
 		if err != nil {
 			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var req notifyChatRequest
-		if err := unmarshalPayload(data, enc, &req); err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+		if err := msgpack.Unmarshal(data, &req); err != nil {
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		if err := h.perms.CheckPermission(pluginID, "notify"); err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		if h.deps.Notifier == nil {
-			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("Notifier"), enc)
+			returnError(ctx, mod, stack, errDepNotAvailable("Notifier"))
 			return
 		}
 
@@ -115,11 +116,11 @@ func (h *HostAPI) notifyChatFunc() api.GoModuleFunc {
 
 		if err := h.deps.Notifier.NotifyChat(reqCtx, req.ChannelType, req.ChatID, req.Text, priority); err != nil {
 			SetHostCallStatus(ctx, "error")
-			writeEncodedResult(ctx, mod, stack, notifyResponse{OK: false, Error: err.Error()}, enc)
+			writeResult(ctx, mod, stack, notifyResponse{OK: false, Error: err.Error()})
 			return
 		}
 
-		writeEncodedResult(ctx, mod, stack, notifyResponse{OK: true}, enc)
+		writeResult(ctx, mod, stack, notifyResponse{OK: true})
 	}
 }
 
@@ -128,9 +129,9 @@ func (h *HostAPI) notifyChatFunc() api.GoModuleFunc {
 // ---------------------------------------------------------------------------
 
 type notifyProjectRequest struct {
-	ProjectID int64  `json:"project_id" msgpack:"project_id"`
-	Text      string `json:"text" msgpack:"text"`
-	Priority  int    `json:"priority" msgpack:"priority"`
+	ProjectID int64  `msgpack:"project_id"`
+	Text      string `msgpack:"text"`
+	Priority  int    `msgpack:"priority"`
 }
 
 func (h *HostAPI) notifyProjectFunc() api.GoModuleFunc {
@@ -139,25 +140,25 @@ func (h *HostAPI) notifyProjectFunc() api.GoModuleFunc {
 		offset := uint32(stack[0])
 		length := uint32(stack[1])
 
-		data, enc, err := readModMemoryAndDetect(mod, offset, length)
+		data, err := readPayload(mod, offset, length)
 		if err != nil {
 			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		var req notifyProjectRequest
-		if err := unmarshalPayload(data, enc, &req); err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+		if err := msgpack.Unmarshal(data, &req); err != nil {
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		if err := h.perms.CheckPermission(pluginID, "notify"); err != nil {
-			returnErrorEnc(ctx, mod, stack, err, enc)
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		if h.deps.Notifier == nil {
-			returnErrorEnc(ctx, mod, stack, errDepNotAvailable("Notifier"), enc)
+			returnError(ctx, mod, stack, errDepNotAvailable("Notifier"))
 			return
 		}
 
@@ -168,11 +169,11 @@ func (h *HostAPI) notifyProjectFunc() api.GoModuleFunc {
 
 		if err := h.deps.Notifier.NotifyProject(reqCtx, req.ProjectID, req.Text, priority); err != nil {
 			SetHostCallStatus(ctx, "error")
-			writeEncodedResult(ctx, mod, stack, notifyResponse{OK: false, Error: err.Error()}, enc)
+			writeResult(ctx, mod, stack, notifyResponse{OK: false, Error: err.Error()})
 			return
 		}
 
-		writeEncodedResult(ctx, mod, stack, notifyResponse{OK: true}, enc)
+		writeResult(ctx, mod, stack, notifyResponse{OK: true})
 	}
 }
 
