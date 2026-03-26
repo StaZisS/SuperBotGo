@@ -53,11 +53,6 @@ func main() {
 	})
 }
 
-// l builds a locale map for English and Russian texts.
-func l(en, ru string) map[string]string {
-	return map[string]string{"en": en, "ru": ru}
-}
-
 func handleScheduleHTTP(ctx *wasmplugin.EventContext) error {
 	building := ctx.HTTP.Query["building"]
 	room := ctx.HTTP.Query["room"]
@@ -92,6 +87,8 @@ func handleScheduleHTTP(ctx *wasmplugin.EventContext) error {
 		return nil
 	}
 
+	tr := cat.Tr(locale)
+
 	type entry struct {
 		Time    string `json:"time"`
 		Subject string `json:"subject"`
@@ -102,7 +99,7 @@ func handleScheduleHTTP(ctx *wasmplugin.EventContext) error {
 	for i, e := range entries {
 		result[i] = entry{
 			Time:    e.Time,
-			Subject: tr(locale, e.Subject),
+			Subject: tr(e.Subject),
 			Teacher: e.Teacher,
 		}
 	}
@@ -132,7 +129,11 @@ func buildingPages(ctx *wasmplugin.CallbackContext) wasmplugin.OptionsPage {
 
 	all := make([]wasmplugin.Option, len(buildings))
 	for i, b := range buildings {
-		all[i] = wasmplugin.Option{Label: tr(ctx.Locale, "building") + " " + b, Value: b}
+		labels := cat.L("building")
+		for loc, text := range labels {
+			labels[loc] = text + " " + b
+		}
+		all[i] = wasmplugin.Option{Label: labels["en"], Labels: labels, Value: b}
 	}
 
 	pageSize := 2
@@ -169,20 +170,20 @@ func scheduleCommand() wasmplugin.Trigger {
 		Description: "Show today's university schedule",
 		Nodes: []wasmplugin.Node{
 			wasmplugin.NewStep("mode").
-				LocalizedText(l("University Schedule", "Расписание университета"), wasmplugin.StyleHeader).
-				LocalizedDynamicOptions(l("Choose view mode:", "Выберите режим просмотра:"), func(ctx *wasmplugin.CallbackContext) []wasmplugin.Option {
+				LocalizedText(cat.L("schedule"), wasmplugin.StyleHeader).
+				LocalizedDynamicOptions(cat.L("choose_mode", "V0", ""), func(ctx *wasmplugin.CallbackContext) []wasmplugin.Option {
 					return []wasmplugin.Option{
-						{Label: tr(ctx.Locale, "quick_today"), Value: "quick"},
-						{Label: tr(ctx.Locale, "by_date"), Value: "by_date"},
+						cat.Opt("quick_today", "quick"),
+						cat.Opt("by_date", "by_date"),
 					}
 				}),
 
 			wasmplugin.NewStep("building").
-				LocalizedText(l("Select building:", "Выберите корпус:"), wasmplugin.StyleSubheader).
-				LocalizedPaginatedOptions(l("Building:", "Корпус:"), 2, buildingPages),
+				LocalizedText(cat.L("building"), wasmplugin.StyleSubheader).
+				LocalizedPaginatedOptions(cat.L("building"), 2, buildingPages),
 
 			wasmplugin.NewStep("room").
-				LocalizedText(l("Enter room number:", "Введите номер аудитории:"), wasmplugin.StylePlain).
+				LocalizedText(cat.L("room"), wasmplugin.StylePlain).
 				ValidateFunc(func(ctx *wasmplugin.CallbackContext) bool {
 					return isDigits(ctx.Input) && len(ctx.Input) <= 4
 				}),
@@ -190,7 +191,7 @@ func scheduleCommand() wasmplugin.Trigger {
 			wasmplugin.BranchOn("mode",
 				wasmplugin.Case("by_date",
 					wasmplugin.NewStep("date").
-						LocalizedText(l("Enter date (YYYY-MM-DD):", "Введите дату (ГГГГ-ММ-ДД):"), wasmplugin.StylePlain).
+						LocalizedText(cat.L("enter_date"), wasmplugin.StylePlain).
 						Validate(`^\d{4}-\d{2}-\d{2}$`),
 				),
 			),
@@ -214,7 +215,7 @@ func handleScheduleCmd(ctx *wasmplugin.EventContext) error {
 	db, err := openDB()
 	if err != nil {
 		ctx.LogError("db open: " + err.Error())
-		ctx.Reply("Internal error")
+		ctx.ReplyLocalized(cat.L("error"))
 		return nil
 	}
 	defer db.Close()
@@ -222,7 +223,7 @@ func handleScheduleCmd(ctx *wasmplugin.EventContext) error {
 	entries, err := dbScheduleByBuilding(db, building)
 	if err != nil {
 		ctx.LogError("db query: " + err.Error())
-		ctx.Reply("Internal error")
+		ctx.ReplyLocalized(cat.L("error"))
 		return nil
 	}
 
@@ -250,13 +251,12 @@ func findCommand() wasmplugin.Trigger {
 		Nodes: []wasmplugin.Node{
 
 			wasmplugin.NewStep("what").
-				LocalizedText(l("Search", "Поиск"), wasmplugin.StyleHeader).
-				LocalizedText(l("What do you want to find?", "Что вы хотите найти?"), wasmplugin.StylePlain).
-				LocalizedDynamicOptions(l("Search by:", "Искать по:"), func(ctx *wasmplugin.CallbackContext) []wasmplugin.Option {
+				LocalizedText(cat.L("search"), wasmplugin.StyleHeader).
+				LocalizedDynamicOptions(cat.L("search"), func(ctx *wasmplugin.CallbackContext) []wasmplugin.Option {
 					return []wasmplugin.Option{
-						{Label: tr(ctx.Locale, "by_teacher"), Value: "teacher"},
-						{Label: tr(ctx.Locale, "by_subject"), Value: "subject"},
-						{Label: tr(ctx.Locale, "by_room"), Value: "room"},
+						cat.Opt("by_teacher", "teacher"),
+						cat.Opt("by_subject", "subject"),
+						cat.Opt("by_room", "room"),
 					}
 				}),
 
@@ -264,12 +264,12 @@ func findCommand() wasmplugin.Trigger {
 
 				wasmplugin.Case("teacher",
 					wasmplugin.NewStep("building").
-						LocalizedText(l("Which building?", "Какой корпус?"), wasmplugin.StyleSubheader).
-						LocalizedPaginatedOptions(l("Building:", "Корпус:"), 2, buildingPages),
+						LocalizedText(cat.L("building"), wasmplugin.StyleSubheader).
+						LocalizedPaginatedOptions(cat.L("building"), 2, buildingPages),
 
 					wasmplugin.NewStep("teacher").
-						LocalizedText(l("Select teacher:", "Выберите преподавателя:"), wasmplugin.StylePlain).
-						LocalizedDynamicOptions(l("Teacher:", "Преподаватель:"), func(ctx *wasmplugin.CallbackContext) []wasmplugin.Option {
+						LocalizedText(cat.L("by_teacher"), wasmplugin.StylePlain).
+						LocalizedDynamicOptions(cat.L("by_teacher"), func(ctx *wasmplugin.CallbackContext) []wasmplugin.Option {
 							building := ctx.Params["building"]
 							db, err := openDB()
 							if err != nil {
@@ -290,8 +290,8 @@ func findCommand() wasmplugin.Trigger {
 
 				wasmplugin.Case("subject",
 					wasmplugin.NewStep("subject").
-						LocalizedText(l("Select subject:", "Выберите предмет:"), wasmplugin.StyleSubheader).
-						LocalizedPaginatedOptions(l("Subject:", "Предмет:"), 4, func(ctx *wasmplugin.CallbackContext) wasmplugin.OptionsPage {
+						LocalizedText(cat.L("by_subject"), wasmplugin.StyleSubheader).
+						LocalizedPaginatedOptions(cat.L("by_subject"), 4, func(ctx *wasmplugin.CallbackContext) wasmplugin.OptionsPage {
 							db, err := openDB()
 							if err != nil {
 								return fallbackSubjectPage(ctx)
@@ -312,7 +312,7 @@ func findCommand() wasmplugin.Trigger {
 							}
 							opts := make([]wasmplugin.Option, end-start)
 							for i, s := range subjects[start:end] {
-								opts[i] = wasmplugin.Option{Label: tr(ctx.Locale, s), Value: s}
+								opts[i] = cat.Opt(s, s)
 							}
 							return wasmplugin.OptionsPage{
 								Options: opts,
@@ -323,11 +323,11 @@ func findCommand() wasmplugin.Trigger {
 
 				wasmplugin.Case("room",
 					wasmplugin.NewStep("building").
-						LocalizedText(l("Which building?", "Какой корпус?"), wasmplugin.StyleSubheader).
-						LocalizedPaginatedOptions(l("Building:", "Корпус:"), 2, buildingPages),
+						LocalizedText(cat.L("building"), wasmplugin.StyleSubheader).
+						LocalizedPaginatedOptions(cat.L("building"), 2, buildingPages),
 
 					wasmplugin.NewStep("floor").
-						LocalizedText(l("Enter floor number (1-9):", "Введите номер этажа (1-9):"), wasmplugin.StylePlain).
+						LocalizedText(cat.L("find_room_line", "Building", "", "Bld", "", "Floor", "1-9"), wasmplugin.StylePlain).
 						ValidateFunc(func(ctx *wasmplugin.CallbackContext) bool {
 							return len(ctx.Input) == 1 && ctx.Input[0] >= '1' && ctx.Input[0] <= '9'
 						}),
@@ -336,11 +336,11 @@ func findCommand() wasmplugin.Trigger {
 						wasmplugin.When(
 							wasmplugin.ParamEq("building", "3"),
 							wasmplugin.NewStep("wing").
-								LocalizedText(l("Building 3 — select wing:", "Корпус 3 — выберите крыло:"), wasmplugin.StylePlain).
-								LocalizedDynamicOptions(l("Wing:", "Крыло:"), func(ctx *wasmplugin.CallbackContext) []wasmplugin.Option {
+								LocalizedText(cat.L("east_wing"), wasmplugin.StylePlain).
+								LocalizedDynamicOptions(cat.L("east_wing"), func(ctx *wasmplugin.CallbackContext) []wasmplugin.Option {
 									return []wasmplugin.Option{
-										{Label: tr(ctx.Locale, "east_wing"), Value: "east"},
-										{Label: tr(ctx.Locale, "west_wing"), Value: "west"},
+										cat.Opt("east_wing", "east"),
+										cat.Opt("west_wing", "west"),
 									}
 								}),
 						),
@@ -349,11 +349,11 @@ func findCommand() wasmplugin.Trigger {
 			),
 
 			wasmplugin.NewStep("notify").
-				LocalizedText(l("Enable notifications for this search?", "Включить уведомления для этого поиска?"), wasmplugin.StylePlain).
-				LocalizedDynamicOptions(l("Notify:", "Уведомления:"), func(ctx *wasmplugin.CallbackContext) []wasmplugin.Option {
+				LocalizedText(cat.L("notify_enabled"), wasmplugin.StylePlain).
+				LocalizedDynamicOptions(cat.L("notify_enabled"), func(ctx *wasmplugin.CallbackContext) []wasmplugin.Option {
 					return []wasmplugin.Option{
-						{Label: tr(ctx.Locale, "yes"), Value: "yes"},
-						{Label: tr(ctx.Locale, "no"), Value: "no"},
+						cat.Opt("yes", "yes"),
+						cat.Opt("no", "no"),
 					}
 				}).
 				VisibleWhen(wasmplugin.ParamNeq("what", "room")),

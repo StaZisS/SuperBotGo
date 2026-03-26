@@ -39,8 +39,9 @@ type stepDef struct {
 }
 
 type optionDef struct {
-	Label string `json:"label"`
-	Value string `json:"value"`
+	Label  string            `json:"label"`
+	Labels map[string]string `json:"labels,omitempty"`
+	Value  string            `json:"value"`
 }
 
 type requirementDef struct {
@@ -171,12 +172,13 @@ type eventRequest struct {
 }
 
 type eventResponseJSON struct {
-	Status   string          `json:"status,omitempty"`
-	Error    string          `json:"error,omitempty"`
-	Reply    string          `json:"reply,omitempty"`
-	Data     json.RawMessage `json:"data,omitempty"`
-	Logs     []logEntry      `json:"logs,omitempty"`
-	Messages []messageEntry  `json:"messages,omitempty"`
+	Status     string            `json:"status,omitempty"`
+	Error      string            `json:"error,omitempty"`
+	Reply      string            `json:"reply,omitempty"`
+	ReplyTexts map[string]string `json:"reply_texts,omitempty"`
+	Data       json.RawMessage   `json:"data,omitempty"`
+	Logs       []logEntry        `json:"logs,omitempty"`
+	Messages   []messageEntry    `json:"messages,omitempty"`
 }
 
 type messengerTriggerData struct {

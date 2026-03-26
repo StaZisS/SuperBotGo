@@ -29,8 +29,9 @@ type OptionsBlock struct {
 func (OptionsBlock) blockType() string { return "options" }
 
 type Option struct {
-	Label string
-	Value string
+	Label  string
+	Labels map[string]string // localized labels keyed by locale; host resolves
+	Value  string
 }
 
 type LinkBlock struct {

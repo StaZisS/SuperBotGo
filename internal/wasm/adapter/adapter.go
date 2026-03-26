@@ -161,7 +161,8 @@ func (wp *WasmPlugin) stepNodeDefToStepNode(nd wasmrt.NodeDef) state.StepNode {
 				case "options":
 					opts := make([]model.Option, len(b.Options))
 					for j, o := range b.Options {
-						opts[j] = model.Option{Label: o.Label, Value: o.Value}
+						label := resolveLocalized(o.Label, o.Labels, ctx.Locale)
+						opts[j] = model.Option{Label: label, Value: o.Value}
 					}
 					prompt := resolveLocalized(b.Prompt, b.Prompts, ctx.Locale)
 					contentBlocks = append(contentBlocks, model.OptionsBlock{
@@ -328,10 +329,11 @@ func (wp *WasmPlugin) callStepCallback(cbName string, req wasmrt.StepCallbackReq
 	return &resp, nil
 }
 
-func convertOptions(defs []wasmrt.OptionDef) []model.Option {
+func convertOptions(defs []wasmrt.OptionDef, locale string) []model.Option {
 	opts := make([]model.Option, len(defs))
 	for i, o := range defs {
-		opts[i] = model.Option{Label: o.Label, Value: o.Value}
+		label := resolveLocalized(o.Label, o.Labels, locale)
+		opts[i] = model.Option{Label: label, Value: o.Value}
 	}
 	return opts
 }
@@ -346,7 +348,7 @@ func (wp *WasmPlugin) callOptionsCallback(cbName string, ctx state.StepContext) 
 		slog.Error("wasm options callback failed", "plugin", wp.meta.ID, "callback", cbName, "error", err)
 		return nil
 	}
-	return convertOptions(resp.Options)
+	return convertOptions(resp.Options, ctx.Locale)
 }
 
 func (wp *WasmPlugin) callValidateCallback(cbName string, inputText string) bool {
@@ -384,7 +386,7 @@ func (wp *WasmPlugin) callPaginationCallback(cbName string, ctx state.StepContex
 		slog.Error("wasm pagination callback failed", "plugin", wp.meta.ID, "callback", cbName, "error", err)
 		return state.OptionsPage{}
 	}
-	return state.OptionsPage{Options: convertOptions(resp.Options), HasMore: resp.HasMore}
+	return state.OptionsPage{Options: convertOptions(resp.Options, ctx.Locale), HasMore: resp.HasMore}
 }
 
 func evalCondition(cond *wasmrt.ConditionDef, params model.OptionMap) bool {
@@ -490,7 +492,34 @@ func (wp *WasmPlugin) HandleEvent(ctx context.Context, event model.Event) (*mode
 		}
 
 		if wp.send != nil {
-			if resp.Reply != "" && event.TriggerType == model.TriggerMessenger {
+			// Localized reply — resolve locale from chat/user and send.
+			if len(resp.ReplyTexts) > 0 && event.TriggerType == model.TriggerMessenger {
+				if m, mErr := event.Messenger(); mErr == nil {
+					if wp.localizedSend != nil {
+						entry := model.MessageEntry{
+							ChatID: m.ChatID,
+							Texts:  resp.ReplyTexts,
+						}
+						if sendErr := wp.localizedSend(ctx, entry, m.ChannelType); sendErr != nil {
+							slog.Error("wasm plugin localized reply failed",
+								"plugin", wp.meta.ID,
+								"chat_id", m.ChatID,
+								"error", sendErr)
+							return &resp, fmt.Errorf("wasm plugin %q localized reply send: %w", wp.meta.ID, sendErr)
+						}
+					} else {
+						// Fallback: resolve to chat locale (best-effort with "en").
+						text := ResolveLocalizedText(resp.ReplyTexts, "en")
+						if sendErr := wp.send(ctx, m.ChannelType, m.ChatID, text); sendErr != nil {
+							slog.Error("wasm plugin reply failed",
+								"plugin", wp.meta.ID,
+								"chat_id", m.ChatID,
+								"error", sendErr)
+							return &resp, fmt.Errorf("wasm plugin %q reply send: %w", wp.meta.ID, sendErr)
+						}
+					}
+				}
+			} else if resp.Reply != "" && event.TriggerType == model.TriggerMessenger {
 				if m, mErr := event.Messenger(); mErr == nil {
 					if sendErr := wp.send(ctx, m.ChannelType, m.ChatID, resp.Reply); sendErr != nil {
 						slog.Error("wasm plugin reply failed",

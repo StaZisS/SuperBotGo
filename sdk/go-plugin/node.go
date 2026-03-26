@@ -216,7 +216,7 @@ func (s *StepBuilder) toNodeDef(cmdName string, reg callbackMap) nodeDef {
 		case "options":
 			bd.Prompts = b.prompts
 			for _, o := range b.options {
-				bd.Options = append(bd.Options, optionDef{Label: o.Label, Value: o.Value})
+				bd.Options = append(bd.Options, optionDef{Label: o.Label, Labels: o.Labels, Value: o.Value})
 			}
 		case "dynamic_options":
 			bd.Prompts = b.prompts

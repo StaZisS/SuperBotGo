@@ -18,11 +18,12 @@ type EventContext struct {
 	// Event is non-nil for event bus trigger events.
 	Event *EventBusData
 
-	config   map[string]interface{}
-	logs     []logEntry
-	messages []messageEntry
-	reply    string
-	httpResp *httpResponseData
+	config     map[string]interface{}
+	logs       []logEntry
+	messages   []messageEntry
+	reply      string
+	replyTexts map[string]string
+	httpResp   *httpResponseData
 }
 
 // MessengerData contains messenger command data.
@@ -61,6 +62,15 @@ type EventBusData struct {
 // Reply sets the text reply for messenger commands.
 func (ctx *EventContext) Reply(text string) {
 	ctx.reply = text
+}
+
+// ReplyLocalized sets a localized reply for messenger commands. The texts map
+// is keyed by locale code (e.g. "en", "ru"). The host resolves the target
+// locale from the user's or chat's settings. Use with [Catalog.L]:
+//
+//	ctx.ReplyLocalized(cat.L("schedule_header", "Building", building))
+func (ctx *EventContext) ReplyLocalized(texts map[string]string) {
+	ctx.replyTexts = texts
 }
 
 // SetHTTPResponse sets the HTTP response for an HTTP trigger.

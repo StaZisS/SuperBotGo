@@ -1,0 +1,42 @@
+# Schedule plugin — English translations
+
+# Core
+schedule = "Schedule"
+building = "Building"
+room = "Room"
+no_classes = "No classes scheduled"
+
+# Subjects
+"Linear Algebra" = "Linear Algebra"
+"Programming" = "Programming"
+"Physics" = "Physics"
+"English" = "English"
+"Databases" = "Databases"
+"OS" = "OS"
+"Networks" = "Networks"
+"Machine Learning" = "Machine Learning"
+"Statistics" = "Statistics"
+"Algorithms" = "Algorithms"
+"Seminar" = "Seminar"
+
+# UI
+quick_today = "Quick (today)"
+by_date = "By date"
+by_teacher = "By teacher"
+by_subject = "By subject"
+by_room = "By room"
+east_wing = "East wing"
+west_wing = "West wing"
+choose_mode = "Choose view mode:"
+enter_date = "Enter date (YYYY-MM-DD):"
+
+# Templates
+schedule_header = "{{.Schedule}}\n{{.Building}} {{.Bld}}, {{.Room}} {{.Rm}}, {{.Date}}"
+schedule_entry = "{{.Time}}  {{.Subject}} ({{.Teacher}})"
+find_building_line = "{{.Building}}: {{.Bld}}"
+find_teacher_line = "Teacher: {{.Teacher}}"
+find_subject_line = "Subject: {{.Subject}}"
+find_room_line = "{{.Building}} {{.Bld}}, floor {{.Floor}}"
+find_room_wing = "{{.Building}} {{.Bld}}, floor {{.Floor}}, wing {{.Wing}}"
+find_entry = "  {{.Building}} {{.Bld}} — {{.Time}} ({{.Teacher}})"
+notify_enabled = "Notifications enabled."

@@ -73,12 +73,13 @@ func (e Event) EventTrigger() (*EventTriggerData, error) {
 }
 
 type EventResponse struct {
-	Status   string          `json:"status,omitempty"`
-	Error    string          `json:"error,omitempty"`
-	Reply    string          `json:"reply,omitempty"`
-	Data     json.RawMessage `json:"data,omitempty"`
-	Logs     []LogEntry      `json:"logs,omitempty"`
-	Messages []MessageEntry  `json:"messages,omitempty"`
+	Status     string            `json:"status,omitempty"`
+	Error      string            `json:"error,omitempty"`
+	Reply      string            `json:"reply,omitempty"`
+	ReplyTexts map[string]string `json:"reply_texts,omitempty"`
+	Data       json.RawMessage   `json:"data,omitempty"`
+	Logs       []LogEntry        `json:"logs,omitempty"`
+	Messages   []MessageEntry    `json:"messages,omitempty"`
 }
 
 type LogEntry struct {

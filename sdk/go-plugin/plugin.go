@@ -120,8 +120,9 @@ type Step struct {
 
 // Option is a single choice in a step with predefined values.
 type Option struct {
-	Label string
-	Value string
+	Label  string            // single-locale label (backward compatible)
+	Labels map[string]string // localized labels keyed by locale (e.g. "en", "ru"); host resolves
+	Value  string
 }
 
 // Requirement declares a host resource the plugin needs.

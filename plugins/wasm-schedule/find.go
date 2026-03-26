@@ -42,7 +42,7 @@ func fallbackSubjectPage(ctx *wasmplugin.CallbackContext) wasmplugin.OptionsPage
 	}
 	opts := make([]wasmplugin.Option, end-start)
 	for i, s := range seedSubjects[start:end] {
-		opts[i] = wasmplugin.Option{Label: tr(ctx.Locale, s), Value: s}
+		opts[i] = cat.Opt(s, s)
 	}
 	return wasmplugin.OptionsPage{
 		Options: opts,
@@ -53,10 +53,11 @@ func fallbackSubjectPage(ctx *wasmplugin.CallbackContext) wasmplugin.OptionsPage
 func handleFind(locale string, params map[string]string) string {
 	db, err := openDB()
 	if err != nil {
-		return "Database error"
+		return cat.T(locale, "error")
 	}
 	defer db.Close()
 
+	tr := cat.Tr(locale)
 	what := params["what"]
 	var b strings.Builder
 
@@ -64,23 +65,23 @@ func handleFind(locale string, params map[string]string) string {
 	case "teacher":
 		building := params["building"]
 		teacher := params["teacher"]
-		b.WriteString(fmt.Sprintf("%s: %s\n", tr(locale, "building"), building))
+		b.WriteString(fmt.Sprintf("%s: %s\n", tr("building"), building))
 		b.WriteString(fmt.Sprintf("Teacher: %s\n\n", teacher))
 		entries, err := dbScheduleByBuilding(db, building)
 		if err == nil {
 			for _, e := range entries {
 				if e.Teacher == teacher {
-					b.WriteString(fmt.Sprintf("  %s  %s\n", e.Time, tr(locale, e.Subject)))
+					b.WriteString(fmt.Sprintf("  %s  %s\n", e.Time, tr(e.Subject)))
 				}
 			}
 		}
 		if b.Len() == 0 {
-			b.WriteString(tr(locale, "no_classes"))
+			b.WriteString(tr("no_classes"))
 		}
 
 	case "subject":
 		subject := params["subject"]
-		b.WriteString(fmt.Sprintf("Subject: %s\n\n", tr(locale, subject)))
+		b.WriteString(fmt.Sprintf("Subject: %s\n\n", tr(subject)))
 		buildings, _ := dbAllBuildings(db)
 		for _, bld := range buildings {
 			entries, err := dbScheduleByBuilding(db, bld)
@@ -90,7 +91,7 @@ func handleFind(locale string, params map[string]string) string {
 			for _, e := range entries {
 				if e.Subject == subject {
 					b.WriteString(fmt.Sprintf("  %s %s — %s (%s)\n",
-						tr(locale, "building"), bld, e.Time, e.Teacher))
+						tr("building"), bld, e.Time, e.Teacher))
 				}
 			}
 		}
@@ -99,19 +100,19 @@ func handleFind(locale string, params map[string]string) string {
 		building := params["building"]
 		floor := params["floor"]
 		wing := params["wing"]
-		b.WriteString(fmt.Sprintf("%s %s, floor %s", tr(locale, "building"), building, floor))
+		b.WriteString(fmt.Sprintf("%s %s, floor %s", tr("building"), building, floor))
 		if wing != "" {
 			b.WriteString(fmt.Sprintf(", wing %s", wing))
 		}
 		b.WriteString("\n\n")
 		entries, _ := dbScheduleByBuilding(db, building)
 		for _, e := range entries {
-			b.WriteString(fmt.Sprintf("  %s  %s (%s)\n", e.Time, tr(locale, e.Subject), e.Teacher))
+			b.WriteString(fmt.Sprintf("  %s  %s (%s)\n", e.Time, tr(e.Subject), e.Teacher))
 		}
 	}
 
 	if params["notify"] == "yes" {
-		b.WriteString("\nNotifications enabled.")
+		b.WriteString("\n" + tr("notify_enabled"))
 	}
 
 	return b.String()

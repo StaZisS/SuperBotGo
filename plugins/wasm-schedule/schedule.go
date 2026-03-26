@@ -1,6 +1,11 @@
 package main
 
-import "fmt"
+import (
+	"embed"
+	"fmt"
+
+	"github.com/superbot/wasmplugin"
+)
 
 type scheduleEntry struct {
 	Time    string
@@ -29,91 +34,28 @@ var seedSchedule = map[string][]scheduleEntry{
 	},
 }
 
-var t = map[string]map[string]string{
-	"en": {
-		"schedule":   "Schedule",
-		"building":   "Building",
-		"room":       "Room",
-		"no_classes": "No classes scheduled",
+//go:embed i18n/*.toml
+var i18nFS embed.FS
 
-		"Linear Algebra":   "Linear Algebra",
-		"Programming":      "Programming",
-		"Physics":          "Physics",
-		"English":          "English",
-		"Databases":        "Databases",
-		"OS":               "OS",
-		"Networks":         "Networks",
-		"Machine Learning": "Machine Learning",
-		"Statistics":       "Statistics",
-		"Algorithms":       "Algorithms",
-		"Seminar":          "Seminar",
-
-		"quick_today": "Quick (today)",
-		"by_date":     "By date",
-		"by_teacher":  "By teacher",
-		"by_subject":  "By subject",
-		"by_room":     "By room",
-		"east_wing":   "East wing",
-		"west_wing":   "West wing",
-		"yes":         "Yes",
-		"no":          "No",
-	},
-	"ru": {
-		"schedule":   "Расписание",
-		"building":   "Корпус",
-		"room":       "Аудитория",
-		"no_classes": "Занятий нет",
-
-		"Linear Algebra":   "Линейная алгебра",
-		"Programming":      "Программирование",
-		"Physics":          "Физика",
-		"English":          "Английский язык",
-		"Databases":        "Базы данных",
-		"OS":               "Операционные системы",
-		"Networks":         "Компьютерные сети",
-		"Machine Learning": "Машинное обучение",
-		"Statistics":       "Статистика",
-		"Algorithms":       "Алгоритмы",
-		"Seminar":          "Семинар",
-
-		"quick_today": "Быстрый (сегодня)",
-		"by_date":     "По дате",
-		"by_teacher":  "По преподавателю",
-		"by_subject":  "По предмету",
-		"by_room":     "По аудитории",
-		"east_wing":   "Восточное крыло",
-		"west_wing":   "Западное крыло",
-		"yes":         "Да",
-		"no":          "Нет",
-	},
-}
-
-func tr(locale, key string) string {
-	if lang, ok := t[locale]; ok {
-		if val, ok := lang[key]; ok {
-			return val
-		}
-	}
-	if val, ok := t["en"][key]; ok {
-		return val
-	}
-	return key
-}
+var cat = wasmplugin.NewCatalog("en").
+	Merge(wasmplugin.CommonMessages).
+	LoadFS(i18nFS, "i18n")
 
 func generateScheduleForBuilding(entries []scheduleEntry, building, room, date, locale string) string {
+	tr := cat.Tr(locale)
 	header := fmt.Sprintf("%s\n%s %s, %s %s, %s\n",
-		tr(locale, "schedule"),
-		tr(locale, "building"), building,
-		tr(locale, "room"), room,
+		tr("schedule"),
+		tr("building"), building,
+		tr("room"), room,
 		date)
 
 	if len(entries) == 0 {
-		return header + "\n" + tr(locale, "no_classes")
+		return header + "\n" + tr("no_classes")
 	}
 
 	result := header + "\n"
 	for _, e := range entries {
-		result += fmt.Sprintf("%s  %s (%s)\n", e.Time, tr(locale, e.Subject), e.Teacher)
+		result += fmt.Sprintf("%s  %s (%s)\n", e.Time, tr(e.Subject), e.Teacher)
 	}
 	return result
 }

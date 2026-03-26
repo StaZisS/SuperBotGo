@@ -75,8 +75,9 @@ func handleMeta(p Plugin) {
 					}
 					for _, o := range s.Options {
 						sd.Options = append(sd.Options, optionDef{
-							Label: o.Label,
-							Value: o.Value,
+							Label:  o.Label,
+							Labels: o.Labels,
+							Value:  o.Value,
 						})
 					}
 					td.Steps = append(td.Steps, sd)
@@ -275,10 +276,11 @@ func handleEvent(p Plugin) {
 	}
 
 	resp := eventResponseJSON{
-		Status:   "ok",
-		Reply:    ctx.reply,
-		Logs:     ctx.logs,
-		Messages: ctx.messages,
+		Status:     "ok",
+		Reply:      ctx.reply,
+		ReplyTexts: ctx.replyTexts,
+		Logs:       ctx.logs,
+		Messages:   ctx.messages,
 	}
 	if ctx.httpResp != nil {
 		respData, _ := json.Marshal(ctx.httpResp)
@@ -341,14 +343,14 @@ func handleStepCallback(p Plugin) {
 		options := fn(ctx)
 		defs := make([]optionDef, len(options))
 		for i, o := range options {
-			defs[i] = optionDef{Label: o.Label, Value: o.Value}
+			defs[i] = optionDef{Label: o.Label, Labels: o.Labels, Value: o.Value}
 		}
 		writeCallbackResponse(stepCallbackResponse{Options: defs})
 	case func(ctx *CallbackContext) OptionsPage:
 		page := fn(ctx)
 		defs := make([]optionDef, len(page.Options))
 		for i, o := range page.Options {
-			defs[i] = optionDef{Label: o.Label, Value: o.Value}
+			defs[i] = optionDef{Label: o.Label, Labels: o.Labels, Value: o.Value}
 		}
 		writeCallbackResponse(stepCallbackResponse{Options: defs, HasMore: page.HasMore})
 	default:

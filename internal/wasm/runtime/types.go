@@ -54,8 +54,9 @@ type StepDef struct {
 }
 
 type OptionDef struct {
-	Label string `json:"label"`
-	Value string `json:"value"`
+	Label  string            `json:"label"`
+	Labels map[string]string `json:"labels,omitempty"`
+	Value  string            `json:"value"`
 }
 
 type RequirementDef struct {

@@ -1,0 +1,42 @@
+# Schedule plugin — Russian translations
+
+# Core
+schedule = "Расписание"
+building = "Корпус"
+room = "Аудитория"
+no_classes = "Занятий нет"
+
+# Subjects
+"Linear Algebra" = "Линейная алгебра"
+"Programming" = "Программирование"
+"Physics" = "Физика"
+"English" = "Английский язык"
+"Databases" = "Базы данных"
+"OS" = "Операционные системы"
+"Networks" = "Компьютерные сети"
+"Machine Learning" = "Машинное обучение"
+"Statistics" = "Статистика"
+"Algorithms" = "Алгоритмы"
+"Seminar" = "Семинар"
+
+# UI
+quick_today = "Быстрый (сегодня)"
+by_date = "По дате"
+by_teacher = "По преподавателю"
+by_subject = "По предмету"
+by_room = "По аудитории"
+east_wing = "Восточное крыло"
+west_wing = "Западное крыло"
+choose_mode = "Выберите режим просмотра:"
+enter_date = "Введите дату (ГГГГ-ММ-ДД):"
+
+# Templates
+schedule_header = "{{.Schedule}}\n{{.Building}} {{.Bld}}, {{.Room}} {{.Rm}}, {{.Date}}"
+schedule_entry = "{{.Time}}  {{.Subject}} ({{.Teacher}})"
+find_building_line = "{{.Building}}: {{.Bld}}"
+find_teacher_line = "Преподаватель: {{.Teacher}}"
+find_subject_line = "Предмет: {{.Subject}}"
+find_room_line = "{{.Building}} {{.Bld}}, этаж {{.Floor}}"
+find_room_wing = "{{.Building}} {{.Bld}}, этаж {{.Floor}}, крыло {{.Wing}}"
+find_entry = "  {{.Building}} {{.Bld}} — {{.Time}} ({{.Teacher}})"
+notify_enabled = "Уведомления включены."
