@@ -1,6 +1,6 @@
 # EventContext
 
-`EventContext` — единый контекст, передаваемый во все обработчики событий: команды, HTTP, cron и event bus триггеры.
+`EventContext` - единый контекст, передаваемый во все обработчики событий: команды, HTTP, cron и event bus триггеры.
 
 ## Общие поля
 
@@ -27,36 +27,95 @@
 | Поле | Тип | Описание |
 |---|---|---|
 | `UserID` | `int64` | ID пользователя |
-| `ChannelType` | `string` | Тип канала (telegram, discord, ...) |
+| `ChannelType` | `string` | Тип канала (`"telegram"`, `"discord"`, ...) |
 | `ChatID` | `string` | ID чата |
 | `CommandName` | `string` | Имя вызванной команды |
 | `Params` | `map[string]string` | Собранные параметры |
 | `Locale` | `string` | Локаль пользователя |
 
+### HTTPEventData
+
+| Поле | Тип | Описание |
+|---|---|---|
+| `Method` | `string` | HTTP-метод (GET, POST, ...) |
+| `Path` | `string` | Путь запроса |
+| `Query` | `map[string]string` | Query-параметры |
+| `Headers` | `map[string]string` | Заголовки запроса |
+| `Body` | `string` | Тело запроса |
+| `RemoteAddr` | `string` | IP-адрес клиента |
+
+### CronEventData
+
+| Поле | Тип | Описание |
+|---|---|---|
+| `ScheduleName` | `string` | Имя расписания (= `Name` триггера) |
+| `FireTime` | `int64` | Unix timestamp срабатывания |
+
+### EventBusData
+
+| Поле | Тип | Описание |
+|---|---|---|
+| `Topic` | `string` | Топик события |
+| `Payload` | `[]byte` | Данные события |
+| `Source` | `string` | ID плагина-отправителя |
+
 ## Методы
 
-### Сообщения
+### Ответы в чат {#reply}
 
-| Метод | Описание |
-|---|---|
-| `ctx.Reply(text)` | Ответить в текущий чат (только для messenger-триггеров) |
-| `ctx.SendMessage(chatID, text)` | Отправить в произвольный чат |
+#### `ctx.Reply(text string)`
 
-#### `ctx.Reply(text)`
-
-Устанавливает текстовый ответ для текущего чата. Работает **только** при `TriggerType == "messenger"` — для cron, HTTP и event-триггеров вызов будет проигнорирован.
+Устанавливает текстовый ответ для текущего чата. Работает **только** при `TriggerType == "messenger"` - для cron, HTTP и event-триггеров вызов будет проигнорирован.
 
 ```go
 ctx.Reply("Готово!")
 ```
 
-#### `ctx.SendMessage(chatID, text)`
+#### `ctx.ReplyLocalized(texts map[string]string)`
 
-Отправляет сообщение в произвольный чат. Если вызывается из messenger-триггера, тип канала определяется автоматически по каналу триггера. Для отправки из cron/event-триггеров канал также должен быть определён (через контекст вызвавшего триггера).
+Отвечает локализованным сообщением. Хост выбирает текст по локали пользователя. Ключи карты - коды локалей (`"ru"`, `"en"`, ...).
 
 ```go
-// Отправить уведомление в конкретный чат
+ctx.ReplyLocalized(map[string]string{
+    "ru": "Задача выполнена!",
+    "en": "Task completed!",
+})
+```
+
+::: tip Catalog
+Для работы с переводами удобнее использовать [Catalog](/api/localization):
+```go
+ctx.ReplyLocalized(catalog.L("task_done"))
+```
+:::
+
+### Отправка сообщений {#send}
+
+#### `ctx.SendMessage(chatID string, text string)`
+
+Отправляет сообщение в произвольный чат. Тип канала определяется автоматически по каналу текущего триггера.
+
+```go
 ctx.SendMessage("123456789", "Сборка завершена!")
+```
+
+#### `ctx.SendLocalizedMessage(chatID string, texts map[string]string)`
+
+Отправляет локализованное сообщение в указанный чат. Хост выбирает текст по локали чата.
+
+```go
+ctx.SendLocalizedMessage("123456789", map[string]string{
+    "ru": "Новый заказ!",
+    "en": "New order!",
+})
+```
+
+#### `ctx.SendLocalizedToUser(userID int64, texts map[string]string)`
+
+Отправляет локализованное сообщение конкретному пользователю. Хост определяет предпочтительный канал и локаль пользователя.
+
+```go
+ctx.SendLocalizedToUser(42, catalog.L("welcome"))
 ```
 
 #### Поведение доставки
@@ -65,16 +124,16 @@ ctx.SendMessage("123456789", "Сборка завершена!")
 
 | Правило | Описание |
 |---|---|
-| **Повтор при ошибках** | Транзиентные ошибки (429, таймаут, сетевые сбои) повторяются до 3 раз с экспоненциальной задержкой (500 мс → 1 с → 2 с) и jitter |
+| **Повтор при ошибках** | Транзиентные ошибки (429, таймаут, сетевые сбои) повторяются до 3 раз с экспоненциальной задержкой (500 мс - 1 с - 2 с) и jitter |
 | **Валидация** | Пустые сообщения отклоняются с ошибкой |
-| **Обрезка длинных сообщений** | Telegram: до 4096 символов, Discord: до 2000 символов. Излишек обрезается с добавлением `...` |
+| **Обрезка длинных сообщений** | Длинные сообщения обрезаются по лимиту платформы с добавлением `...` |
 | **Определение канала** | `SendMessage` без явного канала использует канал текущего триггера |
 
 ::: warning Пустые сообщения
 Вызов `ctx.Reply("")` или `ctx.SendMessage(chatID, "")` не отправит сообщение. Убедитесь, что текст не пуст.
 :::
 
-### Уведомления
+### Уведомления {#notifications}
 
 | Метод | Описание |
 |---|---|
@@ -84,41 +143,84 @@ ctx.SendMessage("123456789", "Сборка завершена!")
 
 Подробнее: [Уведомления](/api/notifications)
 
-### HTTP-ответы
+### HTTP-ответы {#http-response}
 
-| Метод | Описание |
-|---|---|
-| `ctx.JSON(code, value)` | JSON-ответ (HTTP-триггеры) |
-| `ctx.SetHTTPResponse(code, headers, body)` | Произвольный HTTP-ответ |
+#### `ctx.SetHTTPResponse(statusCode int, headers map[string]string, body string)`
 
-### Логирование
+Устанавливает произвольный HTTP-ответ с кастомными заголовками. Работает только в HTTP-триггерах.
+
+```go
+ctx.SetHTTPResponse(200, map[string]string{
+    "Content-Type": "text/plain",
+}, "OK")
+```
+
+#### `ctx.JSON(statusCode int, v interface{})`
+
+Сериализует значение в JSON и устанавливает его как HTTP-ответ. Заголовок `Content-Type: application/json` добавляется автоматически.
+
+```go
+ctx.JSON(200, map[string]string{"status": "ok"})
+```
+
+### Логирование {#logging}
 
 | Метод | Описание |
 |---|---|
 | `ctx.Log(msg)` | Info-лог |
 | `ctx.LogError(msg)` | Error-лог |
 
-### Доступ к данным
+```go
+ctx.Log("обработка завершена")
+ctx.LogError("не удалось подключиться к API")
+```
 
-| Метод | Описание |
-|---|---|
-| `ctx.Config(key, fallback)` | Получить значение конфигурации |
-| `ctx.Param(key)` | Получить параметр команды (shortcut для `ctx.Messenger.Params[key]`) |
-| `ctx.Locale()` | Локаль пользователя (по умолчанию `"en"`) |
+### Доступ к данным {#data}
+
+#### `ctx.Config(key string, fallback string) string`
+
+Получает значение конфигурации плагина. Если ключ не установлен, возвращается `fallback`.
+
+```go
+apiURL := ctx.Config("api_url", "https://api.example.com")
+```
+
+#### `ctx.Param(key string) string`
+
+Получает параметр команды. Shortcut для `ctx.Messenger.Params[key]`.
+
+```go
+name := ctx.Param("name")
+```
+
+#### `ctx.Locale() string`
+
+Возвращает локаль пользователя (например `"ru"`, `"en"`). По умолчанию `"en"`.
+
+```go
+locale := ctx.Locale()
+```
 
 ## Определение типа события
 
 ```go
 Handler: func(ctx *wasmplugin.EventContext) error {
     switch ctx.TriggerType {
-    case "messenger":
+    case wasmplugin.TriggerMessenger:
         // ctx.Messenger != nil
+        ctx.Reply("Привет, " + ctx.Param("name"))
+
     case wasmplugin.TriggerHTTP:
         // ctx.HTTP != nil
+        ctx.JSON(200, map[string]string{"method": ctx.HTTP.Method})
+
     case wasmplugin.TriggerCron:
         // ctx.Cron != nil
+        ctx.Log("cron сработал: " + ctx.Cron.ScheduleName)
+
     case wasmplugin.TriggerEvent:
         // ctx.Event != nil
+        ctx.Log("событие из " + ctx.Event.Source + ": " + ctx.Event.Topic)
     }
     return nil
 }

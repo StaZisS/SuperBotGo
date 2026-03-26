@@ -116,7 +116,7 @@ graph LR
 
 | Компонент | Файл | Назначение |
 |-----------|------|------------|
-| **ChannelManager** | `manager.go` | Точка входа для входящих сообщений. Оркестрирует пользователя, состояние, авторизацию, маршрутизацию |
+| **ChannelManager** | `manager.go` | Точка входа для входящих сообщений. Резолвит пользователя и передаёт в TriggerRouter |
 | **AdapterRegistry** | `registry.go` | Реестр каналов; маршрутизация исходящих сообщений по `ChannelType` |
 | **Telegram Adapter** | `telegram/` | Приём и отправка сообщений через Telegram Bot API |
 | **Discord Adapter** | `discord/` | Приём и отправка сообщений через Discord Gateway |
@@ -137,7 +137,6 @@ graph LR
 
 | Компонент | Файл | Назначение |
 |-----------|------|------------|
-| **UpdateRouter** | `router.go` | Маршрутизация `CommandRequest` в нужный плагин |
 | **PluginManager** | `manager.go` | Реестр и жизненный цикл плагинов (native + WASM) |
 | **SenderAPI** | `sender.go` | Высокоуровневый API для отправки сообщений из плагинов |
 
@@ -155,7 +154,7 @@ graph LR
 
 | Компонент | Файл | Назначение |
 |-----------|------|------------|
-| **TriggerRouter** | `router.go` | Маршрутизация событий (HTTP, Cron, Event) в плагины |
+| **TriggerRouter** | `router.go` | Единая точка маршрутизации всех событий (Messenger, HTTP, Cron, Event) в плагины |
 | **CronScheduler** | `cron.go` | Распределённый cron с блокировкой через Redis |
 | **HTTP Handler** | `http.go` | Приём webhook-запросов |
 
@@ -198,7 +197,7 @@ sequenceDiagram
     participant US as UserService
     participant SM as StateManager
     participant AZ as Authorizer
-    participant UR as UpdateRouter
+    participant TR as TriggerRouter
     participant P as Plugin
     participant SA as SenderAPI
 
@@ -206,12 +205,12 @@ sequenceDiagram
     Ch->>CM: OnUpdate(ctx, Update)
     CM->>US: FindOrCreateUser()
     US-->>CM: GlobalUser
-    CM->>SM: StartCommand / ProcessInput
-    SM-->>CM: StateResult{Params}
     CM->>AZ: CheckCommand()
     AZ-->>CM: allowed
-    CM->>UR: Route(CommandRequest)
-    UR->>P: HandleEvent(Event)
+    CM->>SM: StartCommand / ProcessInput
+    SM-->>CM: StateResult{Params}
+    CM->>TR: RouteEvent(Event)
+    TR->>P: HandleEvent(Event)
     P->>SA: Reply(Message)
     SA->>Ch: SendToChat()
     Ch->>User: Ответ

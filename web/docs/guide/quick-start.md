@@ -1,23 +1,59 @@
 # Быстрый старт
 
-## Минимальный плагин
+Пошаговое руководство: от пустой директории до работающего WASM-плагина.
+
+## Требования
+
+- **Go 1.24+** (с поддержкой `GOOS=wasip1`)
+
+Проверьте версию:
+
+```bash
+go version
+# go version go1.24.0 linux/amd64
+```
+
+## 1. Создайте проект
+
+```bash
+mkdir my-plugin && cd my-plugin
+go mod init my-plugin
+```
+
+## 2. Добавьте SDK
+
+```bash
+go get github.com/superbot/wasmplugin
+```
+
+::: tip Локальная разработка
+Для разработки с локальной копией SDK используйте `replace` в `go.mod`:
+```
+replace github.com/superbot/wasmplugin => ../../sdk/go-plugin
+```
+:::
+
+## 3. Напишите плагин
+
+Создайте файл `main.go`:
 
 ```go
 package main
 
-import "github.com/superbot/wasmplugin"
+import wasmplugin "github.com/superbot/wasmplugin"
 
 func main() {
     wasmplugin.Run(wasmplugin.Plugin{
         ID:      "hello",
         Name:    "Hello Plugin",
         Version: "1.0.0",
-        Commands: []wasmplugin.Command{
+        Triggers: []wasmplugin.Trigger{
             {
                 Name:        "hello",
-                Description: "Say hello",
+                Type:        wasmplugin.TriggerMessenger,
+                Description: "Приветствие",
                 Handler: func(ctx *wasmplugin.EventContext) error {
-                    ctx.Reply("Hello, world!")
+                    ctx.Reply("Привет, мир!")
                     return nil
                 },
             },
@@ -26,54 +62,47 @@ func main() {
 }
 ```
 
-## Инициализация проекта
+Пользователь введёт `/hello` в чат, и бот ответит `Привет, мир!`.
+
+## 4. Соберите WASM-модуль
 
 ```bash
-# Создание проекта
-mkdir my-plugin && cd my-plugin
-go mod init my-plugin
-go mod edit -require github.com/superbot/wasmplugin@v0.0.0
-go mod edit -replace github.com/superbot/wasmplugin=../../sdk/go-plugin
-```
-
-## Сборка
-
-```bash
-GOOS=wasip1 GOARCH=wasm go build -o plugin.wasm .
+GOOS=wasip1 GOARCH=wasm go build -o my-plugin.wasm .
 ```
 
 ::: tip Оптимизированная сборка
-Используйте `-ldflags="-s -w"` чтобы убрать отладочную информацию и уменьшить размер бинарника:
+Используйте `-ldflags="-s -w"` чтобы убрать отладочную информацию и уменьшить размер файла:
 ```bash
-GOOS=wasip1 GOARCH=wasm go build -ldflags="-s -w" -o plugin.wasm .
+GOOS=wasip1 GOARCH=wasm go build -ldflags="-s -w" -o my-plugin.wasm .
 ```
 :::
 
 ## Структура проекта
 
+После сборки проект выглядит так:
+
 ```
 my-plugin/
-├── go.mod          # модуль + replace для SDK
+├── go.mod           # модуль и зависимости
 ├── go.sum
-├── main.go         # wasmplugin.Run(...)
-├── handlers.go     # обработчики команд и триггеров
-└── data.go         # данные, хелперы
+├── main.go          # wasmplugin.Run(...)
+└── my-plugin.wasm   # собранный плагин
 ```
 
-## go.mod
+По мере роста плагина выделяйте обработчики и данные в отдельные файлы:
 
 ```
-module my-plugin
-
-go 1.24.0
-
-require github.com/superbot/wasmplugin v0.0.0
-
-replace github.com/superbot/wasmplugin => ../../sdk/go-plugin
+my-plugin/
+├── go.mod
+├── go.sum
+├── main.go          # wasmplugin.Run(...)
+├── handlers.go      # обработчики команд и триггеров
+├── data.go          # хелперы и данные
+└── my-plugin.wasm
 ```
 
 ## Что дальше?
 
-- [Структура плагина](/guide/plugin-structure) — структура `Plugin` и жизненный цикл
-- [Команды](/guide/commands) — добавление slash-команд для мессенджера
-- [Триггеры](/guide/triggers) — обработка HTTP, Cron и Event триггеров
+- [Структура плагина](/guide/plugin-structure) - поля `Plugin`, жизненный цикл, требования
+- [Триггеры](/guide/triggers) - Messenger-команды, HTTP, Cron, Event Bus
+- [Конфигурация](/guide/configuration) - типизированная схема конфигурации

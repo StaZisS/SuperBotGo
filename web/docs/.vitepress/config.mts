@@ -10,65 +10,86 @@ export default withMermaid(defineConfig({
     logo: '/logo.svg',
 
     nav: [
-      { text: 'Архитектура', link: '/architecture/components' },
-      { text: 'Руководство', link: '/guide/quick-start' },
+      { text: 'Руководство', link: '/guide/overview' },
       { text: 'API', link: '/api/context' },
-      { text: 'Продвинутое', link: '/advanced/node-builder' },
+      { text: 'Деплой', link: '/deploy/build' },
+      { text: 'Архитектура', link: '/architecture/components' },
     ],
 
     sidebar: {
-      '/architecture/': [
-        {
-          text: 'Архитектура',
-          items: [
-            { text: 'Диаграмма компонентов', link: '/architecture/components' },
-          ],
-        },
-      ],
       '/guide/': [
         {
           text: 'Начало работы',
           items: [
+            { text: 'Обзор', link: '/guide/overview' },
             { text: 'Быстрый старт', link: '/guide/quick-start' },
             { text: 'Структура плагина', link: '/guide/plugin-structure' },
           ],
         },
         {
-          text: 'Основы',
+          text: 'Триггеры',
           items: [
-            { text: 'Команды', link: '/guide/commands' },
-            { text: 'Триггеры', link: '/guide/triggers' },
+            { text: 'Обзор триггеров', link: '/guide/triggers' },
+            { text: 'Messenger', link: '/guide/trigger-messenger' },
+            { text: 'HTTP', link: '/guide/trigger-http' },
+            { text: 'Cron', link: '/guide/trigger-cron' },
+            { text: 'Event Bus', link: '/guide/trigger-event' },
+          ],
+        },
+        {
+          text: 'Настройка',
+          items: [
             { text: 'Конфигурация', link: '/guide/configuration' },
           ],
         },
       ],
       '/api/': [
         {
-          text: 'Контекст и API',
+          text: 'Контекст',
           items: [
             { text: 'EventContext', link: '/api/context' },
+          ],
+        },
+        {
+          text: 'Host API',
+          items: [
+            { text: 'Обзор', link: '/api/host-api' },
+            { text: 'База данных', link: '/api/database' },
+            { text: 'HTTP-клиент', link: '/api/http' },
             { text: 'KV Store', link: '/api/kv-store' },
             { text: 'Уведомления', link: '/api/notifications' },
-            { text: 'Host API', link: '/api/host-api' },
+            { text: 'Плагины и события', link: '/api/plugins' },
+          ],
+        },
+        {
+          text: 'Прочее',
+          items: [
+            { text: 'Локализация', link: '/api/localization' },
             { text: 'Справочник', link: '/api/reference' },
           ],
         },
       ],
-      '/advanced/': [
+      '/deploy/': [
         {
-          text: 'Продвинутое',
+          text: 'Деплой',
           items: [
-            { text: 'Node Builder', link: '/advanced/node-builder' },
-            { text: 'Условия', link: '/advanced/conditions' },
-            { text: 'Миграции', link: '/advanced/migrations' },
-            { text: 'Сборка и деплой', link: '/advanced/build' },
+            { text: 'Сборка и установка', link: '/deploy/build' },
+            { text: 'Миграции', link: '/deploy/migrations' },
+          ],
+        },
+      ],
+      '/architecture/': [
+        {
+          text: 'Архитектура',
+          items: [
+            { text: 'Компоненты системы', link: '/architecture/components' },
           ],
         },
       ],
     },
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com' },
+      { icon: 'github', link: 'https://github.com/StaZisS/SuperBotGo' },
     ],
 
     search: {
@@ -78,10 +99,6 @@ export default withMermaid(defineConfig({
     outline: {
       level: [2, 3],
       label: 'На этой странице',
-    },
-
-    footer: {
-      message: 'Документация SuperBotGo Plugin SDK',
     },
 
     docFooter: {

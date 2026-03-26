@@ -4,7 +4,7 @@ layout: home
 hero:
   name: SuperBotGo SDK
   text: SDK для WASM-плагинов
-  tagline: Создавайте изолированные плагины для бот-платформы SuperBotGo на Go и WebAssembly
+  tagline: Создавайте изолированные WASM-плагины для бот-платформы SuperBotGo
   actions:
     - theme: brand
       text: Быстрый старт
@@ -14,25 +14,24 @@ hero:
       link: /api/reference
 
 features:
-  - icon: 🔒
-    title: WASM-песочница
-    details: Плагины работают в изолированном WebAssembly — без доступа к файловой системе и сети. Полная изоляция.
-  - icon: 🔌
-    title: Host API
-    details: База данных, HTTP-запросы, KV Store, межплагинные вызовы — всё через функции хоста.
-  - icon: ⚡
-    title: Мульти-триггеры
-    details: Команды мессенджера, HTTP-эндпоинты, Cron-расписания, подписки на события — из одного плагина.
-  - icon: 🌳
-    title: Node Builder
-    details: Ветвление, пагинация, динамические опции, декларативные условия — мощный DSL для команд.
-  - icon: 🔁
-    title: Надёжная доставка
-    details: Автоматические повторы с экспоненциальным backoff при сетевых ошибках, валидация и обрезка сообщений по лимитам платформы.
-  - icon: 📦
-    title: Один бинарник
-    details: Один .wasm файл — это весь плагин. Никаких зависимостей в рантайме. Мгновенный hot-reload.
-  - icon: 🔄
-    title: Миграции
-    details: Встроенная поддержка миграций при обновлении версии с доступом к KV Store.
+  - title: Руководство
+    details: Обзор платформы, создание первого плагина, структура и жизненный цикл.
+    link: /guide/overview
+    linkText: Начать
+  - title: Триггеры
+    details: Messenger-команды, HTTP-эндпоинты, Cron-расписания, Event Bus.
+    link: /guide/triggers
+    linkText: Подробнее
+  - title: API
+    details: EventContext, Host API (БД, HTTP, KV), уведомления, локализация.
+    link: /api/context
+    linkText: Справочник
+  - title: Деплой
+    details: Сборка WASM, установка через Admin API, разрешения, миграции.
+    link: /deploy/build
+    linkText: Инструкция
+  - title: Архитектура
+    details: Диаграмма компонентов системы и потоки данных.
+    link: /architecture/components
+    linkText: Смотреть
 ---

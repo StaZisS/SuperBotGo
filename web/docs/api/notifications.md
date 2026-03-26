@@ -8,10 +8,10 @@
 
 | Константа | Значение | Описание |
 |---|---|---|
-| `PriorityLow` | `0` | Информационное — без звука вне рабочих часов |
-| `PriorityNormal` | `1` | Стандартное — со звуком |
-| `PriorityHigh` | `2` | Важное — автоматическое упоминание пользователя |
-| `PriorityCritical` | `3` | Срочное — упоминание, все каналы, никогда не молчит |
+| `PriorityLow` | `0` | Информационное - без звука вне рабочих часов |
+| `PriorityNormal` | `1` | Стандартное - со звуком |
+| `PriorityHigh` | `2` | Важное - автоматическое упоминание пользователя |
+| `PriorityCritical` | `3` | Срочное - упоминание, все каналы, никогда не молчит |
 
 ### Поведение по приоритетам
 
@@ -20,7 +20,7 @@
 | Звук/вибрация | Только в раб. часы | Да | Да | Да |
 | Упоминание пользователя | Нет | Нет | Да | Да |
 | Выбор канала | Предпочтительный | Предпочтительный | Предпочтительный | **Все каналы** |
-| Учитывает MuteMentions | — | — | Да | **Нет** |
+| Учитывает MuteMentions | - | - | Да | **Нет** |
 
 ## Методы EventContext
 
@@ -29,10 +29,10 @@
 Отправляет уведомление конкретному пользователю. Хост автоматически выбирает канал доставки по предпочтениям пользователя.
 
 ```go
-// Информационное уведомление — без звука вне рабочих часов
+// Информационное уведомление -без звука вне рабочих часов
 ctx.NotifyUser(userID, "Сборка завершена", wasmplugin.PriorityLow)
 
-// Срочное — отправится во все каналы пользователя
+// Срочное -отправится во все каналы пользователя
 ctx.NotifyUser(userID, "Сервер недоступен!", wasmplugin.PriorityCritical)
 ```
 
@@ -40,9 +40,7 @@ ctx.NotifyUser(userID, "Сервер недоступен!", wasmplugin.Priority
 |---|---|---|
 | `userID` | `int64` | Глобальный ID пользователя |
 | `text` | `string` | Текст уведомления |
-| `priority` | `int` | Уровень приоритета (0–3) |
-
-**Необходимое разрешение:** `notify:user`
+| `priority` | `int` | Уровень приоритета (0--3) |
 
 ### `ctx.NotifyChat(channelType, chatID, text, priority)` {#notify-chat}
 
@@ -57,16 +55,13 @@ ctx.NotifyChat("telegram", "123456789", "Новый заказ!", wasmplugin.Pri
 | `channelType` | `string` | Тип канала (`"telegram"`, `"discord"`, ...) |
 | `chatID` | `string` | ID чата |
 | `text` | `string` | Текст уведомления |
-| `priority` | `int` | Уровень приоритета (0–3) |
-
-**Необходимое разрешение:** `notify:chat`
+| `priority` | `int` | Уровень приоритета (0--3) |
 
 ### `ctx.NotifyProject(projectID, text, priority)` {#notify-project}
 
 Отправляет уведомление во **все чаты**, привязанные к проекту.
 
 ```go
-// Оповестить все чаты проекта
 ctx.NotifyProject(42, "Релиз v2.0 опубликован", wasmplugin.PriorityHigh)
 ```
 
@@ -74,16 +69,40 @@ ctx.NotifyProject(42, "Релиз v2.0 опубликован", wasmplugin.Prior
 |---|---|---|
 | `projectID` | `int64` | ID проекта |
 | `text` | `string` | Текст уведомления |
-| `priority` | `int` | Уровень приоритета (0–3) |
+| `priority` | `int` | Уровень приоритета (0--3) |
 
-**Необходимое разрешение:** `notify:project`
+**Необходимое разрешение:** `notify`
+
+**Необходимое требование:**
+
+```go
+wasmplugin.NotifyReq("уведомления мониторинга")
+```
+
+::: info Одно разрешение на все методы
+Все три метода (`NotifyUser`, `NotifyChat`, `NotifyProject`) используют единое разрешение `notify`. Одного вызова `NotifyReq(desc)` в `Requirements` достаточно.
+:::
+
+## Уведомления vs Сообщения
+
+| | `ctx.Reply` / `ctx.SendMessage` | `ctx.Notify*` |
+|---|---|---|
+| **Назначение** | Прямой ответ в чат | Приоритетная доставка |
+| **Канал доставки** | Текущий чат | Определяется хостом по предпочтениям |
+| **Рабочие часы** | Не учитываются | Учитываются (PriorityLow) |
+| **Упоминания** | Нет | Автоматически (PriorityHigh+) |
+| **Разрешение** | - | `notify` |
+
+::: tip Когда использовать уведомления
+Используйте `ctx.Reply()` для ответов на команды пользователя. Используйте `ctx.Notify*()` для фоновых оповещений из cron/event-триггеров, где важна приоритетность и выбор канала доставки.
+:::
 
 ## Полный пример
 
 ```go
 package main
 
-import wasmplugin "github.com/example/superbot-sdk"
+import wasmplugin "github.com/superbot/wasmplugin"
 
 func main() {
     wasmplugin.Run(wasmplugin.Plugin{
@@ -91,7 +110,9 @@ func main() {
         Name:        "Мониторинг",
         Description: "Мониторинг и оповещения",
         Version:     "1.0.0",
-        Permissions: []string{"notify:user", "notify:project", "network:read"},
+        Requirements: wasmplugin.NotifyReq("уведомления мониторинга").
+            HTTP("проверка здоровья API").
+            Build(),
 
         Triggers: []wasmplugin.Trigger{
             {
@@ -105,7 +126,7 @@ func main() {
                     }
 
                     if resp.StatusCode != 200 {
-                        // Срочное уведомление — все каналы
+                        // Срочное уведомление -все каналы
                         ctx.NotifyProject(1, "API недоступен!", wasmplugin.PriorityCritical)
                         return nil
                     }
@@ -115,11 +136,9 @@ func main() {
                     return nil
                 },
             },
-        },
-
-        Commands: []wasmplugin.Command{
             {
                 Name:        "notify",
+                Type:        wasmplugin.TriggerMessenger,
                 Description: "Отправить уведомление в проект",
                 Handler: func(ctx *wasmplugin.EventContext) error {
                     text := ctx.Param("text")
@@ -133,17 +152,3 @@ func main() {
     })
 }
 ```
-
-## Уведомления vs Сообщения
-
-| | `ctx.Reply` / `ctx.SendMessage` | `ctx.Notify*` |
-|---|---|---|
-| **Назначение** | Прямой ответ в чат | Приоритетная доставка |
-| **Канал доставки** | Текущий чат | Определяется хостом по предпочтениям |
-| **Рабочие часы** | Не учитываются | Учитываются (PriorityLow) |
-| **Упоминания** | Нет | Автоматически (PriorityHigh+) |
-| **Разрешение** | — | `notify:user`, `notify:chat`, `notify:project` |
-
-::: tip Когда использовать уведомления
-Используйте `ctx.Reply()` для ответов на команды пользователя. Используйте `ctx.Notify*()` для фоновых оповещений из cron/event-триггеров, где важна приоритетность и выбор канала доставки.
-:::
