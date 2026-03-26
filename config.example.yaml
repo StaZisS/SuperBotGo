@@ -20,9 +20,15 @@ redis:
 
 telegram:
   token: "YOUR_TELEGRAM_BOT_TOKEN"
+  mode: polling              # "polling" (default, for dev) or "webhook" (for prod/k8s)
+  # webhook_url: ""          # required when mode=webhook, e.g. "https://bot.example.com/tg/webhook"
+  # webhook_secret: ""       # optional secret token for webhook request validation
+  # webhook_listen: ":8443"  # local address for webhook HTTP server
 
 discord:
   token: "YOUR_DISCORD_BOT_TOKEN"
+  shard_id: 0                # 0-indexed shard identifier (default 0)
+  shard_count: 1             # total number of shards (1 = no sharding)
 
 admin:
   port: 8080

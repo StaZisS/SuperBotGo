@@ -7,10 +7,11 @@ import (
 )
 
 type Update struct {
-	ChannelType    model.ChannelType
-	PlatformUserID model.PlatformUserID
-	Input          model.UserInput
-	ChatID         string
+	ChannelType      model.ChannelType
+	PlatformUserID   model.PlatformUserID
+	PlatformUpdateID string
+	Input            model.UserInput
+	ChatID           string
 }
 
 type UpdateHandlerFunc func(ctx context.Context, u Update) error

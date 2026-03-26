@@ -12,6 +12,12 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+type BotConfig struct {
+	Token      string
+	ShardID    int
+	ShardCount int // 0 or 1 = no sharding
+}
+
 type Bot struct {
 	session     *discordgo.Session
 	handler     channel.UpdateHandlerFunc
@@ -20,14 +26,22 @@ type Bot struct {
 	connected   atomic.Bool
 }
 
-func NewBot(token string, handler channel.UpdateHandlerFunc, joinHandler channel.ChatJoinHandler, logger *slog.Logger) (*Bot, error) {
+func NewBot(cfg BotConfig, handler channel.UpdateHandlerFunc, joinHandler channel.ChatJoinHandler, logger *slog.Logger) (*Bot, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
-	session, err := discordgo.New("Bot " + token)
+	session, err := discordgo.New("Bot " + cfg.Token)
 	if err != nil {
 		return nil, fmt.Errorf("discord: create session: %w", err)
+	}
+
+	if cfg.ShardCount > 1 {
+		session.ShardID = cfg.ShardID
+		session.ShardCount = cfg.ShardCount
+		logger.Info("discord: sharding enabled",
+			slog.Int("shard_id", cfg.ShardID),
+			slog.Int("shard_count", cfg.ShardCount))
 	}
 
 	session.Identify.Intents = discordgo.IntentsGuilds |
@@ -154,10 +168,11 @@ func (b *Bot) registerHandlers() {
 
 		ctx := context.Background()
 		if err := b.handler(ctx, channel.Update{
-			ChannelType:    model.ChannelDiscord,
-			PlatformUserID: model.PlatformUserID(platformUserID),
-			Input:          model.TextInput{Text: text},
-			ChatID:         chatID,
+			ChannelType:      model.ChannelDiscord,
+			PlatformUserID:   model.PlatformUserID(platformUserID),
+			PlatformUpdateID: "dc:msg:" + m.ID,
+			Input:            model.TextInput{Text: text},
+			ChatID:           chatID,
 		}); err != nil {
 			b.logger.Error("discord: error handling message",
 				slog.String("user", platformUserID),
@@ -190,10 +205,11 @@ func (b *Bot) registerHandlers() {
 
 		ctx := context.Background()
 		if err := b.handler(ctx, channel.Update{
-			ChannelType:    model.ChannelDiscord,
-			PlatformUserID: model.PlatformUserID(platformUserID),
-			Input:          model.CallbackInput{Data: data.CustomID},
-			ChatID:         chatID,
+			ChannelType:      model.ChannelDiscord,
+			PlatformUserID:   model.PlatformUserID(platformUserID),
+			PlatformUpdateID: "dc:int:" + i.ID,
+			Input:            model.CallbackInput{Data: data.CustomID},
+			ChatID:           chatID,
 		}); err != nil {
 			b.logger.Error("discord: error handling button",
 				slog.String("user", platformUserID),

@@ -75,6 +75,7 @@ export default withMermaid(defineConfig({
           items: [
             { text: 'Сборка и установка', link: '/deploy/build' },
             { text: 'Миграции', link: '/deploy/migrations' },
+            { text: 'Масштабирование', link: '/deploy/scaling' },
           ],
         },
       ],

@@ -19,7 +19,7 @@ graph LR
 
         subgraph Layer1[" "]
             direction TB
-            channel["<b>channel</b><br/>ChannelManager<br/>AdapterRegistry<br/>Telegram · Discord"]
+            channel["<b>channel</b><br/>ChannelManager<br/>AdapterRegistry<br/>Dedup Middleware<br/>Telegram · Discord"]
             admin["<b>admin</b><br/>SPA (React)<br/>Admin API"]
         end
 
@@ -85,6 +85,7 @@ graph LR
 
     %% → Хранилища
     authz & notification --> PG
+    channel --> RD
     state --> RD
     trigger --> RD
     admin --> BS
@@ -118,8 +119,9 @@ graph LR
 |-----------|------|------------|
 | **ChannelManager** | `manager.go` | Точка входа для входящих сообщений. Резолвит пользователя и передаёт в TriggerRouter |
 | **AdapterRegistry** | `registry.go` | Реестр каналов; маршрутизация исходящих сообщений по `ChannelType` |
-| **Telegram Adapter** | `telegram/` | Приём и отправка сообщений через Telegram Bot API |
-| **Discord Adapter** | `discord/` | Приём и отправка сообщений через Discord Gateway |
+| **Telegram Adapter** | `telegram/` | Приём и отправка сообщений через Telegram Bot API. Режимы: long polling / webhook |
+| **Discord Adapter** | `discord/` | Приём и отправка сообщений через Discord Gateway. Поддержка шардинга |
+| **Dedup Middleware** | `dedup/` | Дедупликация входящих обновлений через Redis SET NX |
 
 ### `internal/state`
 
@@ -193,6 +195,7 @@ graph LR
 sequenceDiagram
     actor User
     participant Ch as Channel Adapter
+    participant DD as Dedup Middleware
     participant CM as ChannelManager
     participant US as UserService
     participant SM as StateManager
@@ -202,18 +205,24 @@ sequenceDiagram
     participant SA as SenderAPI
 
     User->>Ch: Сообщение
-    Ch->>CM: OnUpdate(ctx, Update)
-    CM->>US: FindOrCreateUser()
-    US-->>CM: GlobalUser
-    CM->>AZ: CheckCommand()
-    AZ-->>CM: allowed
-    CM->>SM: StartCommand / ProcessInput
-    SM-->>CM: StateResult{Params}
-    CM->>TR: RouteEvent(Event)
-    TR->>P: HandleEvent(Event)
-    P->>SA: Reply(Message)
-    SA->>Ch: SendToChat()
-    Ch->>User: Ответ
+    Ch->>DD: OnUpdate(ctx, Update)
+    DD->>DD: Redis SET NX (PlatformUpdateID)
+    alt дубликат
+        DD-->>Ch: skip
+    else новое обновление
+        DD->>CM: next(ctx, Update)
+        CM->>US: FindOrCreateUser()
+        US-->>CM: GlobalUser
+        CM->>AZ: CheckCommand()
+        AZ-->>CM: allowed
+        CM->>SM: StartCommand / ProcessInput
+        SM-->>CM: StateResult{Params}
+        CM->>TR: RouteEvent(Event)
+        TR->>P: HandleEvent(Event)
+        P->>SA: Reply(Message)
+        SA->>Ch: SendToChat()
+        Ch->>User: Ответ
+    end
 ```
 
 ### Загрузка WASM-плагина

@@ -14,22 +14,51 @@ import (
 	tele "gopkg.in/telebot.v3"
 )
 
+type BotConfig struct {
+	Token         string
+	Mode          string // "polling" (default) or "webhook"
+	WebhookURL    string
+	WebhookSecret string
+	WebhookListen string
+}
+
 type Bot struct {
 	bot         *tele.Bot
 	handler     channel.UpdateHandlerFunc
 	joinHandler channel.ChatJoinHandler
 	logger      *slog.Logger
 	connected   atomic.Bool
+	mode        string
 }
 
-func NewBot(token string, handler channel.UpdateHandlerFunc, joinHandler channel.ChatJoinHandler, logger *slog.Logger) (*Bot, error) {
+func NewBot(cfg BotConfig, handler channel.UpdateHandlerFunc, joinHandler channel.ChatJoinHandler, logger *slog.Logger) (*Bot, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
+	mode := cfg.Mode
+	if mode == "" {
+		mode = "polling"
+	}
+
+	var poller tele.Poller
+	switch mode {
+	case "webhook":
+		wh := &tele.Webhook{
+			SecretToken: cfg.WebhookSecret,
+			Endpoint:    &tele.WebhookEndpoint{PublicURL: cfg.WebhookURL},
+		}
+		if cfg.WebhookListen != "" {
+			wh.Listen = cfg.WebhookListen
+		}
+		poller = wh
+	default:
+		poller = &tele.LongPoller{Timeout: 10 * time.Second}
+	}
+
 	pref := tele.Settings{
-		Token:  token,
-		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
+		Token:  cfg.Token,
+		Poller: poller,
 	}
 
 	b, err := tele.NewBot(pref)
@@ -42,6 +71,7 @@ func NewBot(token string, handler channel.UpdateHandlerFunc, joinHandler channel
 		handler:     handler,
 		joinHandler: joinHandler,
 		logger:      logger,
+		mode:        mode,
 	}
 
 	tb.registerHandlers()
@@ -54,7 +84,7 @@ func (b *Bot) Adapter() *Adapter {
 }
 
 func (b *Bot) Start(ctx context.Context) error {
-	b.logger.Info("Telegram bot starting long polling")
+	b.logger.Info("Telegram bot starting", slog.String("mode", b.mode))
 	b.connected.Store(true)
 
 	go func() {
@@ -84,6 +114,7 @@ func (b *Bot) RegisterCommands(commands []string) {
 func (b *Bot) handleTextMessage(c tele.Context) error {
 	chatID := strconv.FormatInt(c.Chat().ID, 10)
 	platformUserID := strconv.FormatInt(c.Sender().ID, 10)
+	updateID := strconv.Itoa(c.Update().ID)
 	text := c.Text()
 
 	b.logger.Info("telegram: received message",
@@ -93,10 +124,11 @@ func (b *Bot) handleTextMessage(c tele.Context) error {
 
 	ctx := context.Background()
 	if err := b.handler(ctx, channel.Update{
-		ChannelType:    model.ChannelTelegram,
-		PlatformUserID: model.PlatformUserID(platformUserID),
-		Input:          model.TextInput{Text: text},
-		ChatID:         chatID,
+		ChannelType:      model.ChannelTelegram,
+		PlatformUserID:   model.PlatformUserID(platformUserID),
+		PlatformUpdateID: "tg:" + updateID,
+		Input:            model.TextInput{Text: text},
+		ChatID:           chatID,
 	}); err != nil {
 		b.logger.Error("telegram: error handling message",
 			slog.String("user", platformUserID),
@@ -188,6 +220,7 @@ func (b *Bot) registerHandlers() {
 
 		chatID := strconv.FormatInt(c.Chat().ID, 10)
 		platformUserID := strconv.FormatInt(c.Sender().ID, 10)
+		updateID := strconv.Itoa(c.Update().ID)
 		data := c.Callback().Data
 
 		b.logger.Info("telegram: received callback",
@@ -197,10 +230,11 @@ func (b *Bot) registerHandlers() {
 
 		ctx := context.Background()
 		if err := b.handler(ctx, channel.Update{
-			ChannelType:    model.ChannelTelegram,
-			PlatformUserID: model.PlatformUserID(platformUserID),
-			Input:          model.CallbackInput{Data: data},
-			ChatID:         chatID,
+			ChannelType:      model.ChannelTelegram,
+			PlatformUserID:   model.PlatformUserID(platformUserID),
+			PlatformUpdateID: "tg:" + updateID,
+			Input:            model.CallbackInput{Data: data},
+			ChatID:           chatID,
 		}); err != nil {
 			b.logger.Error("telegram: error handling callback",
 				slog.String("user", platformUserID),

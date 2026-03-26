@@ -52,11 +52,17 @@ type RedisConfig struct {
 }
 
 type TelegramConfig struct {
-	Token string `koanf:"token"`
+	Token         string `koanf:"token"`
+	Mode          string `koanf:"mode"`           // "polling" (default) or "webhook"
+	WebhookURL    string `koanf:"webhook_url"`    // public HTTPS URL for webhook mode
+	WebhookSecret string `koanf:"webhook_secret"` // secret token for webhook validation
+	WebhookListen string `koanf:"webhook_listen"` // local listen addr, e.g. ":8443"
 }
 
 type DiscordConfig struct {
-	Token string `koanf:"token"`
+	Token      string `koanf:"token"`
+	ShardID    int    `koanf:"shard_id"`    // 0-indexed shard identifier
+	ShardCount int    `koanf:"shard_count"` // total shards (0 or 1 = no sharding)
 }
 
 func Load() (*Config, error) {
@@ -104,8 +110,33 @@ func Load() (*Config, error) {
 	if cfg.Admin.BlobStore == "" {
 		cfg.Admin.BlobStore = "localfs"
 	}
+	if cfg.Telegram.Mode == "" {
+		cfg.Telegram.Mode = "polling"
+	}
+	if cfg.Discord.ShardCount <= 0 {
+		cfg.Discord.ShardCount = 1
+	}
+
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 
 	return &cfg, nil
+}
+
+func (c *Config) Validate() error {
+	switch c.Telegram.Mode {
+	case "polling", "webhook":
+	default:
+		return fmt.Errorf("telegram.mode must be \"polling\" or \"webhook\", got %q", c.Telegram.Mode)
+	}
+	if c.Telegram.Mode == "webhook" && c.Telegram.WebhookURL == "" {
+		return fmt.Errorf("telegram.webhook_url is required when telegram.mode=webhook")
+	}
+	if c.Discord.ShardID < 0 || c.Discord.ShardID >= c.Discord.ShardCount {
+		return fmt.Errorf("discord.shard_id (%d) must be in range [0, %d)", c.Discord.ShardID, c.Discord.ShardCount)
+	}
+	return nil
 }
 
 func isFileNotFound(err error) bool {

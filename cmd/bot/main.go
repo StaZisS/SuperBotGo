@@ -17,6 +17,7 @@ import (
 	"SuperBotGo/internal/authz"
 	"SuperBotGo/internal/authz/providers"
 	"SuperBotGo/internal/channel"
+	"SuperBotGo/internal/channel/dedup"
 	"SuperBotGo/internal/channel/discord"
 	"SuperBotGo/internal/channel/telegram"
 	"SuperBotGo/internal/chat"
@@ -371,10 +372,18 @@ func main() {
 
 	joinHandler := newChatJoinHandler(chatRegistry, logger)
 
+	dedupMw := dedup.Middleware(redisClient, dedup.Config{}, logger)
+
 	if cfg.Telegram.Token != "" {
-		logger.Info("starting Telegram bot")
-		tgHandler := channel.Chain(channelMgr.OnUpdate, telegram.CallbackNormalizer())
-		tgBot, err := telegram.NewBot(cfg.Telegram.Token, tgHandler, joinHandler, logger)
+		logger.Info("starting Telegram bot", slog.String("mode", cfg.Telegram.Mode))
+		tgHandler := channel.Chain(channelMgr.OnUpdate, dedupMw, telegram.CallbackNormalizer())
+		tgBot, err := telegram.NewBot(telegram.BotConfig{
+			Token:         cfg.Telegram.Token,
+			Mode:          cfg.Telegram.Mode,
+			WebhookURL:    cfg.Telegram.WebhookURL,
+			WebhookSecret: cfg.Telegram.WebhookSecret,
+			WebhookListen: cfg.Telegram.WebhookListen,
+		}, tgHandler, joinHandler, logger)
 		if err != nil {
 			logger.Error("failed to create Telegram bot", slog.Any("error", err))
 		} else {
@@ -391,8 +400,15 @@ func main() {
 	}
 
 	if cfg.Discord.Token != "" {
-		logger.Info("starting Discord bot")
-		dcBot, err := discord.NewBot(cfg.Discord.Token, channelMgr.OnUpdate, joinHandler, logger)
+		logger.Info("starting Discord bot",
+			slog.Int("shard_id", cfg.Discord.ShardID),
+			slog.Int("shard_count", cfg.Discord.ShardCount))
+		dcHandler := channel.Chain(channelMgr.OnUpdate, dedupMw)
+		dcBot, err := discord.NewBot(discord.BotConfig{
+			Token:      cfg.Discord.Token,
+			ShardID:    cfg.Discord.ShardID,
+			ShardCount: cfg.Discord.ShardCount,
+		}, dcHandler, joinHandler, logger)
 		if err != nil {
 			logger.Error("failed to create Discord bot", slog.Any("error", err))
 		} else {
