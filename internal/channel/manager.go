@@ -3,6 +3,7 @@ package channel
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 
 	"SuperBotGo/internal/errs"
@@ -37,8 +38,8 @@ type PluginRegistry interface {
 	GetPluginIDByCommand(commandName string) string
 }
 
-type UpdateRouterIface interface {
-	Route(ctx context.Context, req model.CommandRequest) error
+type EventRouter interface {
+	RouteEvent(ctx context.Context, event model.Event) (*model.EventResponse, error)
 }
 
 type Authorizer interface {
@@ -47,7 +48,7 @@ type Authorizer interface {
 
 type ChannelManager struct {
 	userService UserService
-	router      UpdateRouterIface
+	router      EventRouter
 	state       StateManager
 	plugins     PluginRegistry
 	authorizer  Authorizer
@@ -57,7 +58,7 @@ type ChannelManager struct {
 
 func NewChannelManager(
 	userService UserService,
-	router UpdateRouterIface,
+	router EventRouter,
 	stateManager StateManager,
 	plugins PluginRegistry,
 	authorizer Authorizer,
@@ -150,7 +151,7 @@ func (m *ChannelManager) handleCommand(
 	}
 
 	if result.IsComplete {
-		return m.router.Route(ctx, model.CommandRequest{
+		return m.routeCommand(ctx, pluginID, model.CommandRequest{
 			UserID:      userID,
 			ChannelType: channelType,
 			ChatID:      chatID,
@@ -183,7 +184,8 @@ func (m *ChannelManager) handleInput(
 	}
 
 	if result.IsComplete {
-		return m.router.Route(ctx, model.CommandRequest{
+		pluginID := m.plugins.GetPluginIDByCommand(result.CommandName)
+		return m.routeCommand(ctx, pluginID, model.CommandRequest{
 			UserID:      userID,
 			CommandName: result.CommandName,
 			Params:      result.Params,
@@ -193,6 +195,21 @@ func (m *ChannelManager) handleInput(
 		})
 	}
 
+	return nil
+}
+
+func (m *ChannelManager) routeCommand(ctx context.Context, pluginID string, req model.CommandRequest) error {
+	event, err := model.NewMessengerEvent(req, pluginID)
+	if err != nil {
+		return fmt.Errorf("build messenger event: %w", err)
+	}
+	resp, err := m.router.RouteEvent(ctx, event)
+	if err != nil {
+		return err
+	}
+	if resp != nil && resp.Error != "" {
+		return fmt.Errorf("plugin %q command %q: %s", pluginID, req.CommandName, resp.Error)
+	}
 	return nil
 }
 

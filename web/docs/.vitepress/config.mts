@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitepress'
+import { withMermaid } from 'vitepress-plugin-mermaid'
 
-export default defineConfig({
+export default withMermaid(defineConfig({
   title: 'SuperBotGo SDK',
   description: 'Документация по SDK для WASM-плагинов SuperBotGo',
   lang: 'ru-RU',
@@ -9,12 +10,21 @@ export default defineConfig({
     logo: '/logo.svg',
 
     nav: [
+      { text: 'Архитектура', link: '/architecture/components' },
       { text: 'Руководство', link: '/guide/quick-start' },
       { text: 'API', link: '/api/context' },
       { text: 'Продвинутое', link: '/advanced/node-builder' },
     ],
 
     sidebar: {
+      '/architecture/': [
+        {
+          text: 'Архитектура',
+          items: [
+            { text: 'Диаграмма компонентов', link: '/architecture/components' },
+          ],
+        },
+      ],
       '/guide/': [
         {
           text: 'Начало работы',
@@ -87,4 +97,8 @@ export default defineConfig({
       text: 'Обновлено',
     },
   },
-})
+
+  mermaid: {
+    theme: 'base',
+  },
+}))

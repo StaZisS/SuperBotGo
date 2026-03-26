@@ -326,11 +326,9 @@ func main() {
 
 	cronScheduler.Start()
 
-	updateRouter := plugin.NewUpdateRouter(pluginManager)
-
 	channelMgr := channel.NewChannelManager(
 		userService,
-		updateRouter,
+		triggerRouter,
 		stateAdapter,
 		pluginManager,
 		authorizer,
