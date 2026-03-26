@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"regexp"
 
+	"SuperBotGo/internal/locale"
 	"SuperBotGo/internal/model"
 	"SuperBotGo/internal/plugin"
 	"SuperBotGo/internal/state"
@@ -42,18 +43,6 @@ func (wp *WasmPlugin) Version() string {
 	return wp.meta.Version
 }
 
-func (wp *WasmPlugin) SupportedRoles() []string {
-	seen := make(map[string]bool)
-	var roles []string
-	for _, t := range wp.meta.Triggers {
-		if t.MinRole != "" && !seen[t.MinRole] {
-			seen[t.MinRole] = true
-			roles = append(roles, t.MinRole)
-		}
-	}
-	return roles
-}
-
 func (wp *WasmPlugin) Commands() []*state.CommandDefinition {
 	var defs []*state.CommandDefinition
 	for _, t := range wp.meta.Triggers {
@@ -64,67 +53,16 @@ func (wp *WasmPlugin) Commands() []*state.CommandDefinition {
 			Name:        t.Name,
 			Description: t.Description,
 		}
-		if t.MinRole != "" {
-			def.Requirements = &model.RoleRequirements{
-				GlobalRoles: []string{t.MinRole},
-			}
-		}
 
-		if len(t.Nodes) > 0 {
-			for _, nd := range t.Nodes {
-				if cn := wp.nodeDefToCommandNode(nd); cn != nil {
-					def.Nodes = append(def.Nodes, cn)
-				}
-			}
-		} else {
-			for _, step := range t.Steps {
-				def.Nodes = append(def.Nodes, stepDefToNode(step))
+		for _, nd := range t.Nodes {
+			if cn := wp.nodeDefToCommandNode(nd); cn != nil {
+				def.Nodes = append(def.Nodes, cn)
 			}
 		}
 
 		defs = append(defs, def)
 	}
 	return defs
-}
-
-func stepDefToNode(sd wasmrt.StepDef) state.StepNode {
-	node := state.StepNode{
-		ParamName: sd.Param,
-	}
-
-	prompt := sd.Prompt
-	options := sd.Options
-	node.MessageBuilder = func(_ state.StepContext) model.Message {
-		if len(options) > 0 {
-			opts := make([]model.Option, len(options))
-			for i, o := range options {
-				opts[i] = model.Option{Label: o.Label, Value: o.Value}
-			}
-			return model.Message{
-				Blocks: []model.ContentBlock{
-					model.OptionsBlock{Prompt: prompt, Options: opts},
-				},
-			}
-		}
-		return model.Message{
-			Blocks: []model.ContentBlock{
-				model.TextBlock{Text: prompt, Style: model.StylePlain},
-			},
-		}
-	}
-
-	if sd.Validation != "" {
-		pattern := sd.Validation
-		node.Validate = func(input model.UserInput) bool {
-			re, err := regexp.Compile(pattern)
-			if err != nil {
-				return true
-			}
-			return re.MatchString(input.TextValue())
-		}
-	}
-
-	return node
 }
 
 func (wp *WasmPlugin) nodeDefToCommandNode(nd wasmrt.NodeDef) state.CommandNode {
@@ -508,8 +446,8 @@ func (wp *WasmPlugin) HandleEvent(ctx context.Context, event model.Event) (*mode
 							return &resp, fmt.Errorf("wasm plugin %q localized reply send: %w", wp.meta.ID, sendErr)
 						}
 					} else {
-						// Fallback: resolve to chat locale (best-effort with "en").
-						text := ResolveLocalizedText(resp.ReplyTexts, "en")
+						// Fallback: resolve to default locale.
+						text := ResolveLocalizedText(resp.ReplyTexts, locale.Default())
 						if sendErr := wp.send(ctx, m.ChannelType, m.ChatID, text); sendErr != nil {
 							slog.Error("wasm plugin reply failed",
 								"plugin", wp.meta.ID,

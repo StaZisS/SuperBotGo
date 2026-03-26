@@ -53,35 +53,16 @@ func handleMeta(p Plugin) {
 			Name:        t.Name,
 			Type:        t.Type,
 			Description: t.Description,
-			MinRole:     t.MinRole,
 			Path:        t.Path,
 			Methods:     t.Methods,
 			Schedule:    t.Schedule,
 			Topic:       t.Topic,
 		}
 
-		if t.Type == TriggerMessenger {
-			if len(t.Nodes) > 0 {
-				reg := make(callbackMap)
-				for _, node := range t.Nodes {
-					td.Nodes = append(td.Nodes, node.toNodeDef(t.Name, reg))
-				}
-			} else {
-				for _, s := range t.Steps {
-					sd := stepDef{
-						Param:      s.Param,
-						Prompt:     s.Prompt,
-						Validation: s.Validation,
-					}
-					for _, o := range s.Options {
-						sd.Options = append(sd.Options, optionDef{
-							Label:  o.Label,
-							Labels: o.Labels,
-							Value:  o.Value,
-						})
-					}
-					td.Steps = append(td.Steps, sd)
-				}
+		if t.Type == TriggerMessenger && len(t.Nodes) > 0 {
+			reg := make(callbackMap)
+			for _, node := range t.Nodes {
+				td.Nodes = append(td.Nodes, node.toNodeDef(t.Name, reg))
 			}
 		}
 

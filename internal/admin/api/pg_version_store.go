@@ -22,15 +22,10 @@ func (s *PgVersionStore) SaveVersion(ctx context.Context, rec VersionRecord) (in
 		configJSON = rec.ConfigJSON
 	}
 
-	permissions := rec.Permissions
-	if permissions == nil {
-		permissions = []string{}
-	}
-
 	var id int64
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO wasm_plugin_versions (plugin_id, version, wasm_key, wasm_hash, config_json, permissions, changelog)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO wasm_plugin_versions (plugin_id, version, wasm_key, wasm_hash, config_json, changelog)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id
 	`,
 		rec.PluginID,
@@ -38,7 +33,6 @@ func (s *PgVersionStore) SaveVersion(ctx context.Context, rec VersionRecord) (in
 		rec.WasmKey,
 		rec.WasmHash,
 		configJSON,
-		permissions,
 		rec.Changelog,
 	).Scan(&id)
 	if err != nil {
@@ -49,7 +43,7 @@ func (s *PgVersionStore) SaveVersion(ctx context.Context, rec VersionRecord) (in
 
 func (s *PgVersionStore) ListVersions(ctx context.Context, pluginID string) ([]VersionRecord, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, plugin_id, version, wasm_key, wasm_hash, config_json, permissions, changelog, created_at
+		SELECT id, plugin_id, version, wasm_key, wasm_hash, config_json, changelog, created_at
 		FROM wasm_plugin_versions
 		WHERE plugin_id = $1
 		ORDER BY created_at DESC
@@ -69,7 +63,6 @@ func (s *PgVersionStore) ListVersions(ctx context.Context, pluginID string) ([]V
 			&rec.WasmKey,
 			&rec.WasmHash,
 			&rec.ConfigJSON,
-			&rec.Permissions,
 			&rec.Changelog,
 			&rec.CreatedAt,
 		); err != nil {
@@ -86,7 +79,7 @@ func (s *PgVersionStore) ListVersions(ctx context.Context, pluginID string) ([]V
 func (s *PgVersionStore) GetVersion(ctx context.Context, id int64) (VersionRecord, error) {
 	var rec VersionRecord
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, plugin_id, version, wasm_key, wasm_hash, config_json, permissions, changelog, created_at
+		SELECT id, plugin_id, version, wasm_key, wasm_hash, config_json, changelog, created_at
 		FROM wasm_plugin_versions
 		WHERE id = $1
 	`, id).Scan(
@@ -96,7 +89,6 @@ func (s *PgVersionStore) GetVersion(ctx context.Context, id int64) (VersionRecor
 		&rec.WasmKey,
 		&rec.WasmHash,
 		&rec.ConfigJSON,
-		&rec.Permissions,
 		&rec.Changelog,
 		&rec.CreatedAt,
 	)

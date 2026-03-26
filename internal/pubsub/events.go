@@ -7,7 +7,6 @@ const (
 	EventPluginDisabled    = "plugin_disabled"
 	EventPluginUpdated     = "plugin_updated"
 	EventConfigChanged     = "config_changed"
-	EventPermChanged       = "permissions_changed"
 )
 
 type AdminEvent struct {

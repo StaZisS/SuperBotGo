@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"SuperBotGo/internal/locale"
 	"SuperBotGo/internal/model"
 )
 
@@ -77,9 +78,9 @@ func (r *PgUserRepo) Save(ctx context.Context, user *model.GlobalUser) (*model.G
 		role = "USER"
 	}
 
-	locale := user.Locale
-	if locale == "" {
-		locale = "en"
+	loc := user.Locale
+	if loc == "" {
+		loc = locale.Default()
 	}
 
 	if user.ID == 0 {
@@ -87,7 +88,7 @@ func (r *PgUserRepo) Save(ctx context.Context, user *model.GlobalUser) (*model.G
 			INSERT INTO global_users (tsu_accounts_id, primary_channel, profile_data, locale, role)
 			VALUES ($1, $2, $3, $4, $5)
 			RETURNING id
-		`, nil, user.PrimaryChannel, profileStr, locale, role).Scan(&user.ID)
+		`, nil, user.PrimaryChannel, profileStr, loc, role).Scan(&user.ID)
 		if err != nil {
 			return nil, fmt.Errorf("insert user: %w", err)
 		}
@@ -96,7 +97,7 @@ func (r *PgUserRepo) Save(ctx context.Context, user *model.GlobalUser) (*model.G
 			UPDATE global_users
 			SET primary_channel = $2, profile_data = $3, locale = $4, role = $5
 			WHERE id = $1
-		`, user.ID, user.PrimaryChannel, profileStr, locale, role)
+		`, user.ID, user.PrimaryChannel, profileStr, loc, role)
 		if err != nil {
 			return nil, fmt.Errorf("update user %d: %w", user.ID, err)
 		}

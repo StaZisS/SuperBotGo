@@ -454,7 +454,6 @@ func (h *AdminHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	if wp, ok := h.loader.GetPlugin(pluginID); ok {
 		h.manager.Register(wp)
 		h.syncTriggersOnUpdate(r.Context(), pluginID, oldTriggers, wp)
-		h.syncPermissionsOnUpdate(pluginID, record, wp)
 
 		if h.versions != nil {
 			if _, err := h.versions.SaveVersion(r.Context(), VersionRecord{
@@ -743,7 +742,6 @@ func (h *AdminHandler) handleGetPlugin(w http.ResponseWriter, r *http.Request) {
 
 	if storeErr == nil {
 		resp["config"] = record.ConfigJSON
-		resp["permissions"] = record.Permissions // legacy: kept in DB for backward compat
 		resp["wasm_hash"] = record.WasmHash
 		resp["installed_at"] = record.InstalledAt
 		resp["updated_at"] = record.UpdatedAt
@@ -753,11 +751,6 @@ func (h *AdminHandler) handleGetPlugin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp)
-}
-
-// syncPermissionsOnUpdate is a no-op now — permissions are auto-derived from requirements
-// during plugin load. Kept as a stub to avoid breaking callers.
-func (h *AdminHandler) syncPermissionsOnUpdate(_ string, _ PluginRecord, _ *adapter.WasmPlugin) {
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {

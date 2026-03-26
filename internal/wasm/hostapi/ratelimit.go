@@ -6,8 +6,6 @@ import (
 )
 
 var DefaultRateLimits = map[string]int{
-	"db_query":       100,
-	"db_save":        50,
 	"http_request":   20,
 	"call_plugin":    10,
 	"publish_event":  50,

@@ -3,6 +3,7 @@ package user
 import (
 	"context"
 
+	"SuperBotGo/internal/locale"
 	"SuperBotGo/internal/model"
 )
 
@@ -38,7 +39,7 @@ func (s *Service) FindOrCreateUser(ctx context.Context, channelType model.Channe
 
 	newUser := &model.GlobalUser{
 		PrimaryChannel: channelType,
-		Locale:         "en",
+		Locale:         locale.Default(),
 	}
 
 	savedUser, err := s.userRepo.Save(ctx, newUser)

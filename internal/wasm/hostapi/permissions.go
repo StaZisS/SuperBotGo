@@ -28,8 +28,6 @@ func PermissionsFromRequirements(reqs []wasmrt.RequirementDef) []string {
 			if r.Target != "" {
 				perms = append(perms, "plugins:call:"+r.Target)
 			}
-		case "db":
-			perms = append(perms, "db")
 		}
 	}
 	return perms

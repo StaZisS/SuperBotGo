@@ -7,8 +7,6 @@ const (
 
 	DefaultHostHTTPTimeoutSeconds = 4
 
-	DefaultHostDBTimeoutSeconds = 3
-
 	DefaultHostEventTimeoutSeconds = 3
 
 	DefaultHostCallPluginTimeoutSeconds = 4

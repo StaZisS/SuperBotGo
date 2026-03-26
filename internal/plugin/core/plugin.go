@@ -43,7 +43,6 @@ func New(
 func (p *Plugin) ID() string                           { return "core" }
 func (p *Plugin) Name() string                         { return "Core Commands" }
 func (p *Plugin) Version() string                      { return "1.0.0" }
-func (p *Plugin) SupportedRoles() []string             { return []string{"USER", "ADMIN"} }
 func (p *Plugin) Commands() []*state.CommandDefinition { return p.cmdDefs }
 
 func (p *Plugin) HandleEvent(ctx context.Context, event model.Event) (*model.EventResponse, error) {

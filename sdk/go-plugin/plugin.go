@@ -75,23 +75,15 @@ const (
 )
 
 // Trigger declares a trigger source this plugin responds to.
-// For messenger triggers this also describes the interactive command flow
-// (steps / nodes) and optional role requirements.
+// For messenger triggers this also describes the interactive command flow.
 type Trigger struct {
 	Name        string
 	Type        TriggerType
 	Description string
 
-	// MinRole is an optional minimum role required to execute this trigger.
-	// Applicable to messenger and HTTP triggers; ignored for cron.
-	MinRole string
-
-	// Messenger-specific: interactive command flow.
-	// Use either Steps (simple, flat list) or Nodes (full node tree with
+	// Messenger-specific: interactive command flow (node tree with
 	// branching, pagination, dynamic options, conditions).
-	// If Nodes is set, Steps is ignored.
-	Steps []Step // simple mode (flat list of steps)
-	Nodes []Node // advanced mode (node tree)
+	Nodes []Node
 
 	// HTTP-specific.
 	Path    string   // e.g. "/webhook"
@@ -108,16 +100,6 @@ type Trigger struct {
 	Handler func(ctx *EventContext) error
 }
 
-// Step describes one parameter-collection step in a multi-step command.
-// This is the legacy flat format. For advanced features (branching, pagination,
-// dynamic options, conditions) use [Trigger.Nodes] with [NewStep] instead.
-type Step struct {
-	Param      string   // parameter key
-	Prompt     string   // text shown to the user
-	Options    []Option // if non-empty, render as buttons/choices
-	Validation string   // optional regex the value must match
-}
-
 // Option is a single choice in a step with predefined values.
 type Option struct {
 	Label  string            // single-locale label (backward compatible)
@@ -129,7 +111,7 @@ type Option struct {
 // All declared requirements are mandatory — the plugin will not load
 // unless every requirement is fulfilled.
 type Requirement struct {
-	Type        string // "database", "http", "kv", "notify", "events", "plugin", "db"
+	Type        string // "database", "http", "kv", "notify", "events", "plugin"
 	Description string
 	Target      string       // for "plugin" type: target plugin ID
 	Config      ConfigSchema // config the admin must fill (e.g. DSN for database)
@@ -175,11 +157,6 @@ func EventsReq(desc string) *RequirementBuilder {
 // PluginDep declares a requirement for calling another plugin.
 func PluginDep(target, desc string) *RequirementBuilder {
 	return &RequirementBuilder{r: Requirement{Type: "plugin", Description: desc, Target: target}}
-}
-
-// LegacyDB declares a requirement for legacy db_query/db_save host functions.
-func LegacyDB(desc string) *RequirementBuilder {
-	return &RequirementBuilder{r: Requirement{Type: "db", Description: desc}}
 }
 
 // configStore holds the parsed plugin configuration (set during configure action,

@@ -13,9 +13,8 @@ import (
 )
 
 type PluginData struct {
-	WasmKey     string
-	ConfigJSON  json.RawMessage
-	Permissions []string
+	WasmKey    string
+	ConfigJSON json.RawMessage
 }
 
 type PluginFetcher func(ctx context.Context, id string) (*PluginData, error)
@@ -69,8 +68,6 @@ func (h *AdminEventHandler) Handle(event AdminEvent) {
 		h.handleUpdate(ctx, event.PluginID)
 	case EventConfigChanged:
 		h.handleConfigChanged(ctx, event.PluginID)
-	case EventPermChanged:
-		h.handlePermChanged(ctx, event.PluginID)
 	default:
 		slog.Warn("pubsub: unknown event type", "type", event.Type)
 	}
@@ -164,12 +161,6 @@ func (h *AdminEventHandler) handleConfigChanged(ctx context.Context, pluginID st
 		wp.SetConfig(data.ConfigJSON)
 		slog.Info("pubsub: plugin config updated", "id", pluginID)
 	}
-}
-
-func (h *AdminEventHandler) handlePermChanged(ctx context.Context, pluginID string) {
-	// Permissions are now auto-derived from requirements during plugin load.
-	// This handler is kept for backward compatibility but is a no-op.
-	slog.Debug("pubsub: perm change event ignored (auto-derived from requirements)", "id", pluginID)
 }
 
 func (h *AdminEventHandler) unregisterCommands(pluginID string) {

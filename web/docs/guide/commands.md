@@ -25,19 +25,14 @@ wasmplugin.Command{
 wasmplugin.Command{
     Name:        "greet",
     Description: "Поприветствовать",
-    Steps: []wasmplugin.Step{
-        {
-            Param:  "name",
-            Prompt: "Введите имя:",
-        },
-        {
-            Param:  "style",
-            Prompt: "Выберите стиль:",
-            Options: []wasmplugin.Option{
-                {Label: "Формально", Value: "formal"},
-                {Label: "Неформально", Value: "casual"},
-            },
-        },
+    Nodes: []wasmplugin.Node{
+        wasmplugin.NewStep("name").
+            Text("Введите имя:", wasmplugin.StylePlain),
+        wasmplugin.NewStep("style").
+            Options("Выберите стиль:",
+                wasmplugin.Opt("Формально", "formal"),
+                wasmplugin.Opt("Неформально", "casual"),
+            ),
     },
     Handler: func(ctx *wasmplugin.EventContext) error {
         name := ctx.Param("name")
@@ -52,28 +47,9 @@ wasmplugin.Command{
 }
 ```
 
-### Поля Step
+## Продвинутый режим: ветвление
 
-| Поле | Тип | Описание |
-|---|---|---|
-| `Param` | `string` | Ключ параметра |
-| `Prompt` | `string` | Текст для пользователя |
-| `Options` | `[]Option` | Предопределённые варианты (кнопки) |
-| `Validation` | `string` | Regex-паттерн для валидации ввода |
-
-## Ограничение по роли
-
-```go
-wasmplugin.Command{
-    Name:    "admin-panel",
-    MinRole: "admin",  // только для роли admin и выше
-    Handler: handler,
-}
-```
-
-## Продвинутый режим: Nodes
-
-Для ветвления, пагинации, динамических опций и условной видимости используйте `Nodes` вместо `Steps`:
+Для ветвления, пагинации, динамических опций и условной видимости используйте `BranchOn`, `ConditionalBranch` и другие узлы:
 
 ```go
 wasmplugin.Command{
@@ -95,5 +71,5 @@ wasmplugin.Command{
 ```
 
 ::: tip
-Если задан `Nodes`, поле `Steps` игнорируется. Подробнее — в разделе [Node Builder](/advanced/node-builder).
+Подробнее — в разделе [Node Builder](/advanced/node-builder).
 :::

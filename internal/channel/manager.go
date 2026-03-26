@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"SuperBotGo/internal/errs"
+	"SuperBotGo/internal/locale"
 	"SuperBotGo/internal/model"
 	"SuperBotGo/internal/state"
 )
@@ -87,12 +88,12 @@ func (m *ChannelManager) OnUpdate(ctx context.Context, u Update) error {
 		return err
 	}
 
-	locale := user.Locale
-	if locale == "" {
-		locale = "en"
+	loc := user.Locale
+	if loc == "" {
+		loc = locale.Default()
 	}
 
-	if err := m.processUpdate(ctx, user, u.ChannelType, u.Input, u.ChatID, locale); err != nil {
+	if err := m.processUpdate(ctx, user, u.ChannelType, u.Input, u.ChatID, loc); err != nil {
 		m.handleError(ctx, u.ChannelType, u.ChatID, user.ID, err)
 	}
 	return nil

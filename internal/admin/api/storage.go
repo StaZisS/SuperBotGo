@@ -7,15 +7,13 @@ import (
 )
 
 type PluginRecord struct {
-	ID            string          `json:"id"`
-	WasmKey       string          `json:"wasm_key"`
-	ConfigJSON    json.RawMessage `json:"config_json,omitempty"`
-	Permissions   []string        `json:"permissions,omitempty"`
-	Enabled       bool            `json:"enabled"`
-	SchemaVersion int             `json:"schema_version"`
-	WasmHash      string          `json:"wasm_hash"`
-	InstalledAt   time.Time       `json:"installed_at"`
-	UpdatedAt     time.Time       `json:"updated_at"`
+	ID          string          `json:"id"`
+	WasmKey     string          `json:"wasm_key"`
+	ConfigJSON  json.RawMessage `json:"config_json,omitempty"`
+	Enabled     bool            `json:"enabled"`
+	WasmHash    string          `json:"wasm_hash"`
+	InstalledAt time.Time       `json:"installed_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
 }
 
 type PluginStore interface {
@@ -26,15 +24,14 @@ type PluginStore interface {
 }
 
 type VersionRecord struct {
-	ID          int64           `json:"id"`
-	PluginID    string          `json:"plugin_id"`
-	Version     string          `json:"version"`
-	WasmKey     string          `json:"wasm_key"`
-	WasmHash    string          `json:"wasm_hash"`
-	ConfigJSON  json.RawMessage `json:"config_json,omitempty"`
-	Permissions []string        `json:"permissions,omitempty"`
-	Changelog   string          `json:"changelog"`
-	CreatedAt   time.Time       `json:"created_at"`
+	ID         int64           `json:"id"`
+	PluginID   string          `json:"plugin_id"`
+	Version    string          `json:"version"`
+	WasmKey    string          `json:"wasm_key"`
+	WasmHash   string          `json:"wasm_hash"`
+	ConfigJSON json.RawMessage `json:"config_json,omitempty"`
+	Changelog  string          `json:"changelog"`
+	CreatedAt  time.Time       `json:"created_at"`
 }
 
 type VersionStore interface {

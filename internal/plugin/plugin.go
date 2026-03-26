@@ -12,7 +12,6 @@ type Plugin interface {
 	ID() string
 	Name() string
 	Version() string
-	SupportedRoles() []string
 	Commands() []*state.CommandDefinition
 	HandleEvent(ctx context.Context, event model.Event) (*model.EventResponse, error)
 }

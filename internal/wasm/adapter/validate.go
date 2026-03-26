@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 )
 
 func ValidateConfigAgainstSchema(schema json.RawMessage, config json.RawMessage) error {
@@ -56,7 +58,7 @@ func formatValidationError(err error) error {
 func collectValidationDetails(ve *jsonschema.ValidationError) []string {
 	if len(ve.Causes) == 0 {
 		loc := fieldLocation(ve.InstanceLocation)
-		msg := ve.ErrorKind.LocalizedString(nil)
+		msg := ve.ErrorKind.LocalizedString(message.NewPrinter(language.English))
 		if loc == "" {
 			return []string{msg}
 		}

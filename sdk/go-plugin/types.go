@@ -4,7 +4,7 @@ import "encoding/json"
 
 // ---------------------------------------------------------------------------
 // Internal JSON types — mirrors of the host protocol.
-// All types are unexported; the public API uses Plugin / Trigger / Step, etc.
+// All types are unexported; the public API uses Plugin / Trigger / Node, etc.
 // ---------------------------------------------------------------------------
 
 type pluginMeta struct {
@@ -22,20 +22,11 @@ type triggerDef struct {
 	Name        string    `json:"name"`
 	Type        string    `json:"type"`
 	Description string    `json:"description,omitempty"`
-	MinRole     string    `json:"min_role,omitempty"`
 	Path        string    `json:"path,omitempty"`
 	Methods     []string  `json:"methods,omitempty"`
 	Schedule    string    `json:"schedule,omitempty"`
 	Topic       string    `json:"topic,omitempty"`
-	Steps       []stepDef `json:"steps,omitempty"`
 	Nodes       []nodeDef `json:"nodes,omitempty"`
-}
-
-type stepDef struct {
-	Param      string      `json:"param"`
-	Prompt     string      `json:"prompt"`
-	Options    []optionDef `json:"options,omitempty"`
-	Validation string      `json:"validation,omitempty"`
 }
 
 type optionDef struct {

@@ -37,20 +37,11 @@ type TriggerDef struct {
 	Name        string    `json:"name"`
 	Type        string    `json:"type"`
 	Description string    `json:"description,omitempty"`
-	MinRole     string    `json:"min_role,omitempty"`
 	Path        string    `json:"path,omitempty"`
 	Methods     []string  `json:"methods,omitempty"`
 	Schedule    string    `json:"schedule,omitempty"`
 	Topic       string    `json:"topic,omitempty"`
-	Steps       []StepDef `json:"steps,omitempty"`
 	Nodes       []NodeDef `json:"nodes,omitempty"`
-}
-
-type StepDef struct {
-	Param      string      `json:"param"`
-	Prompt     string      `json:"prompt"`
-	Options    []OptionDef `json:"options,omitempty"`
-	Validation string      `json:"validation,omitempty"`
 }
 
 type OptionDef struct {
@@ -65,9 +56,6 @@ type RequirementDef struct {
 	Target      string          `json:"target,omitempty"`
 	Config      json.RawMessage `json:"config,omitempty"`
 }
-
-// Deprecated: PermissionDef is kept for backward compatibility during migration.
-type PermissionDef = RequirementDef
 
 type NodeDef struct {
 	Type             string               `json:"type"`

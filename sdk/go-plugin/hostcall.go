@@ -13,12 +13,6 @@ import (
 // "env" host module. Each returns a packed i64: (offset << 32 | length).
 // ---------------------------------------------------------------------------
 
-//go:wasmimport env db_query
-func _dbQuery(ptr uint32, length uint32) uint64
-
-//go:wasmimport env db_save
-func _dbSave(ptr uint32, length uint32) uint64
-
 //go:wasmimport env http_request
 func _httpRequest(ptr uint32, length uint32) uint64
 
@@ -102,7 +96,7 @@ func callHost(hostFn func(uint32, uint32) uint64, payload any) ([]byte, error) {
 	result := hostFn(ptr, sz)
 
 	if result == 0 {
-		return nil, nil // success with no response data (e.g. db_save)
+		return nil, nil // success with no response data
 	}
 
 	offset := uint32(result >> 32)
@@ -139,37 +133,6 @@ func callHostWithResult(hostFn func(uint32, uint32) uint64, payload any, v any) 
 // ---------------------------------------------------------------------------
 // Public host function wrappers
 // ---------------------------------------------------------------------------
-
-// dbQueryPayload is the request payload for db_query.
-type dbQueryPayload struct {
-	Collection string      `json:"collection" msgpack:"collection"`
-	Filter     interface{} `json:"filter,omitempty" msgpack:"filter,omitempty"`
-	Limit      int         `json:"limit,omitempty" msgpack:"limit,omitempty"`
-}
-
-// DBQuery executes a database query through the host.
-func DBQuery(query map[string]interface{}) ([]map[string]interface{}, error) {
-	var results []map[string]interface{}
-	err := callHostWithResult(_dbQuery, query, &results)
-	return results, err
-}
-
-// DBSave saves a record through the host.
-func DBSave(record map[string]interface{}) error {
-	raw, err := callHost(_dbSave, record)
-	if err != nil {
-		return err
-	}
-	if raw != nil {
-		var errResp struct {
-			Error string `json:"error" msgpack:"error"`
-		}
-		if unmarshalFromHost(raw, &errResp) == nil && errResp.Error != "" {
-			return fmt.Errorf("host: %s", errResp.Error)
-		}
-	}
-	return nil
-}
 
 // httpRequestPayload is the request payload for http_request.
 type httpRequestPayload struct {

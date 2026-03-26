@@ -5,21 +5,22 @@ import (
 	"fmt"
 	"strings"
 
+	"SuperBotGo/internal/locale"
 	"SuperBotGo/internal/model"
 )
 
 // resolveLocalizedPrompt picks the best text for the given locale from a
 // locale→text map, falling back to fallback if no match is found.
-func resolveLocalizedPrompt(texts map[string]string, fallback, locale string) string {
-	if text, ok := texts[locale]; ok {
+func resolveLocalizedPrompt(texts map[string]string, fallback, loc string) string {
+	if text, ok := texts[loc]; ok {
 		return text
 	}
-	if idx := strings.IndexByte(locale, '-'); idx > 0 {
-		if text, ok := texts[locale[:idx]]; ok {
+	if idx := strings.IndexByte(loc, '-'); idx > 0 {
+		if text, ok := texts[loc[:idx]]; ok {
 			return text
 		}
 	}
-	if text, ok := texts["en"]; ok {
+	if text, ok := texts[locale.Default()]; ok {
 		return text
 	}
 	return fallback

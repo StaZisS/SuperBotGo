@@ -80,14 +80,6 @@ func (h *HostAPI) RegisterHostModule(ctx context.Context, rt *wasmrt.Runtime) er
 
 	builder := rt.Engine().NewHostModuleBuilder("env")
 
-	builder = h.registerFunc(builder, "db_query", h.dbQueryFunc(),
-		[]api.ValueType{api.ValueTypeI32, api.ValueTypeI32},
-		[]api.ValueType{api.ValueTypeI64})
-
-	builder = h.registerFunc(builder, "db_save", h.dbSaveFunc(),
-		[]api.ValueType{api.ValueTypeI32, api.ValueTypeI32},
-		[]api.ValueType{api.ValueTypeI64})
-
 	builder = h.registerFunc(builder, "http_request", h.httpRequestFunc(),
 		[]api.ValueType{api.ValueTypeI32, api.ValueTypeI32},
 		[]api.ValueType{api.ValueTypeI64})

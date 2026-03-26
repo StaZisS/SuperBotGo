@@ -23,13 +23,13 @@ import (
 	"SuperBotGo/internal/config"
 	"SuperBotGo/internal/database"
 	"SuperBotGo/internal/i18n"
+	"SuperBotGo/internal/locale"
 	"SuperBotGo/internal/metrics"
 	"SuperBotGo/internal/model"
 	"SuperBotGo/internal/notification"
 	"SuperBotGo/internal/plugin"
 	"SuperBotGo/internal/plugin/core"
 	"SuperBotGo/internal/pubsub"
-	"SuperBotGo/internal/role"
 	"SuperBotGo/internal/state"
 	"SuperBotGo/internal/state/storage"
 	"SuperBotGo/internal/trigger"
@@ -52,6 +52,8 @@ func main() {
 		logger.Error("failed to load config", slog.Any("error", err))
 		os.Exit(1)
 	}
+
+	locale.SetDefault(cfg.DefaultLocale)
 
 	if err := i18n.Init(cfg.DefaultLocale); err != nil {
 		logger.Warn("i18n initialization failed, continuing with fallback keys", slog.Any("error", err))
@@ -213,7 +215,6 @@ func main() {
 	}
 	userRepo := user.NewPgUserRepo(pool)
 	accountRepo := user.NewPgAccountRepo(pool)
-	roleStore := role.NewPgStore(pool)
 	pluginStore := adminapi.NewPgPluginStore(pool)
 	versionStore := adminapi.NewPgVersionStore(pool)
 	cmdPermStore := adminapi.NewPgCommandPermStore(pool)
@@ -226,7 +227,6 @@ func main() {
 	logger.Info("using PostgreSQL stores")
 
 	userService := user.NewService(userRepo, accountRepo)
-	roleManager := role.NewManager(roleStore, logger)
 
 	// Wire deferred dependencies for localized send.
 	localizedUserService = userService
@@ -347,9 +347,8 @@ func main() {
 			return nil, err
 		}
 		return &pubsub.PluginData{
-			WasmKey:     rec.WasmKey,
-			ConfigJSON:  rec.ConfigJSON,
-			Permissions: rec.Permissions,
+			WasmKey:    rec.WasmKey,
+			ConfigJSON: rec.ConfigJSON,
 		}, nil
 	}
 	eventHandler := pubsub.NewAdminEventHandler(
@@ -435,7 +434,6 @@ func main() {
 
 	logger.Info("SuperBotGo stopped")
 
-	_ = roleManager
 }
 
 func generateInstanceID() string {

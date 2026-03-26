@@ -8,11 +8,11 @@ import (
 
 func TestRateLimiter_AllowWithinLimit(t *testing.T) {
 	rl := NewRateLimiter("test-plugin", map[string]int{
-		"db_query": 3,
+		"kv_get": 3,
 	})
 
 	for i := 0; i < 3; i++ {
-		if err := rl.Allow("db_query"); err != nil {
+		if err := rl.Allow("kv_get"); err != nil {
 			t.Fatalf("call %d: unexpected error: %v", i+1, err)
 		}
 	}
@@ -20,22 +20,22 @@ func TestRateLimiter_AllowWithinLimit(t *testing.T) {
 
 func TestRateLimiter_AllowExceedsLimit(t *testing.T) {
 	rl := NewRateLimiter("test-plugin", map[string]int{
-		"db_query": 2,
+		"kv_get": 2,
 	})
 
 	// Use up the allowance.
 	for i := 0; i < 2; i++ {
-		if err := rl.Allow("db_query"); err != nil {
+		if err := rl.Allow("kv_get"); err != nil {
 			t.Fatalf("call %d: unexpected error: %v", i+1, err)
 		}
 	}
 
 	// Third call should be rejected.
-	err := rl.Allow("db_query")
+	err := rl.Allow("kv_get")
 	if err == nil {
 		t.Fatal("expected rate limit error, got nil")
 	}
-	if !strings.Contains(err.Error(), "rate limit exceeded for db_query") {
+	if !strings.Contains(err.Error(), "rate limit exceeded for kv_get") {
 		t.Fatalf("unexpected error message: %v", err)
 	}
 	if !strings.Contains(err.Error(), "max 2 calls per execution") {
@@ -45,7 +45,7 @@ func TestRateLimiter_AllowExceedsLimit(t *testing.T) {
 
 func TestRateLimiter_NoLimitConfigured(t *testing.T) {
 	rl := NewRateLimiter("test-plugin", map[string]int{
-		"db_query": 5,
+		"kv_get": 5,
 	})
 
 	// "some_other_func" has no limit configured, should always be allowed.
@@ -75,14 +75,14 @@ func TestRateLimiter_DefaultLimits(t *testing.T) {
 
 func TestRateLimiter_IndependentCounters(t *testing.T) {
 	rl := NewRateLimiter("test-plugin", map[string]int{
-		"db_query":     2,
+		"kv_get":       2,
 		"http_request": 1,
 	})
 
-	// Use up db_query.
+	// Use up kv_get.
 	for i := 0; i < 2; i++ {
-		if err := rl.Allow("db_query"); err != nil {
-			t.Fatalf("db_query call %d: %v", i+1, err)
+		if err := rl.Allow("kv_get"); err != nil {
+			t.Fatalf("kv_get call %d: %v", i+1, err)
 		}
 	}
 
@@ -91,9 +91,9 @@ func TestRateLimiter_IndependentCounters(t *testing.T) {
 		t.Fatalf("http_request call 1: %v", err)
 	}
 
-	// db_query is exhausted.
-	if err := rl.Allow("db_query"); err == nil {
-		t.Fatal("expected db_query to be rate limited")
+	// kv_get is exhausted.
+	if err := rl.Allow("kv_get"); err == nil {
+		t.Fatal("expected kv_get to be rate limited")
 	}
 
 	// http_request is now exhausted too.
@@ -127,21 +127,21 @@ func TestContextWithRateLimiter(t *testing.T) {
 func TestSetRateLimits_CustomLimits(t *testing.T) {
 	h := NewHostAPI(Dependencies{})
 	custom := map[string]int{
-		"db_query":     5,
+		"kv_get":       5,
 		"http_request": 2,
 	}
 	h.SetRateLimits(custom)
 
 	rl := h.NewRateLimiterForPlugin("custom-plugin")
 
-	// db_query should allow exactly 5 calls.
+	// kv_get should allow exactly 5 calls.
 	for i := 0; i < 5; i++ {
-		if err := rl.Allow("db_query"); err != nil {
-			t.Fatalf("db_query call %d: %v", i+1, err)
+		if err := rl.Allow("kv_get"); err != nil {
+			t.Fatalf("kv_get call %d: %v", i+1, err)
 		}
 	}
-	if err := rl.Allow("db_query"); err == nil {
-		t.Fatal("expected db_query to be rate limited after 5 calls")
+	if err := rl.Allow("kv_get"); err == nil {
+		t.Fatal("expected kv_get to be rate limited after 5 calls")
 	}
 
 	// http_request should allow exactly 2 calls.
