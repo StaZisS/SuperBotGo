@@ -85,6 +85,9 @@ export default withMermaid(defineConfig({
           text: 'Архитектура',
           items: [
             { text: 'Компоненты системы', link: '/architecture/components' },
+            { text: 'Стейт-машина диалогов', link: '/architecture/dialog-state' },
+            { text: 'Система триггеров', link: '/architecture/triggers' },
+            { text: 'Host API (WASM)', link: '/architecture/hostapi' },
           ],
         },
       ],
