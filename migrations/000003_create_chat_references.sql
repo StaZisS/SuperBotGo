@@ -5,7 +5,8 @@ CREATE TABLE chat_references (
     platform_chat_id VARCHAR(255) NOT NULL,
     chat_kind VARCHAR(50) NOT NULL,
     parent_chat_id VARCHAR(255),
-    title VARCHAR(500)
+    title VARCHAR(500),
+    locale VARCHAR(10)
 );
 
 CREATE TABLE chat_reference_metadata (

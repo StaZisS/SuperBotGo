@@ -53,7 +53,7 @@ curl -X POST http://host/api/admin/plugins/{id}/install \
 
 | Ключ | Описание | Какие функции требуют | Requirement builder |
 |---|---|---|---|
-| `sql` | Доступ к базе данных | `sql.Open("superbot", "")` | `Database(desc)` |
+| `sql` | Доступ к базе данных | `sql.Open("superbot", name)` | `Database(desc)` |
 | `kv` | Чтение/запись KV Store | `KVGet`, `KVSet`, `KVDelete`, `KVList` | `KV(desc)` |
 | `network` | Исходящие HTTP-запросы | `HTTPRequest`, `HTTPGet`, `HTTPPost` | `HTTP(desc)` |
 | `notify` | Отправка уведомлений | `NotifyUser`, `NotifyChat`, `NotifyProject` | `NotifyReq(desc)` |
@@ -71,18 +71,39 @@ wasmplugin.Plugin{
     ID:      "analytics",
     Name:    "Analytics Plugin",
     Version: "1.0.0",
-    Requirements: wasmplugin.Database("Хранение метрик").
-        HTTP("Отправка данных во внешнюю систему").
-        KV("Кеширование агрегатов").
-        NotifyReq("Оповещения при превышении порогов").
-        EventsReq("Публикация событий аналитики").
-        PluginDep("users", "Чтение профилей пользователей").
-        Build(),
+    Requirements: []wasmplugin.Requirement{
+        wasmplugin.Database("Хранение метрик").Build(),
+        wasmplugin.HTTP("Отправка данных во внешнюю систему").Build(),
+        wasmplugin.KV("Кеширование агрегатов").Build(),
+        wasmplugin.NotifyReq("Оповещения при превышении порогов").Build(),
+        wasmplugin.EventsReq("Публикация событий аналитики").Build(),
+        wasmplugin.PluginDep("users", "Чтение профилей пользователей").Build(),
+    },
     // ...
 }
 ```
 
-Каждый builder принимает строку-описание, объясняющую зачем плагину нужен этот ресурс. Описание отображается администратору. Методы можно объединять в цепочку, а `.Build()` финализирует список.
+Каждый конструктор принимает строку-описание, объясняющую зачем плагину нужен этот ресурс. Описание отображается администратору. `.Build()` финализирует требование.
+
+Для `Database` можно задать логическое имя через `.Name()`, чтобы плагин мог использовать несколько баз данных:
+
+```go
+Requirements: []wasmplugin.Requirement{
+    wasmplugin.Database("Основное хранилище").Build(),                     // "default"
+    wasmplugin.Database("Аналитика (read replica)").Name("analytics").Build(),
+},
+```
+
+Строки подключения администратор указывает в секции `databases` конфигурации:
+
+```json
+{
+  "databases": {
+    "default": "postgres://user:pass@host/main",
+    "analytics": "postgres://user:pass@host/analytics"
+  }
+}
+```
 
 ::: warning
 Если плагин вызывает Host API без соответствующего разрешения, вызов вернёт ошибку `permission denied`. Объявляйте все необходимые Requirements заранее.
@@ -93,9 +114,14 @@ wasmplugin.Plugin{
 Для requirements, требующих дополнительной конфигурации, используйте `.WithConfig()`:
 
 ```go
-Requirements: wasmplugin.Database("Основная БД").WithConfig().
-    HTTP("Внешний API").
-    Build(),
+Requirements: []wasmplugin.Requirement{
+    wasmplugin.HTTP("Внешний API").WithConfig(
+        wasmplugin.ConfigFields(
+            wasmplugin.String("api_url", "URL платёжного API").Required(),
+            wasmplugin.String("api_key", "API-ключ").Required().Sensitive(),
+        ),
+    ).Build(),
+},
 ```
 
 ## Ограничения среды выполнения {#limits}

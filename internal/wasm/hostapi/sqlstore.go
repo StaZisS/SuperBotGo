@@ -39,8 +39,8 @@ type executionHandles struct {
 
 type pluginSQLState struct {
 	mu         sync.Mutex
-	pool       *pgxpool.Pool
-	dsn        string
+	dsns       map[string]string        // database name → DSN
+	pools      map[string]*pgxpool.Pool // database name → pool (lazily created)
 	executions map[string]*executionHandles
 }
 
@@ -56,18 +56,21 @@ func NewSQLHandleStore() *SQLHandleStore {
 	}
 }
 
-// RegisterDSN stores the DSN for a plugin. Called during plugin load.
-func (s *SQLHandleStore) RegisterDSN(pluginID, dsn string) {
+// RegisterDSN stores a named DSN for a plugin. Called during plugin load.
+// name is the logical database name (e.g. "default", "analytics").
+func (s *SQLHandleStore) RegisterDSN(pluginID, name, dsn string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ps, ok := s.plugins[pluginID]
 	if !ok {
 		ps = &pluginSQLState{
+			dsns:       make(map[string]string),
+			pools:      make(map[string]*pgxpool.Pool),
 			executions: make(map[string]*executionHandles),
 		}
 		s.plugins[pluginID] = ps
 	}
-	ps.dsn = dsn
+	ps.dsns[name] = dsn
 }
 
 // UnregisterPlugin closes the pool and removes all state for a plugin.
@@ -89,9 +92,9 @@ func (s *SQLHandleStore) UnregisterPlugin(pluginID string) {
 		cleanupExecutionLocked(ps, execID)
 	}
 
-	if ps.pool != nil {
-		ps.pool.Close()
-		ps.pool = nil
+	for name, pool := range ps.pools {
+		pool.Close()
+		delete(ps.pools, name)
 	}
 }
 
@@ -105,8 +108,8 @@ func (s *SQLHandleStore) getPluginState(pluginID string) (*pluginSQLState, error
 	return ps, nil
 }
 
-// getOrCreatePool lazily creates the pgxpool.Pool from the stored DSN.
-func (s *SQLHandleStore) getOrCreatePool(ctx context.Context, pluginID string) (*pgxpool.Pool, error) {
+// getOrCreatePool lazily creates the pgxpool.Pool for the named database.
+func (s *SQLHandleStore) getOrCreatePool(ctx context.Context, pluginID, dbName string) (*pgxpool.Pool, error) {
 	ps, err := s.getPluginState(pluginID)
 	if err != nil {
 		return nil, err
@@ -115,18 +118,20 @@ func (s *SQLHandleStore) getOrCreatePool(ctx context.Context, pluginID string) (
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
-	if ps.pool != nil {
-		return ps.pool, nil
-	}
-	if ps.dsn == "" {
-		return nil, fmt.Errorf("no SQL DSN configured for plugin %q", pluginID)
+	if pool, ok := ps.pools[dbName]; ok {
+		return pool, nil
 	}
 
-	pool, err := pgxpool.New(ctx, ps.dsn)
-	if err != nil {
-		return nil, fmt.Errorf("create pool for plugin %q: %w", pluginID, err)
+	dsn, ok := ps.dsns[dbName]
+	if !ok || dsn == "" {
+		return nil, fmt.Errorf("no SQL DSN configured for plugin %q database %q", pluginID, dbName)
 	}
-	ps.pool = pool
+
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return nil, fmt.Errorf("create pool for plugin %q database %q: %w", pluginID, dbName, err)
+	}
+	ps.pools[dbName] = pool
 	return pool, nil
 }
 
@@ -263,13 +268,25 @@ func cleanupExecutionLocked(ps *pluginSQLState, execID string) {
 	}
 }
 
-// HasDSN checks whether a plugin has a DSN registered.
-func (s *SQLHandleStore) HasDSN(pluginID string) bool {
+// HasDSN checks whether a named database DSN is registered for a plugin.
+func (s *SQLHandleStore) HasDSN(pluginID, dbName string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	ps, ok := s.plugins[pluginID]
 	if !ok {
 		return false
 	}
-	return ps.dsn != ""
+	dsn, ok := ps.dsns[dbName]
+	return ok && dsn != ""
+}
+
+// DSN returns the DSN for a named database, or empty string if not found.
+func (s *SQLHandleStore) DSN(pluginID, dbName string) string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	ps, ok := s.plugins[pluginID]
+	if !ok {
+		return ""
+	}
+	return ps.dsns[dbName]
 }

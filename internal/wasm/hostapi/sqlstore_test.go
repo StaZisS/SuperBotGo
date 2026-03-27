@@ -8,7 +8,7 @@ import (
 
 func TestSQLHandleStore_AllocAndGet(t *testing.T) {
 	store := NewSQLHandleStore()
-	store.RegisterDSN("p1", "postgres://localhost/test")
+	store.RegisterDSN("p1", "default", "postgres://localhost/test")
 
 	id, err := store.Alloc("p1", "exec1", &sqlHandle{kind: handleConn})
 	if err != nil {
@@ -29,7 +29,7 @@ func TestSQLHandleStore_AllocAndGet(t *testing.T) {
 
 func TestSQLHandleStore_HandleNotFound(t *testing.T) {
 	store := NewSQLHandleStore()
-	store.RegisterDSN("p1", "postgres://localhost/test")
+	store.RegisterDSN("p1", "default", "postgres://localhost/test")
 
 	_, err := store.Get("p1", "exec1", 999)
 	if err == nil {
@@ -48,8 +48,8 @@ func TestSQLHandleStore_PluginNotRegistered(t *testing.T) {
 
 func TestSQLHandleStore_PluginIsolation(t *testing.T) {
 	store := NewSQLHandleStore()
-	store.RegisterDSN("p1", "postgres://localhost/test1")
-	store.RegisterDSN("p2", "postgres://localhost/test2")
+	store.RegisterDSN("p1", "default", "postgres://localhost/test1")
+	store.RegisterDSN("p2", "default", "postgres://localhost/test2")
 
 	id1, _ := store.Alloc("p1", "exec1", &sqlHandle{kind: handleConn})
 	id2, _ := store.Alloc("p2", "exec1", &sqlHandle{kind: handleTx})
@@ -73,7 +73,7 @@ func TestSQLHandleStore_PluginIsolation(t *testing.T) {
 
 func TestSQLHandleStore_ExecutionIsolation(t *testing.T) {
 	store := NewSQLHandleStore()
-	store.RegisterDSN("p1", "postgres://localhost/test")
+	store.RegisterDSN("p1", "default", "postgres://localhost/test")
 
 	id1, _ := store.Alloc("p1", "exec1", &sqlHandle{kind: handleConn})
 	id2, _ := store.Alloc("p1", "exec2", &sqlHandle{kind: handleTx})
@@ -107,7 +107,7 @@ func TestSQLHandleStore_ExecutionIsolation(t *testing.T) {
 
 func TestSQLHandleStore_Remove(t *testing.T) {
 	store := NewSQLHandleStore()
-	store.RegisterDSN("p1", "postgres://localhost/test")
+	store.RegisterDSN("p1", "default", "postgres://localhost/test")
 
 	id, _ := store.Alloc("p1", "exec1", &sqlHandle{kind: handleRows})
 
@@ -128,7 +128,7 @@ func TestSQLHandleStore_Remove(t *testing.T) {
 
 func TestSQLHandleStore_MaxHandlesLimit(t *testing.T) {
 	store := NewSQLHandleStore()
-	store.RegisterDSN("p1", "postgres://localhost/test")
+	store.RegisterDSN("p1", "default", "postgres://localhost/test")
 
 	for i := 0; i < sqlMaxHandlesPerExecution; i++ {
 		_, err := store.Alloc("p1", "exec1", &sqlHandle{kind: handleConn})
@@ -146,7 +146,7 @@ func TestSQLHandleStore_MaxHandlesLimit(t *testing.T) {
 
 func TestSQLHandleStore_CleanupExecution(t *testing.T) {
 	store := NewSQLHandleStore()
-	store.RegisterDSN("p1", "postgres://localhost/test")
+	store.RegisterDSN("p1", "default", "postgres://localhost/test")
 
 	// Alloc handles with nil resources (safe for cleanup).
 	store.Alloc("p1", "exec1", &sqlHandle{kind: handleConn})
@@ -171,7 +171,7 @@ func TestSQLHandleStore_CleanupNonexistent(t *testing.T) {
 
 func TestSQLHandleStore_UnregisterPlugin(t *testing.T) {
 	store := NewSQLHandleStore()
-	store.RegisterDSN("p1", "postgres://localhost/test")
+	store.RegisterDSN("p1", "default", "postgres://localhost/test")
 
 	store.Alloc("p1", "exec1", &sqlHandle{kind: handleConn})
 
@@ -187,26 +187,49 @@ func TestSQLHandleStore_UnregisterPlugin(t *testing.T) {
 func TestSQLHandleStore_HasDSN(t *testing.T) {
 	store := NewSQLHandleStore()
 
-	if store.HasDSN("p1") {
+	if store.HasDSN("p1", "default") {
 		t.Fatal("expected no DSN before registration")
 	}
 
-	store.RegisterDSN("p1", "postgres://localhost/test")
+	store.RegisterDSN("p1", "default", "postgres://localhost/test")
 
-	if !store.HasDSN("p1") {
+	if !store.HasDSN("p1", "default") {
 		t.Fatal("expected DSN after registration")
+	}
+
+	if store.HasDSN("p1", "analytics") {
+		t.Fatal("expected no DSN for unregistered database name")
 	}
 
 	store.UnregisterPlugin("p1")
 
-	if store.HasDSN("p1") {
+	if store.HasDSN("p1", "default") {
 		t.Fatal("expected no DSN after unregister")
+	}
+}
+
+func TestSQLHandleStore_NamedDatabases(t *testing.T) {
+	store := NewSQLHandleStore()
+	store.RegisterDSN("p1", "default", "postgres://localhost/main")
+	store.RegisterDSN("p1", "analytics", "postgres://localhost/analytics")
+
+	if !store.HasDSN("p1", "default") {
+		t.Fatal("expected default DSN")
+	}
+	if !store.HasDSN("p1", "analytics") {
+		t.Fatal("expected analytics DSN")
+	}
+	if store.DSN("p1", "default") != "postgres://localhost/main" {
+		t.Fatalf("unexpected default DSN: %s", store.DSN("p1", "default"))
+	}
+	if store.DSN("p1", "analytics") != "postgres://localhost/analytics" {
+		t.Fatalf("unexpected analytics DSN: %s", store.DSN("p1", "analytics"))
 	}
 }
 
 func TestSQLHandleStore_HandleIDsIncrement(t *testing.T) {
 	store := NewSQLHandleStore()
-	store.RegisterDSN("p1", "postgres://localhost/test")
+	store.RegisterDSN("p1", "default", "postgres://localhost/test")
 
 	id1, _ := store.Alloc("p1", "exec1", &sqlHandle{kind: handleConn})
 	id2, _ := store.Alloc("p1", "exec1", &sqlHandle{kind: handleTx})
@@ -221,7 +244,7 @@ func TestSQLHandleStore_ConcurrentAccess(t *testing.T) {
 	store := NewSQLHandleStore()
 
 	for i := 0; i < 10; i++ {
-		store.RegisterDSN(fmt.Sprintf("p%d", i), "postgres://localhost/test")
+		store.RegisterDSN(fmt.Sprintf("p%d", i), "default", "postgres://localhost/test")
 	}
 
 	var wg sync.WaitGroup

@@ -15,7 +15,6 @@ func main() {
 		Name:    "University Schedule",
 		Version: "1.5.3",
 		Config: wasmplugin.ConfigFields(
-			wasmplugin.String("sql_dsn", "PostgreSQL connection string (e.g. postgres://user:pass@host/db)"),
 			wasmplugin.String("greeting", "Message shown before the schedule").Default("Welcome! Here is your schedule:"),
 			wasmplugin.String("university_name", "University name shown in the header").Default("University"),
 		),

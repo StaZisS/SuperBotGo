@@ -12,7 +12,7 @@
 
 | Функция | Сигнатура | Требование |
 |---|---|---|
-| `sql.Open` | `("superbot", "") (*sql.DB, error)` | `Database(desc)` |
+| `sql.Open` | `("superbot", name) (*sql.DB, error)` | `Database(desc)` |
 | `HTTPRequest` | `(method, url string, headers map[string]string, body string) (*HTTPResponse, error)` | `HTTP(desc)` |
 | `HTTPGet` | `(url string) (*HTTPResponse, error)` | `HTTP(desc)` |
 | `HTTPPost` | `(url, contentType, body string) (*HTTPResponse, error)` | `HTTP(desc)` |
@@ -94,12 +94,20 @@
 
 | Функция | Разрешение | Описание |
 |---|---|---|
-| `Database(desc)` | `sql` | Доступ к базе данных |
+| `Database(desc)` | `sql` | Доступ к базе данных (имя `"default"`) |
 | `HTTP(desc)` | `network` | HTTP-запросы |
 | `KV(desc)` | `kv` | Key-value хранилище |
 | `NotifyReq(desc)` | `notify` | Отправка уведомлений |
 | `EventsReq(desc)` | `events` | Публикация событий |
 | `PluginDep(target, desc)` | `plugin:<target>` | Вызов другого плагина |
+
+### Методы RequirementBuilder
+
+| Метод | Описание |
+|---|---|
+| `.Name(n)` | Логическое имя ресурса (для `Database` — алиас БД, по умолчанию `"default"`) |
+| `.WithConfig(cs)` | Дополнительная конфигурация для требования |
+| `.Build()` | Финализация требования |
 
 ## Node-конструкторы
 

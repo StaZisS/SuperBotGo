@@ -43,8 +43,21 @@ func handleMeta(p Plugin) {
 		SDKVersion: ProtocolVersion,
 	}
 
-	if !p.Config.IsEmpty() {
-		data, _ := json.Marshal(p.Config)
+	// Collect database requirements into a structured "databases" section.
+	var dbFields []DatabaseField
+	for _, req := range p.Requirements {
+		if req.Type == "database" {
+			name := req.Name
+			if name == "" {
+				name = "default"
+			}
+			dbFields = append(dbFields, DatabaseField{Name: name, Description: req.Description})
+		}
+	}
+
+	configSchema := p.Config.withDatabases(dbFields)
+	if !configSchema.IsEmpty() {
+		data, _ := json.Marshal(configSchema)
 		meta.ConfigSchema = json.RawMessage(data)
 	}
 
@@ -73,6 +86,7 @@ func handleMeta(p Plugin) {
 		rd := requirementDef{
 			Type:        req.Type,
 			Description: req.Description,
+			Name:        req.Name,
 			Target:      req.Target,
 		}
 		if !req.Config.IsEmpty() {

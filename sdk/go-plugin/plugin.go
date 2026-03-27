@@ -113,13 +113,22 @@ type Option struct {
 type Requirement struct {
 	Type        string // "database", "http", "kv", "notify", "events", "plugin"
 	Description string
+	Name        string       // logical name (e.g. database alias); defaults to "default"
 	Target      string       // for "plugin" type: target plugin ID
-	Config      ConfigSchema // config the admin must fill (e.g. DSN for database)
+	Config      ConfigSchema // config the admin must fill
 }
 
 // RequirementBuilder provides a fluent API for constructing requirements.
 type RequirementBuilder struct {
 	r Requirement
+}
+
+// Name sets a logical name for the requirement (e.g. a database alias).
+// For Database requirements this controls which connection the plugin
+// opens via sql.Open("superbot", name). Defaults to "default".
+func (b *RequirementBuilder) Name(n string) *RequirementBuilder {
+	b.r.Name = n
+	return b
 }
 
 func (b *RequirementBuilder) WithConfig(cs ConfigSchema) *RequirementBuilder {
@@ -130,8 +139,28 @@ func (b *RequirementBuilder) WithConfig(cs ConfigSchema) *RequirementBuilder {
 func (b *RequirementBuilder) Build() Requirement { return b.r }
 
 // Database declares a requirement for SQL database access.
+// The admin provides connection strings via the structured "databases"
+// section in the plugin config — no need to add DSN fields manually.
+//
+// Single database (name defaults to "default"):
+//
+//	wasmplugin.Database("Store schedule entries").Build()
+//
+// Multiple databases:
+//
+//	wasmplugin.Database("Main storage").Build(),
+//	wasmplugin.Database("Read replica").Name("analytics").Build(),
+//
+// In plugin code, open the connection by name:
+//
+//	db, _ := sql.Open("superbot", "")            // "default"
+//	db, _ := sql.Open("superbot", "analytics")   // named
 func Database(desc string) *RequirementBuilder {
-	return &RequirementBuilder{r: Requirement{Type: "database", Description: desc}}
+	return &RequirementBuilder{r: Requirement{
+		Type:        "database",
+		Description: desc,
+		Name:        "default",
+	}}
 }
 
 // HTTP declares a requirement for outbound HTTP requests.

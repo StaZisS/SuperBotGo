@@ -57,15 +57,20 @@ func sqlPreamble[T any](h *HostAPI, ctx context.Context, mod api.Module, stack [
 
 func (h *HostAPI) sqlOpenFunc() api.GoModuleFunc {
 	return func(ctx context.Context, mod api.Module, stack []uint64) {
-		sc, _ := sqlPreamble[sqlOpenRequest](h, ctx, mod, stack)
+		sc, req := sqlPreamble[sqlOpenRequest](h, ctx, mod, stack)
 		if sc == nil {
 			return
+		}
+
+		dbName := req.Name
+		if dbName == "" {
+			dbName = "default"
 		}
 
 		sqlCtx, cancel := context.WithTimeout(ctx, contextAwareTimeout(ctx, wasmSQLMaxTimeout))
 		defer cancel()
 
-		pool, err := h.sqlStore.getOrCreatePool(sqlCtx, sc.pluginID)
+		pool, err := h.sqlStore.getOrCreatePool(sqlCtx, sc.pluginID, dbName)
 		if err != nil {
 			returnError(ctx, mod, stack, err)
 			return

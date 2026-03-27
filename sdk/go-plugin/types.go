@@ -38,6 +38,7 @@ type optionDef struct {
 type requirementDef struct {
 	Type        string          `json:"type"`
 	Description string          `json:"description,omitempty"`
+	Name        string          `json:"name,omitempty"`
 	Target      string          `json:"target,omitempty"`
 	Config      json.RawMessage `json:"config,omitempty"`
 }

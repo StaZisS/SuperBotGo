@@ -10,7 +10,9 @@ import (
 
 // ── request/response types ────────────────────────────────────────────
 
-type sqlOpenRequest struct{}
+type sqlOpenRequest struct {
+	Name string `msgpack:"name,omitempty"` // logical database name; defaults to "default"
+}
 
 type sqlOpenResponse struct {
 	Handle uint32 `msgpack:"handle"`

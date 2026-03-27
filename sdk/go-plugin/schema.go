@@ -2,10 +2,17 @@ package wasmplugin
 
 import "encoding/json"
 
+// reservedConfigKeys are keys managed by the SDK and must not be used in
+// plugin-defined ConfigFields.
+var reservedConfigKeys = map[string]bool{
+	"databases": true,
+}
+
 // ConfigSchema is a type-safe JSON Schema built via ConfigFields / Field helpers.
 type ConfigSchema struct {
-	fields   []fieldDef
-	required []string
+	fields    []fieldDef
+	required  []string
+	databases []DatabaseField // populated by handleMeta from Database() requirements
 }
 
 type fieldDef struct {
@@ -26,9 +33,16 @@ type schemaProperty struct {
 	Sensitive   bool        `json:"-"` // hint for UI: render as password
 }
 
+// DatabaseField describes a named database connection that the admin must
+// configure. Collected from Database() requirements in handleMeta.
+type DatabaseField struct {
+	Name        string // logical name ("default", "analytics", …)
+	Description string // shown to admin
+}
+
 // MarshalJSON produces a valid JSON Schema object.
 func (s ConfigSchema) MarshalJSON() ([]byte, error) {
-	props := make(map[string]interface{}, len(s.fields))
+	props := make(map[string]interface{}, len(s.fields)+1)
 	for _, f := range s.fields {
 		p := map[string]interface{}{"type": f.prop.Type}
 		if f.prop.Description != "" {
@@ -58,6 +72,25 @@ func (s ConfigSchema) MarshalJSON() ([]byte, error) {
 		props[f.key] = p
 	}
 
+	// Inject the "databases" nested object from Database() requirements.
+	if len(s.databases) > 0 {
+		dbProps := make(map[string]interface{}, len(s.databases))
+		dbRequired := make([]string, 0, len(s.databases))
+		for _, db := range s.databases {
+			dbProps[db.Name] = map[string]interface{}{
+				"type":        "string",
+				"description": db.Description + " (e.g. postgres://user:pass@host/db)",
+			}
+			dbRequired = append(dbRequired, db.Name)
+		}
+		props["databases"] = map[string]interface{}{
+			"type":        "object",
+			"description": "Database connection strings",
+			"properties":  dbProps,
+			"required":    dbRequired,
+		}
+	}
+
 	schema := map[string]interface{}{
 		"type":       "object",
 		"properties": props,
@@ -68,15 +101,26 @@ func (s ConfigSchema) MarshalJSON() ([]byte, error) {
 	return json.Marshal(schema)
 }
 
-// IsEmpty returns true if no fields are defined.
+// IsEmpty returns true if no fields and no databases are defined.
 func (s ConfigSchema) IsEmpty() bool {
-	return len(s.fields) == 0
+	return len(s.fields) == 0 && len(s.databases) == 0
+}
+
+// withDatabases returns a copy of the schema with the given database fields.
+func (s ConfigSchema) withDatabases(dbs []DatabaseField) ConfigSchema {
+	s.databases = dbs
+	return s
 }
 
 // ConfigFields creates a ConfigSchema from field definitions.
+// It panics if a reserved key (e.g. "databases") is used — this catches
+// misuse at plugin init time.
 func ConfigFields(fields ...Field) ConfigSchema {
 	s := ConfigSchema{}
 	for _, f := range fields {
+		if reservedConfigKeys[f.key] {
+			panic("wasmplugin: config key " + f.key + " is reserved by the SDK")
+		}
 		s.fields = append(s.fields, fieldDef{key: f.key, prop: f.prop})
 		if f.required {
 			s.required = append(s.required, f.key)

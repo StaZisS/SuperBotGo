@@ -95,6 +95,35 @@ Requirements: []wasmplugin.Requirement{
 },
 ```
 
+### Именованные базы данных
+
+По умолчанию `Database()` создаёт подключение с именем `"default"`. Если плагину нужно несколько БД, используйте `.Name()`:
+
+```go
+Requirements: []wasmplugin.Requirement{
+    wasmplugin.Database("Основное хранилище").Build(),                     // "default"
+    wasmplugin.Database("Аналитика (read replica)").Name("analytics").Build(),
+},
+```
+
+В коде плагина:
+
+```go
+mainDB, _ := sql.Open("superbot", "")            // "default"
+analyticsDB, _ := sql.Open("superbot", "analytics")
+```
+
+Администратор указывает строки подключения в секции `databases` конфига:
+
+```json
+{
+  "databases": {
+    "default": "postgres://user:pass@host/main",
+    "analytics": "postgres://user:pass@host/analytics"
+  }
+}
+```
+
 ### Зависимость от другого плагина
 
 ```go
@@ -118,11 +147,11 @@ wasmplugin.HTTP("Запросы к платёжной системе").
 
 | Конструктор | Описание |
 |---|---|
-| `Database(desc)` | Доступ к базе данных |
+| `Database(desc)` | Доступ к базе данных (имя `"default"`) |
 | `HTTP(desc)` | Исходящие HTTP-запросы |
 | `KV(desc)` | Key-Value хранилище |
 | `NotifyReq(desc)` | Отправка уведомлений |
 | `EventsReq(desc)` | Публикация событий |
 | `PluginDep(target, desc)` | Вызов другого плагина |
 
-Каждый конструктор возвращает builder с методами `.WithConfig(cs)` и `.Build()`.
+Каждый конструктор возвращает builder с методами `.Name(n)`, `.WithConfig(cs)` и `.Build()`.

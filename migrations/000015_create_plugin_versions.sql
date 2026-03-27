@@ -6,7 +6,6 @@ CREATE TABLE wasm_plugin_versions (
     wasm_key     TEXT         NOT NULL,
     wasm_hash    VARCHAR(64)  NOT NULL,
     config_json  JSONB,
-    permissions  TEXT[]       NOT NULL DEFAULT '{}',
     changelog    TEXT         NOT NULL DEFAULT '',
     created_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
 

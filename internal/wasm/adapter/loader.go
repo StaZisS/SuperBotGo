@@ -114,26 +114,34 @@ func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, conf
 		}
 	}
 
-	hasSQLDSN, pluginDSN := l.registerSQLDSN(meta.ID, config)
+	l.registerDatabases(meta.ID, config)
 
-	// Validate that all declared requirements are fulfilled.
+	// Validate that all declared database requirements are fulfilled.
 	for _, req := range meta.Requirements {
-		switch req.Type {
-		case "database":
-			if !hasSQLDSN {
-				_ = compiled.Close(ctx)
-				l.hostAPI.RevokePermissions(meta.ID)
-				return nil, fmt.Errorf("plugin %q requires database access but sql_dsn is not configured", meta.ID)
-			}
+		if req.Type != "database" {
+			continue
+		}
+		dbName := req.Name
+		if dbName == "" {
+			dbName = "default"
+		}
+		if sqlStore := l.hostAPI.SQLStore(); sqlStore == nil || !sqlStore.HasDSN(meta.ID, dbName) {
+			_ = compiled.Close(ctx)
+			l.hostAPI.RevokePermissions(meta.ID)
+			return nil, fmt.Errorf("plugin %q requires database %q but its connection string is not configured", meta.ID, dbName)
 		}
 	}
 
-	// Run plugin SQL migrations before configure.
-	if len(meta.Migrations) > 0 && hasSQLDSN {
-		if err := runPluginMigrations(ctx, meta.ID, pluginDSN, meta.Migrations); err != nil {
-			_ = compiled.Close(ctx)
-			l.hostAPI.RevokePermissions(meta.ID)
-			return nil, fmt.Errorf("plugin %q migrations: %w", meta.ID, err)
+	// Run plugin SQL migrations against the "default" database before configure.
+	if len(meta.Migrations) > 0 {
+		if sqlStore := l.hostAPI.SQLStore(); sqlStore != nil {
+			if dsn := sqlStore.DSN(meta.ID, "default"); dsn != "" {
+				if err := runPluginMigrations(ctx, meta.ID, dsn, meta.Migrations); err != nil {
+					_ = compiled.Close(ctx)
+					l.hostAPI.RevokePermissions(meta.ID)
+					return nil, fmt.Errorf("plugin %q migrations: %w", meta.ID, err)
+				}
+			}
 		}
 	}
 
@@ -221,17 +229,26 @@ func (l *Loader) checkDependencies(ctx context.Context, compiled *wasmrt.Compile
 	return nil
 }
 
-func (l *Loader) registerSQLDSN(pluginID string, config json.RawMessage) (bool, string) {
-	if sqlStore := l.hostAPI.SQLStore(); sqlStore != nil && len(config) > 0 {
-		var cfgMap map[string]any
-		if json.Unmarshal(config, &cfgMap) == nil {
-			if dsn, ok := cfgMap["sql_dsn"].(string); ok && dsn != "" {
-				sqlStore.RegisterDSN(pluginID, dsn)
-				return true, dsn
-			}
+// registerDatabases reads the "databases" map from plugin config and registers
+// each named DSN with the SQL store.
+func (l *Loader) registerDatabases(pluginID string, config json.RawMessage) {
+	sqlStore := l.hostAPI.SQLStore()
+	if sqlStore == nil || len(config) == 0 {
+		return
+	}
+	var cfgMap map[string]any
+	if json.Unmarshal(config, &cfgMap) != nil {
+		return
+	}
+	dbs, ok := cfgMap["databases"].(map[string]any)
+	if !ok {
+		return
+	}
+	for name, v := range dbs {
+		if dsn, ok := v.(string); ok && dsn != "" {
+			sqlStore.RegisterDSN(pluginID, name, dsn)
 		}
 	}
-	return false, ""
 }
 
 func (l *Loader) registerInRegistry(meta *wasmrt.PluginMeta, wasmBytes []byte) {

@@ -43,7 +43,9 @@ func _sql_end(ptr uint32, length uint32) uint64
 // Request / response types
 // ---------------------------------------------------------------------------
 
-type sqlOpenReq struct{}
+type sqlOpenReq struct {
+	Name string `msgpack:"name,omitempty"`
+}
 
 type sqlOpenResp struct {
 	Handle uint32 `msgpack:"handle"`
@@ -117,9 +119,12 @@ func init() {
 
 type wasmDriver struct{}
 
-func (d *wasmDriver) Open(_ string) (driver.Conn, error) {
+func (d *wasmDriver) Open(name string) (driver.Conn, error) {
+	if name == "" {
+		name = "default"
+	}
 	var resp sqlOpenResp
-	if err := callHostWithResult(_sql_open, sqlOpenReq{}, &resp); err != nil {
+	if err := callHostWithResult(_sql_open, sqlOpenReq{Name: name}, &resp); err != nil {
 		return nil, err
 	}
 	return &wasmConn{handle: resp.Handle}, nil

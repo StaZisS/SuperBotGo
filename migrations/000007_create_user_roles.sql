@@ -10,9 +10,5 @@ CREATE TABLE user_roles (
 CREATE INDEX idx_user_roles_user_id ON user_roles(user_id);
 CREATE INDEX idx_user_roles_user_type ON user_roles(user_id, role_type);
 
--- Migrate existing role column data to user_roles table
-INSERT INTO user_roles (user_id, role_type, role_name)
-SELECT id, 'SYSTEM', role FROM global_users WHERE role IS NOT NULL;
-
 -- +goose Down
 DROP TABLE IF EXISTS user_roles;
