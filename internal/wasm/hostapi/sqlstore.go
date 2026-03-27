@@ -87,7 +87,6 @@ func (s *SQLHandleStore) UnregisterPlugin(pluginID string) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
-	// Cleanup all executions.
 	for execID := range ps.executions {
 		cleanupExecutionLocked(ps, execID)
 	}
@@ -235,7 +234,6 @@ func cleanupExecutionLocked(ps *pluginSQLState, execID string) {
 	eh.mu.Lock()
 	defer eh.mu.Unlock()
 
-	// First pass: close rows.
 	for id, h := range eh.handles {
 		if h.kind == handleRows {
 			if h.rows != nil {
@@ -245,7 +243,6 @@ func cleanupExecutionLocked(ps *pluginSQLState, execID string) {
 		}
 	}
 
-	// Second pass: rollback transactions.
 	for id, h := range eh.handles {
 		if h.kind == handleTx {
 			if h.tx != nil {
@@ -257,7 +254,6 @@ func cleanupExecutionLocked(ps *pluginSQLState, execID string) {
 		}
 	}
 
-	// Third pass: release connections.
 	for id, h := range eh.handles {
 		if h.kind == handleConn {
 			if h.conn != nil {

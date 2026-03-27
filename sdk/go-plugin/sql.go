@@ -11,10 +11,6 @@ import (
 	"math"
 )
 
-// ---------------------------------------------------------------------------
-// WASM imports — SQL host functions
-// ---------------------------------------------------------------------------
-
 //go:wasmimport env sql_open
 func _sql_open(ptr uint32, length uint32) uint64
 
@@ -38,10 +34,6 @@ func _sql_begin(ptr uint32, length uint32) uint64
 
 //go:wasmimport env sql_end
 func _sql_end(ptr uint32, length uint32) uint64
-
-// ---------------------------------------------------------------------------
-// Request / response types
-// ---------------------------------------------------------------------------
 
 type sqlOpenReq struct {
 	Name string `msgpack:"name,omitempty"`
@@ -105,17 +97,9 @@ type sqlEndReq struct {
 	Commit bool   `msgpack:"commit"`
 }
 
-// ---------------------------------------------------------------------------
-// Driver registration
-// ---------------------------------------------------------------------------
-
 func init() {
 	sql.Register("superbot", &wasmDriver{})
 }
-
-// ---------------------------------------------------------------------------
-// driver.Driver
-// ---------------------------------------------------------------------------
 
 type wasmDriver struct{}
 
@@ -129,10 +113,6 @@ func (d *wasmDriver) Open(name string) (driver.Conn, error) {
 	}
 	return &wasmConn{handle: resp.Handle}, nil
 }
-
-// ---------------------------------------------------------------------------
-// driver.Conn + driver.ConnBeginTx + driver.QueryerContext + driver.ExecerContext
-// ---------------------------------------------------------------------------
 
 type wasmConn struct {
 	handle uint32
@@ -202,10 +182,6 @@ func (c *wasmConn) ExecContext(_ context.Context, query string, args []driver.Na
 	return &wasmResult{lastID: resp.LastID, affected: resp.Affected}, nil
 }
 
-// ---------------------------------------------------------------------------
-// driver.Tx
-// ---------------------------------------------------------------------------
-
 type wasmTx struct {
 	txHandle   uint32
 	connHandle uint32
@@ -227,10 +203,6 @@ func (t *wasmTx) Rollback() error {
 	t.done = true
 	return callHostWithResult(_sql_end, sqlEndReq{TX: t.txHandle, Commit: false}, nil)
 }
-
-// ---------------------------------------------------------------------------
-// driver.Rows
-// ---------------------------------------------------------------------------
 
 type wasmRows struct {
 	cursor  uint32
@@ -275,10 +247,6 @@ func (r *wasmRows) Next(dest []driver.Value) error {
 	return nil
 }
 
-// ---------------------------------------------------------------------------
-// driver.Result
-// ---------------------------------------------------------------------------
-
 type wasmResult struct {
 	lastID   int64
 	affected int64
@@ -286,10 +254,6 @@ type wasmResult struct {
 
 func (r *wasmResult) LastInsertId() (int64, error) { return r.lastID, nil }
 func (r *wasmResult) RowsAffected() (int64, error) { return r.affected, nil }
-
-// ---------------------------------------------------------------------------
-// driver.Stmt (thin wrapper for Prepare support)
-// ---------------------------------------------------------------------------
 
 type wasmStmt struct {
 	conn  *wasmConn
@@ -304,10 +268,6 @@ func (s *wasmStmt) Exec(args []driver.Value) (driver.Result, error) {
 func (s *wasmStmt) Query(args []driver.Value) (driver.Rows, error) {
 	return s.conn.QueryContext(context.Background(), s.query, valuesToNamed(args))
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 func namedToArgs(named []driver.NamedValue) []any {
 	if len(named) == 0 {
@@ -338,7 +298,6 @@ func normalizeDriverValue(v any) driver.Value {
 	case bool:
 		return val
 	case float64:
-		// If it's a whole number, convert to int64.
 		if val == math.Trunc(val) && val >= math.MinInt64 && val <= math.MaxInt64 {
 			return int64(val)
 		}

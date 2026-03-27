@@ -7,10 +7,6 @@ import (
 	"time"
 )
 
-// ---------------------------------------------------------------------------
-// KV host function imports (wasm -> host)
-// ---------------------------------------------------------------------------
-
 //go:wasmimport env kv_get
 func _kv_get(offset, length uint32) uint64
 
@@ -22,10 +18,6 @@ func _kv_delete(offset, length uint32) uint64
 
 //go:wasmimport env kv_list
 func _kv_list(offset, length uint32) uint64
-
-// ---------------------------------------------------------------------------
-// Request / response types
-// ---------------------------------------------------------------------------
 
 type kvGetRequest struct {
 	Key string `msgpack:"key"`
@@ -65,10 +57,6 @@ type kvListResponse struct {
 	Keys  []string `msgpack:"keys"`
 	Error string   `msgpack:"error,omitempty"`
 }
-
-// ---------------------------------------------------------------------------
-// Public API on EventContext
-// ---------------------------------------------------------------------------
 
 // KVGet retrieves a value from the plugin-scoped key-value store.
 // Returns the value and true if found, or ("", false, nil) if the key does
@@ -144,12 +132,6 @@ func (ctx *EventContext) KVList(prefix string) ([]string, error) {
 	return resp.Keys, nil
 }
 
-// ---------------------------------------------------------------------------
-// Public API on MigrateContext — mirrors EventContext KV methods so that
-// migrate handlers can read/write/delete stored data during version upgrades.
-// ---------------------------------------------------------------------------
-
-// KVGet retrieves a value from the plugin-scoped key-value store.
 func (ctx *MigrateContext) KVGet(key string) (string, bool, error) {
 	var resp kvGetResponse
 	if err := callHostWithResult(_kv_get, kvGetRequest{Key: key}, &resp); err != nil {
@@ -164,7 +146,6 @@ func (ctx *MigrateContext) KVGet(key string) (string, bool, error) {
 	return *resp.Value, true, nil
 }
 
-// KVSet stores a key-value pair in the plugin-scoped key-value store.
 func (ctx *MigrateContext) KVSet(key, value string) error {
 	var resp kvSetResponse
 	if err := callHostWithResult(_kv_set, kvSetRequest{Key: key, Value: value}, &resp); err != nil {
@@ -176,7 +157,6 @@ func (ctx *MigrateContext) KVSet(key, value string) error {
 	return nil
 }
 
-// KVDelete removes a key from the plugin-scoped key-value store.
 func (ctx *MigrateContext) KVDelete(key string) error {
 	var resp kvDeleteResponse
 	if err := callHostWithResult(_kv_delete, kvDeleteRequest{Key: key}, &resp); err != nil {
@@ -188,7 +168,6 @@ func (ctx *MigrateContext) KVDelete(key string) error {
 	return nil
 }
 
-// KVList returns all keys matching the given prefix.
 func (ctx *MigrateContext) KVList(prefix string) ([]string, error) {
 	var resp kvListResponse
 	if err := callHostWithResult(_kv_list, kvListRequest{Prefix: prefix}, &resp); err != nil {

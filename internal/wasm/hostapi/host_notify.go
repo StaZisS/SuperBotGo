@@ -12,10 +12,6 @@ import (
 
 var wasmNotifyMaxTimeout = time.Duration(wasmrt.DefaultHostNotifyTimeoutSeconds) * time.Second
 
-// ---------------------------------------------------------------------------
-// notify_user
-// ---------------------------------------------------------------------------
-
 type notifyUserRequest struct {
 	UserID   int64  `msgpack:"user_id"`
 	Text     string `msgpack:"text"`
@@ -70,10 +66,6 @@ func (h *HostAPI) notifyUserFunc() api.GoModuleFunc {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// notify_chat
-// ---------------------------------------------------------------------------
-
 type notifyChatRequest struct {
 	ChannelType string `msgpack:"channel_type"`
 	ChatID      string `msgpack:"chat_id"`
@@ -124,10 +116,6 @@ func (h *HostAPI) notifyChatFunc() api.GoModuleFunc {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// notify_project
-// ---------------------------------------------------------------------------
-
 type notifyProjectRequest struct {
 	ProjectID int64  `msgpack:"project_id"`
 	Text      string `msgpack:"text"`
@@ -176,10 +164,6 @@ func (h *HostAPI) notifyProjectFunc() api.GoModuleFunc {
 		writeResult(ctx, mod, stack, notifyResponse{OK: true})
 	}
 }
-
-// ---------------------------------------------------------------------------
-// helpers
-// ---------------------------------------------------------------------------
 
 func clampPriority(p int) int {
 	if p < 0 {

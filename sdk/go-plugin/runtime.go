@@ -31,10 +31,6 @@ func Run(p Plugin) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// action: meta
-// ---------------------------------------------------------------------------
-
 func handleMeta(p Plugin) {
 	meta := pluginMeta{
 		ID:         p.ID,
@@ -43,7 +39,6 @@ func handleMeta(p Plugin) {
 		SDKVersion: ProtocolVersion,
 	}
 
-	// Collect database requirements into a structured "databases" section.
 	var dbFields []DatabaseField
 	for _, req := range p.Requirements {
 		if req.Type == "database" {
@@ -109,10 +104,6 @@ func handleMeta(p Plugin) {
 	os.Stdout.Write(data)
 }
 
-// ---------------------------------------------------------------------------
-// action: configure
-// ---------------------------------------------------------------------------
-
 func handleConfigure(p Plugin) {
 	config, _ := io.ReadAll(os.Stdin)
 
@@ -128,14 +119,9 @@ func handleConfigure(p Plugin) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// action: migrate
-// ---------------------------------------------------------------------------
-
 func handleMigrate(p Plugin) {
 	data, _ := io.ReadAll(os.Stdin)
 
-	// If no Migrate handler is registered, succeed silently.
 	if p.Migrate == nil {
 		writeMigrateResponse(migrateResponse{Status: "ok"})
 		return
@@ -167,10 +153,6 @@ func writeMigrateResponse(v migrateResponse) {
 	os.Stdout.Write(data)
 }
 
-// ---------------------------------------------------------------------------
-// action: handle_event (unified handler for all trigger types)
-// ---------------------------------------------------------------------------
-
 func handleEvent(p Plugin) {
 	data, err := io.ReadAll(os.Stdin)
 	if err != nil {
@@ -184,7 +166,6 @@ func handleEvent(p Plugin) {
 		return
 	}
 
-	// Load plugin config from PLUGIN_CONFIG env var.
 	var cfg map[string]interface{}
 	if raw := os.Getenv("PLUGIN_CONFIG"); raw != "" {
 		_ = json.Unmarshal([]byte(raw), &cfg)
@@ -198,7 +179,6 @@ func handleEvent(p Plugin) {
 		config:      cfg,
 	}
 
-	// Find handler and parse trigger-specific data.
 	var handler func(ctx *EventContext) error
 
 	switch req.TriggerType {
@@ -248,7 +228,6 @@ func handleEvent(p Plugin) {
 		}
 	}
 
-	// Find handler by trigger name.
 	for i := range p.Triggers {
 		if p.Triggers[i].Name == req.TriggerName {
 			handler = p.Triggers[i].Handler
@@ -256,7 +235,6 @@ func handleEvent(p Plugin) {
 		}
 	}
 
-	// Fall back to OnEvent if no specific handler found.
 	if handler == nil {
 		handler = p.OnEvent
 	}
@@ -282,10 +260,6 @@ func handleEvent(p Plugin) {
 	}
 	writeEventResponse(resp)
 }
-
-// ---------------------------------------------------------------------------
-// action: step_callback
-// ---------------------------------------------------------------------------
 
 func handleStepCallback(p Plugin) {
 	data, err := io.ReadAll(os.Stdin)
@@ -351,10 +325,6 @@ func handleStepCallback(p Plugin) {
 		writeCallbackResponse(stepCallbackResponse{Error: "unsupported callback type"})
 	}
 }
-
-// ---------------------------------------------------------------------------
-// helpers
-// ---------------------------------------------------------------------------
 
 func writeEventResponse(v eventResponseJSON) {
 	data, _ := json.Marshal(v)

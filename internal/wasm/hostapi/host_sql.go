@@ -53,8 +53,6 @@ func sqlPreamble[T any](h *HostAPI, ctx context.Context, mod api.Module, stack [
 	return sc, &req
 }
 
-// ── sql_open ──────────────────────────────────────────────────────────
-
 func (h *HostAPI) sqlOpenFunc() api.GoModuleFunc {
 	return func(ctx context.Context, mod api.Module, stack []uint64) {
 		sc, req := sqlPreamble[sqlOpenRequest](h, ctx, mod, stack)
@@ -96,8 +94,6 @@ func (h *HostAPI) sqlOpenFunc() api.GoModuleFunc {
 	}
 }
 
-// ── sql_close ─────────────────────────────────────────────────────────
-
 func (h *HostAPI) sqlCloseFunc() api.GoModuleFunc {
 	return func(ctx context.Context, mod api.Module, stack []uint64) {
 		sc, req := sqlPreamble[sqlCloseRequest](h, ctx, mod, stack)
@@ -118,8 +114,6 @@ func (h *HostAPI) sqlCloseFunc() api.GoModuleFunc {
 		writeResult(ctx, mod, stack, sqlCloseResponse{OK: true})
 	}
 }
-
-// ── sql_exec ──────────────────────────────────────────────────────────
 
 func (h *HostAPI) sqlExecFunc() api.GoModuleFunc {
 	return func(ctx context.Context, mod api.Module, stack []uint64) {
@@ -157,8 +151,6 @@ func (h *HostAPI) sqlExecFunc() api.GoModuleFunc {
 		})
 	}
 }
-
-// ── sql_query ─────────────────────────────────────────────────────────
 
 func (h *HostAPI) sqlQueryFunc() api.GoModuleFunc {
 	return func(ctx context.Context, mod api.Module, stack []uint64) {
@@ -215,8 +207,6 @@ func (h *HostAPI) sqlQueryFunc() api.GoModuleFunc {
 	}
 }
 
-// ── sql_next ──────────────────────────────────────────────────────────
-
 func (h *HostAPI) sqlNextFunc() api.GoModuleFunc {
 	return func(ctx context.Context, mod api.Module, stack []uint64) {
 		sc, req := sqlPreamble[sqlNextRequest](h, ctx, mod, stack)
@@ -260,8 +250,6 @@ func (h *HostAPI) sqlNextFunc() api.GoModuleFunc {
 	}
 }
 
-// ── sql_rows_close ────────────────────────────────────────────────────
-
 func (h *HostAPI) sqlRowsCloseFunc() api.GoModuleFunc {
 	return func(ctx context.Context, mod api.Module, stack []uint64) {
 		sc, req := sqlPreamble[sqlRowsCloseRequest](h, ctx, mod, stack)
@@ -281,8 +269,6 @@ func (h *HostAPI) sqlRowsCloseFunc() api.GoModuleFunc {
 		writeResult(ctx, mod, stack, sqlRowsCloseResponse{OK: true})
 	}
 }
-
-// ── sql_begin ─────────────────────────────────────────────────────────
 
 func (h *HostAPI) sqlBeginFunc() api.GoModuleFunc {
 	return func(ctx context.Context, mod api.Module, stack []uint64) {
@@ -339,8 +325,6 @@ func (h *HostAPI) sqlBeginFunc() api.GoModuleFunc {
 		writeResult(ctx, mod, stack, sqlBeginResponse{TX: txHandle})
 	}
 }
-
-// ── sql_end ───────────────────────────────────────────────────────────
 
 func (h *HostAPI) sqlEndFunc() api.GoModuleFunc {
 	return func(ctx context.Context, mod api.Module, stack []uint64) {

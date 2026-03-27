@@ -9,9 +9,6 @@ import "strconv"
 //   - func(*CallbackContext) OptionsPage — paginated options
 type callbackMap = map[string]interface{}
 
-// ---------- Text style ----------
-
-// TextStyle controls how a text block is rendered by the platform adapter.
 type TextStyle string
 
 const (
@@ -22,10 +19,6 @@ const (
 	StyleQuote     TextStyle = "quote"
 )
 
-// ---------- Callback context ----------
-
-// CallbackContext holds contextual information available to step callback
-// functions (validation, dynamic options, pagination, conditions).
 type CallbackContext struct {
 	UserID int64
 	Locale string
@@ -50,32 +43,21 @@ func (c *CallbackContext) Config(key, fallback string) string {
 	return fallback
 }
 
-// ---------- OptionsPage ----------
-
-// OptionsPage holds a page of options and whether more pages exist.
 type OptionsPage struct {
 	Options []Option
 	HasMore bool
 }
 
-// ---------- Helpers ----------
-
-// Opt is a convenience constructor for Option.
 func Opt(label, value string) Option {
 	return Option{Label: label, Value: value}
 }
 
-// ---------- Node interface ----------
-
 // Node is the interface for all command flow nodes.
-// Implemented by *StepBuilder, *branchNode, and *conditionalBranchNode.
 type Node interface {
 	// toNodeDef converts the node to an internal nodeDef for JSON serialization,
 	// registering any callback functions in reg as a side-effect.
 	toNodeDef(cmdName string, reg callbackMap) nodeDef
 }
-
-// ---------- Step builder ----------
 
 type block struct {
 	typ       string // "text", "options", "dynamic_options", "link", "image"
@@ -262,9 +244,6 @@ func (s *StepBuilder) toNodeDef(cmdName string, reg callbackMap) nodeDef {
 	return nd
 }
 
-// ---------- Branch (value-based) ----------
-
-// BranchCase is one arm of a value-based branch.
 type BranchCase struct {
 	value     string
 	nodes     []Node
@@ -311,9 +290,6 @@ func (b *branchNode) toNodeDef(cmdName string, reg callbackMap) nodeDef {
 	return nd
 }
 
-// ---------- Conditional branch (predicate-based) ----------
-
-// ConditionalBranchCase is one arm of a predicate-based branch.
 type ConditionalBranchCase struct {
 	condition   *Condition
 	conditionFn func(ctx *CallbackContext) bool
@@ -370,11 +346,7 @@ func (cb *conditionalBranchNode) toNodeDef(cmdName string, reg callbackMap) node
 	return nd
 }
 
-// ---------- Declarative conditions ----------
-
-// Condition is a declarative condition evaluated on the host side without a
-// WASM callback. Use for step visibility ([StepBuilder.VisibleWhen]) or branch
-// predicates ([When]).
+// Condition is a declarative condition evaluated on the host side.
 type Condition struct {
 	param    string
 	op       string // "eq", "neq", "match", "set"

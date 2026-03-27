@@ -2,11 +2,6 @@ package wasmplugin
 
 import "encoding/json"
 
-// ---------------------------------------------------------------------------
-// Internal JSON types — mirrors of the host protocol.
-// All types are unexported; the public API uses Plugin / Trigger / Node, etc.
-// ---------------------------------------------------------------------------
-
 type pluginMeta struct {
 	ID           string           `json:"id"`
 	Name         string           `json:"name"`
@@ -54,11 +49,6 @@ type logEntry struct {
 	Level string `json:"level"`
 	Msg   string `json:"msg"`
 }
-
-// ---------------------------------------------------------------------------
-// Node tree types — used by both meta (serialization) and step_callback
-// (callback registry reconstruction).
-// ---------------------------------------------------------------------------
 
 type nodeDef struct {
 	Type             string               `json:"type"`                        // "step", "branch", "conditional_branch"
@@ -109,10 +99,6 @@ type condCaseDef struct {
 	Nodes       []nodeDef     `json:"nodes"`
 }
 
-// ---------------------------------------------------------------------------
-// migrate protocol
-// ---------------------------------------------------------------------------
-
 type migrateRequest struct {
 	OldVersion string `json:"old_version"`
 	NewVersion string `json:"new_version"`
@@ -122,10 +108,6 @@ type migrateResponse struct {
 	Status  string `json:"status"`
 	Message string `json:"message,omitempty"`
 }
-
-// ---------------------------------------------------------------------------
-// step_callback protocol
-// ---------------------------------------------------------------------------
 
 type stepCallbackRequest struct {
 	Callback string            `json:"callback"`
@@ -142,10 +124,6 @@ type stepCallbackResponse struct {
 	Result  *bool       `json:"result,omitempty"`
 	Error   string      `json:"error,omitempty"`
 }
-
-// ---------------------------------------------------------------------------
-// handle_event protocol
-// ---------------------------------------------------------------------------
 
 type eventRequest struct {
 	ID          string          `json:"id"`

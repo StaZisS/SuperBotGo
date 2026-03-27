@@ -135,21 +135,21 @@ func (a *Authorizer) EvalPolicy(ctx context.Context, expression string, userID m
 	return evaluate(expression, env)
 }
 
-// InvalidateUser удаляет кэшированный SubjectContext для пользователя.
+// InvalidateUser removes the cached SubjectContext for a user.
 func (a *Authorizer) InvalidateUser(userID model.GlobalUserID) {
 	if a.subjectCache != nil {
 		a.subjectCache.Delete(userID)
 	}
 }
 
-// InvalidateCommandPolicy удаляет кэшированную политику команды.
+// InvalidateCommandPolicy removes the cached policy for a command.
 func (a *Authorizer) InvalidateCommandPolicy(pluginID, commandName string) {
 	if a.policyCache != nil {
 		a.policyCache.Delete(commandPolicyKey{pluginID, commandName})
 	}
 }
 
-// ClearCaches полностью очищает все кэши авторизации.
+// ClearCaches clears all authorization caches.
 func (a *Authorizer) ClearCaches() {
 	if a.subjectCache != nil {
 		a.subjectCache.Clear()
@@ -249,7 +249,7 @@ func (a *Authorizer) buildSubjectContext(ctx context.Context, userID model.Globa
 		ch, loc string
 	)
 
-	// Фаза 1: параллельно выполняем запросы, не зависящие друг от друга.
+	// Phase 1: independent queries in parallel.
 	g1, ctx1 := errgroup.WithContext(ctx)
 
 	g1.Go(func() error {
@@ -286,7 +286,7 @@ func (a *Authorizer) buildSubjectContext(ctx context.Context, userID model.Globa
 	sc.PrimaryChannel = ch
 	sc.Locale = loc
 
-	// Фаза 2: запросы, которым нужен ExternalID.
+	// Phase 2: queries that require ExternalID.
 	if sc.ExternalID != "" {
 		g2, ctx2 := errgroup.WithContext(ctx)
 
@@ -299,8 +299,7 @@ func (a *Authorizer) buildSubjectContext(ctx context.Context, userID model.Globa
 			return nil
 		})
 
-		// Провайдеры атрибутов выполняются последовательно в одной горутине,
-		// чтобы избежать гонки при записи в sc.Attrs.
+		// Attribute providers run sequentially to avoid races on sc.Attrs.
 		g2.Go(func() error {
 			for _, p := range a.providers {
 				if err := p.LoadAttributes(ctx2, sc); err != nil {

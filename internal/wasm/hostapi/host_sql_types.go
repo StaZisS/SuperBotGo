@@ -8,8 +8,6 @@ import (
 	"time"
 )
 
-// ── request/response types ────────────────────────────────────────────
-
 type sqlOpenRequest struct {
 	Name string `msgpack:"name,omitempty"` // logical database name; defaults to "default"
 }
@@ -83,8 +81,6 @@ type sqlEndRequest struct {
 type sqlEndResponse struct {
 	OK bool `msgpack:"ok"`
 }
-
-// ── value normalization ───────────────────────────────────────────────
 
 // normalizeValue converts pgx types to msgpack-safe types.
 func normalizeValue(v any) any {

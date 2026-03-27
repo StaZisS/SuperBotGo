@@ -9,11 +9,6 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-// ---------------------------------------------------------------------------
-// WASM imports — host functions provided by the SuperBotGo runtime via the
-// "env" host module. Each returns a packed i64: (offset << 32 | length).
-// ---------------------------------------------------------------------------
-
 //go:wasmimport env http_request
 func _httpRequest(ptr uint32, length uint32) uint64
 
@@ -22,10 +17,6 @@ func _callPlugin(ptr uint32, length uint32) uint64
 
 //go:wasmimport env publish_event
 func _publishEvent(ptr uint32, length uint32) uint64
-
-// ---------------------------------------------------------------------------
-// Host call helpers
-// ---------------------------------------------------------------------------
 
 // callHost marshals the payload, writes it to WASM memory, calls the host
 // function, and reads + unmarshals the response.
@@ -39,7 +30,7 @@ func callHost(hostFn func(uint32, uint32) uint64, payload any) ([]byte, error) {
 	result := hostFn(ptr, sz)
 
 	if result == 0 {
-		return nil, nil // success with no response data
+		return nil, nil
 	}
 
 	offset := uint32(result >> 32)
@@ -60,7 +51,6 @@ func callHostWithResult(hostFn func(uint32, uint32) uint64, payload any, v any) 
 
 	data := stripPrefix(raw)
 
-	// Check for error response.
 	var errResp struct {
 		Error string `msgpack:"error"`
 	}
@@ -83,11 +73,6 @@ func stripPrefix(data []byte) []byte {
 	return data
 }
 
-// ---------------------------------------------------------------------------
-// Public host function wrappers
-// ---------------------------------------------------------------------------
-
-// httpRequestPayload is the request payload for http_request.
 type httpRequestPayload struct {
 	Method  string            `msgpack:"method"`
 	URL     string            `msgpack:"url"`
@@ -127,7 +112,6 @@ func HTTPPost(url string, contentType string, body string) (*HTTPResponse, error
 	return HTTPRequest("POST", url, map[string]string{"Content-Type": contentType}, body)
 }
 
-// callPluginPayload is the request payload for call_plugin.
 type callPluginPayload struct {
 	Target string `msgpack:"target"`
 	Method string `msgpack:"method"`
@@ -152,7 +136,6 @@ func CallPlugin(target, method string, params interface{}) ([]byte, error) {
 	return callHost(_callPlugin, payload)
 }
 
-// publishEventPayload is the request payload for publish_event.
 type publishEventPayload struct {
 	Topic   string `msgpack:"topic"`
 	Payload []byte `msgpack:"payload"`
@@ -184,11 +167,6 @@ func PublishEvent(topic string, payload interface{}) error {
 	return nil
 }
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-// ptrLen packs a pointer and length for calling host functions.
 func ptrLen(b []byte) (uint32, uint32) {
 	if len(b) == 0 {
 		return 0, 0

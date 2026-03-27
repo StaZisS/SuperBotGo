@@ -4,10 +4,6 @@ package wasmplugin
 
 import "fmt"
 
-// ---------------------------------------------------------------------------
-// Notification host function imports (wasm -> host)
-// ---------------------------------------------------------------------------
-
 //go:wasmimport env notify_user
 func _notify_user(offset, length uint32) uint64
 
@@ -17,20 +13,12 @@ func _notify_chat(offset, length uint32) uint64
 //go:wasmimport env notify_project
 func _notify_project(offset, length uint32) uint64
 
-// ---------------------------------------------------------------------------
-// Priority constants
-// ---------------------------------------------------------------------------
-
 const (
 	PriorityLow      = 0 // Informational, silent outside work hours
 	PriorityNormal   = 1 // Standard notification with sound
 	PriorityHigh     = 2 // Important — auto-mention user
 	PriorityCritical = 3 // Urgent — mention, all channels, never silent
 )
-
-// ---------------------------------------------------------------------------
-// Request / response types
-// ---------------------------------------------------------------------------
 
 type notifyUserReq struct {
 	UserID   int64  `msgpack:"user_id"`
@@ -55,10 +43,6 @@ type notifyResp struct {
 	OK    bool   `msgpack:"ok"`
 	Error string `msgpack:"error,omitempty"`
 }
-
-// ---------------------------------------------------------------------------
-// Public API on EventContext
-// ---------------------------------------------------------------------------
 
 // NotifyUser sends a priority-aware notification to a user.
 // Priority: PriorityLow (0), PriorityNormal (1), PriorityHigh (2), PriorityCritical (3).

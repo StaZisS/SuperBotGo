@@ -73,10 +73,7 @@ func buildExprEnv(sc *SubjectContext, relations []RelationEntry) exprEnv {
 	}
 }
 
-// compiledExprs кэширует скомпилированные expr-lang программы.
-// Ключ — текст выражения. Выражения неизменяемы при одном и том же тексте,
-// поэтому TTL не нужен — записи живут до перезапуска процесса.
-var compiledExprs sync.Map // map[string]*vm.Program
+var compiledExprs sync.Map // expression string -> *vm.Program
 
 func evaluate(expression string, env exprEnv) (bool, error) {
 	var program *vm.Program

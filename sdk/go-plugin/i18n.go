@@ -79,7 +79,6 @@ func (c *Catalog) L(key string, args ...any) map[string]string {
 		}
 		result[locale] = text
 	}
-	// Ensure at least the default locale is present.
 	if len(result) == 0 {
 		result[c.defaultLocale] = key
 	}
@@ -130,13 +129,11 @@ func (c *Catalog) Opt(key, value string, args ...any) Option {
 // resolve finds the best translation for a locale+key, following the fallback
 // chain: exact match -> language prefix -> default locale -> key.
 func (c *Catalog) resolve(locale, key string) string {
-	// Exact match.
 	if msgs, ok := c.messages[locale]; ok {
 		if text, ok := msgs[key]; ok {
 			return text
 		}
 	}
-	// Language prefix (e.g. "ru-RU" -> "ru").
 	if idx := strings.IndexByte(locale, '-'); idx > 0 {
 		lang := locale[:idx]
 		if msgs, ok := c.messages[lang]; ok {
@@ -145,7 +142,6 @@ func (c *Catalog) resolve(locale, key string) string {
 			}
 		}
 	}
-	// Default locale.
 	if locale != c.defaultLocale {
 		if msgs, ok := c.messages[c.defaultLocale]; ok {
 			if text, ok := msgs[key]; ok {
@@ -153,7 +149,6 @@ func (c *Catalog) resolve(locale, key string) string {
 			}
 		}
 	}
-	// Key itself as last resort.
 	return key
 }
 
@@ -165,7 +160,6 @@ func interpolate(text string, args []any) string {
 	if len(args) == 0 {
 		return text
 	}
-	// Named pairs: first arg is a string, we have at least 2 args.
 	if len(args) >= 2 {
 		if _, ok := args[0].(string); ok {
 			for i := 0; i+1 < len(args); i += 2 {
@@ -176,7 +170,6 @@ func interpolate(text string, args []any) string {
 			return text
 		}
 	}
-	// Positional: V0, V1, ...
 	for i, arg := range args {
 		placeholder := fmt.Sprintf("{{.V%d}}", i)
 		text = strings.ReplaceAll(text, placeholder, fmt.Sprintf("%v", arg))

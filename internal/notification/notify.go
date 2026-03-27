@@ -64,7 +64,6 @@ func (n *NotifyAPI) NotifyUser(ctx context.Context, userID model.GlobalUserID, m
 
 	opts := n.buildSendOptions(prefs, priority)
 
-	// Critical → send to ALL channels, collect errors
 	if priority == model.PriorityCritical {
 		var sendErrs []error
 		for _, acc := range user.Accounts {
@@ -84,7 +83,6 @@ func (n *NotifyAPI) NotifyUser(ctx context.Context, userID model.GlobalUserID, m
 		return nil
 	}
 
-	// Pick the best channel based on user preferences
 	targetChannel, platformID := n.resolveChannel(user, prefs)
 
 	msg = n.maybeInjectMention(msg, platformID, prefs, priority)

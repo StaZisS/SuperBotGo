@@ -13,12 +13,10 @@ func ResolveLocalizedText(texts map[string]string, loc string) string {
 		return ""
 	}
 
-	// Exact match.
 	if text, ok := texts[loc]; ok {
 		return text
 	}
 
-	// Language prefix match (e.g. "ru-RU" → "ru").
 	if idx := strings.IndexByte(loc, '-'); idx > 0 {
 		lang := loc[:idx]
 		if text, ok := texts[lang]; ok {
@@ -26,12 +24,10 @@ func ResolveLocalizedText(texts map[string]string, loc string) string {
 		}
 	}
 
-	// Fallback to default locale.
 	if text, ok := texts[locale.Default()]; ok {
 		return text
 	}
 
-	// Last resort: first value in map.
 	for _, text := range texts {
 		return text
 	}

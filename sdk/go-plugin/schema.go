@@ -72,7 +72,6 @@ func (s ConfigSchema) MarshalJSON() ([]byte, error) {
 		props[f.key] = p
 	}
 
-	// Inject the "databases" nested object from Database() requirements.
 	if len(s.databases) > 0 {
 		dbProps := make(map[string]interface{}, len(s.databases))
 		dbRequired := make([]string, 0, len(s.databases))
@@ -136,8 +135,6 @@ type Field struct {
 	required bool
 }
 
-// --- Constructors ---
-
 // String creates a string config field.
 func String(key, description string) Field {
 	return Field{key: key, prop: schemaProperty{Type: "string", Description: description}}
@@ -162,8 +159,6 @@ func Bool(key, description string) Field {
 func Enum(key, description string, values ...string) Field {
 	return Field{key: key, prop: schemaProperty{Type: "string", Description: description, Enum: values}}
 }
-
-// --- Modifiers (chainable) ---
 
 // Default sets a default value.
 func (f Field) Default(v interface{}) Field {
