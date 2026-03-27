@@ -10,6 +10,7 @@ import (
 
 type DialogReader interface {
 	GetCurrentStepMessage(ctx context.Context, userID model.GlobalUserID, locale string) (*model.Message, string, error)
+	RelocateDialog(ctx context.Context, userID model.GlobalUserID, chatID string) error
 }
 
 func ResumeCommand() *state.CommandDefinition {
@@ -28,6 +29,10 @@ func (p *Plugin) handleResume(ctx context.Context, m *model.MessengerTriggerData
 	if msg == nil {
 		return p.api.Reply(ctx, m, model.NewTextMessage(
 			i18n.Get("resume.no_active_command", m.Locale)))
+	}
+
+	if err := p.dialog.RelocateDialog(ctx, m.UserID, m.ChatID); err != nil {
+		return err
 	}
 
 	header := model.TextBlock{

@@ -19,8 +19,8 @@ type UserService interface {
 
 type StateManager interface {
 	Register(def *state.CommandDefinition)
-	StartCommand(ctx context.Context, userID model.GlobalUserID, channelType model.ChannelType, commandName string, locale string) (*StateResult, error)
-	ProcessInput(ctx context.Context, userID model.GlobalUserID, channelType model.ChannelType, input model.UserInput, locale string) (*StateResult, error)
+	StartCommand(ctx context.Context, userID model.GlobalUserID, channelType model.ChannelType, chatID string, commandName string, locale string) (*StateResult, error)
+	ProcessInput(ctx context.Context, userID model.GlobalUserID, channelType model.ChannelType, chatID string, input model.UserInput, locale string) (*StateResult, error)
 	CancelCommand(ctx context.Context, userID model.GlobalUserID, channelType model.ChannelType) error
 	IsPreservesDialog(commandName string) bool
 	GetCurrentStepMessage(ctx context.Context, userID model.GlobalUserID, locale string) (*model.Message, string, error)
@@ -145,7 +145,7 @@ func (m *ChannelManager) handleCommand(
 		_ = m.state.CancelCommand(ctx, userID, channelType)
 	}
 
-	result, err := m.state.StartCommand(ctx, userID, channelType, commandName, locale)
+	result, err := m.state.StartCommand(ctx, userID, channelType, chatID, commandName, locale)
 	if err != nil {
 		return err
 	}
@@ -172,7 +172,7 @@ func (m *ChannelManager) handleInput(
 	chatID string,
 	locale string,
 ) error {
-	result, err := m.state.ProcessInput(ctx, userID, channelType, input, locale)
+	result, err := m.state.ProcessInput(ctx, userID, channelType, chatID, input, locale)
 	if err != nil {
 		return err
 	}

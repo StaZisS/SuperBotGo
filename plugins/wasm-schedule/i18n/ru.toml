@@ -27,8 +27,13 @@ by_subject = "По предмету"
 by_room = "По аудитории"
 east_wing = "Восточное крыло"
 west_wing = "Западное крыло"
+search = "Поиск"
 choose_mode = "Выберите режим просмотра:"
 enter_date = "Введите дату (ГГГГ-ММ-ДД):"
+enter_floor = "Введите этаж ({{.Range}}):"
+yes = "Да"
+no = "Нет"
+error = "Произошла ошибка. Попробуйте ещё раз."
 
 # Templates
 schedule_header = "{{.Schedule}}\n{{.Building}} {{.Bld}}, {{.Room}} {{.Rm}}, {{.Date}}"

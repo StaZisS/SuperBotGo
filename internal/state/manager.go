@@ -54,7 +54,7 @@ func (m *Manager) IsCommandImmediate(commandName string) bool {
 	return def.IsComplete(nil)
 }
 
-func (m *Manager) StartCommand(ctx context.Context, userID model.GlobalUserID, commandName string, locale string) (model.Message, error) {
+func (m *Manager) StartCommand(ctx context.Context, userID model.GlobalUserID, chatID string, commandName string, locale string) (model.Message, error) {
 	m.mu.RLock()
 	handler, ok := m.handlers[commandName]
 	m.mu.RUnlock()
@@ -70,6 +70,7 @@ func (m *Manager) StartCommand(ctx context.Context, userID model.GlobalUserID, c
 	msg := handler.BuildStepMessage(state, locale)
 
 	ds := handler.PersistState(state)
+	ds.ChatID = chatID
 	if err := m.storage.Save(ctx, userID, ds); err != nil {
 		return model.Message{}, fmt.Errorf("saving state: %w", err)
 	}
@@ -77,13 +78,16 @@ func (m *Manager) StartCommand(ctx context.Context, userID model.GlobalUserID, c
 	return msg, nil
 }
 
-func (m *Manager) ProcessInput(ctx context.Context, userID model.GlobalUserID, input model.UserInput, locale string) (model.Message, *model.CommandRequest, error) {
+func (m *Manager) ProcessInput(ctx context.Context, userID model.GlobalUserID, chatID string, input model.UserInput, locale string) (model.Message, *model.CommandRequest, error) {
 	ds, err := m.storage.Load(ctx, userID)
 	if err != nil {
 		return model.Message{}, nil, fmt.Errorf("loading state: %w", err)
 	}
 	if ds == nil {
 		return model.Message{}, nil, ErrNoActiveDialog
+	}
+	if ds.ChatID != "" && ds.ChatID != chatID {
+		return model.Message{}, nil, nil
 	}
 
 	m.mu.RLock()
@@ -120,6 +124,7 @@ func (m *Manager) ProcessInput(ctx context.Context, userID model.GlobalUserID, i
 	}
 
 	persistedDS := handler.PersistState(nextState)
+	persistedDS.ChatID = ds.ChatID
 	if err := m.storage.Save(ctx, userID, persistedDS); err != nil {
 		return model.Message{}, nil, fmt.Errorf("saving state: %w", err)
 	}
@@ -134,6 +139,18 @@ func (m *Manager) HasActiveDialog(ctx context.Context, userID model.GlobalUserID
 
 func (m *Manager) CancelCommand(ctx context.Context, userID model.GlobalUserID) error {
 	return m.storage.Delete(ctx, userID)
+}
+
+func (m *Manager) RelocateDialog(ctx context.Context, userID model.GlobalUserID, chatID string) error {
+	ds, err := m.storage.Load(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("loading state: %w", err)
+	}
+	if ds == nil {
+		return nil
+	}
+	ds.ChatID = chatID
+	return m.storage.Save(ctx, userID, *ds)
 }
 
 func (m *Manager) IsPreservesDialog(commandName string) bool {

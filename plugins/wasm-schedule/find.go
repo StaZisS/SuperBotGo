@@ -65,8 +65,10 @@ func handleFind(locale string, params map[string]string) string {
 	case "teacher":
 		building := params["building"]
 		teacher := params["teacher"]
-		b.WriteString(fmt.Sprintf("%s: %s\n", tr("building"), building))
-		b.WriteString(fmt.Sprintf("Teacher: %s\n\n", teacher))
+		b.WriteString(cat.T(locale, "find_building_line", "Building", tr("building"), "Bld", building))
+		b.WriteString("\n")
+		b.WriteString(cat.T(locale, "find_teacher_line", "Teacher", teacher))
+		b.WriteString("\n\n")
 		entries, err := dbScheduleByBuilding(db, building)
 		if err == nil {
 			for _, e := range entries {
@@ -81,7 +83,8 @@ func handleFind(locale string, params map[string]string) string {
 
 	case "subject":
 		subject := params["subject"]
-		b.WriteString(fmt.Sprintf("Subject: %s\n\n", tr(subject)))
+		b.WriteString(cat.T(locale, "find_subject_line", "Subject", tr(subject)))
+		b.WriteString("\n\n")
 		buildings, _ := dbAllBuildings(db)
 		for _, bld := range buildings {
 			entries, err := dbScheduleByBuilding(db, bld)
@@ -90,8 +93,8 @@ func handleFind(locale string, params map[string]string) string {
 			}
 			for _, e := range entries {
 				if e.Subject == subject {
-					b.WriteString(fmt.Sprintf("  %s %s — %s (%s)\n",
-						tr("building"), bld, e.Time, e.Teacher))
+					b.WriteString(cat.T(locale, "find_entry", "Building", tr("building"), "Bld", bld, "Time", e.Time, "Teacher", e.Teacher))
+					b.WriteString("\n")
 				}
 			}
 		}
@@ -100,9 +103,10 @@ func handleFind(locale string, params map[string]string) string {
 		building := params["building"]
 		floor := params["floor"]
 		wing := params["wing"]
-		b.WriteString(fmt.Sprintf("%s %s, floor %s", tr("building"), building, floor))
 		if wing != "" {
-			b.WriteString(fmt.Sprintf(", wing %s", wing))
+			b.WriteString(cat.T(locale, "find_room_wing", "Building", tr("building"), "Bld", building, "Floor", floor, "Wing", tr(wing)))
+		} else {
+			b.WriteString(cat.T(locale, "find_room_line", "Building", tr("building"), "Bld", building, "Floor", floor))
 		}
 		b.WriteString("\n\n")
 		entries, _ := dbScheduleByBuilding(db, building)

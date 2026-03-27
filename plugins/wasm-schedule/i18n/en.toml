@@ -27,8 +27,13 @@ by_subject = "By subject"
 by_room = "By room"
 east_wing = "East wing"
 west_wing = "West wing"
+search = "Search"
 choose_mode = "Choose view mode:"
 enter_date = "Enter date (YYYY-MM-DD):"
+enter_floor = "Enter floor ({{.Range}}):"
+yes = "Yes"
+no = "No"
+error = "An error occurred. Please try again."
 
 # Templates
 schedule_header = "{{.Schedule}}\n{{.Building}} {{.Bld}}, {{.Room}} {{.Rm}}, {{.Date}}"

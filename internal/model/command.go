@@ -28,6 +28,7 @@ const (
 
 type DialogState struct {
 	UserID      GlobalUserID   `json:"user_id"`
+	ChatID      string         `json:"chat_id"`
 	CommandName string         `json:"command_name"`
 	Params      OptionMap      `json:"params,omitempty"`
 	PageState   map[string]int `json:"page_state,omitempty"`

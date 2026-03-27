@@ -13,7 +13,7 @@ func main() {
 	wasmplugin.Run(wasmplugin.Plugin{
 		ID:      "schedule",
 		Name:    "University Schedule",
-		Version: "1.5.3",
+		Version: "1.5.6",
 		Config: wasmplugin.ConfigFields(
 			wasmplugin.String("greeting", "Message shown before the schedule").Default("Welcome! Here is your schedule:"),
 			wasmplugin.String("university_name", "University name shown in the header").Default("University"),
@@ -326,7 +326,7 @@ func findCommand() wasmplugin.Trigger {
 						LocalizedPaginatedOptions(cat.L("building"), 2, buildingPages),
 
 					wasmplugin.NewStep("floor").
-						LocalizedText(cat.L("find_room_line", "Building", "", "Bld", "", "Floor", "1-9"), wasmplugin.StylePlain).
+						LocalizedText(cat.L("enter_floor", "Range", "1-9"), wasmplugin.StylePlain).
 						ValidateFunc(func(ctx *wasmplugin.CallbackContext) bool {
 							return len(ctx.Input) == 1 && ctx.Input[0] >= '1' && ctx.Input[0] <= '9'
 						}),

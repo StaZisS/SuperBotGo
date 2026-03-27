@@ -19,7 +19,7 @@ func (a *StateManagerAdapter) Register(def *state.CommandDefinition) {
 	a.mgr.RegisterCommand(def)
 }
 
-func (a *StateManagerAdapter) StartCommand(ctx context.Context, userID model.GlobalUserID, _ model.ChannelType, commandName string, locale string) (*StateResult, error) {
+func (a *StateManagerAdapter) StartCommand(ctx context.Context, userID model.GlobalUserID, _ model.ChannelType, chatID string, commandName string, locale string) (*StateResult, error) {
 
 	if a.mgr.IsCommandImmediate(commandName) {
 
@@ -33,7 +33,7 @@ func (a *StateManagerAdapter) StartCommand(ctx context.Context, userID model.Glo
 		}, nil
 	}
 
-	msg, err := a.mgr.StartCommand(ctx, userID, commandName, locale)
+	msg, err := a.mgr.StartCommand(ctx, userID, chatID, commandName, locale)
 	if err != nil {
 		return nil, err
 	}
@@ -44,8 +44,8 @@ func (a *StateManagerAdapter) StartCommand(ctx context.Context, userID model.Glo
 	}, nil
 }
 
-func (a *StateManagerAdapter) ProcessInput(ctx context.Context, userID model.GlobalUserID, _ model.ChannelType, input model.UserInput, locale string) (*StateResult, error) {
-	msg, cmdReq, err := a.mgr.ProcessInput(ctx, userID, input, locale)
+func (a *StateManagerAdapter) ProcessInput(ctx context.Context, userID model.GlobalUserID, _ model.ChannelType, chatID string, input model.UserInput, locale string) (*StateResult, error) {
+	msg, cmdReq, err := a.mgr.ProcessInput(ctx, userID, chatID, input, locale)
 	if err != nil {
 		return nil, err
 	}
@@ -73,6 +73,10 @@ func (a *StateManagerAdapter) IsPreservesDialog(commandName string) bool {
 
 func (a *StateManagerAdapter) GetCurrentStepMessage(ctx context.Context, userID model.GlobalUserID, locale string) (*model.Message, string, error) {
 	return a.mgr.GetCurrentStepMessage(ctx, userID, locale)
+}
+
+func (a *StateManagerAdapter) RelocateDialog(ctx context.Context, userID model.GlobalUserID, chatID string) error {
+	return a.mgr.RelocateDialog(ctx, userID, chatID)
 }
 
 var _ StateManager = (*StateManagerAdapter)(nil)
