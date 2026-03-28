@@ -5,6 +5,13 @@
 
 default_locale: en
 
+
+
+spicedb:
+  endpoint: "localhost:50051"
+  token: "my-secret-token"    
+  insecure: true
+
 database:
   host: localhost
   port: 5432

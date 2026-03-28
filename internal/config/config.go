@@ -17,6 +17,13 @@ type Config struct {
 	Telegram      TelegramConfig `koanf:"telegram"`
 	Discord       DiscordConfig  `koanf:"discord"`
 	Admin         AdminConfig    `koanf:"admin"`
+	SpiceDB       SpiceDBConfig  `koanf:"spicedb"` // <-- ДОБАВЛЕНО
+}
+
+type SpiceDBConfig struct {
+	Endpoint string `koanf:"endpoint"` // Например: localhost:50051
+	Token    string `koanf:"token"`    // Preshared key
+	Insecure bool   `koanf:"insecure"` // true для локальной разработки без TLS
 }
 
 type AdminConfig struct {
@@ -53,23 +60,22 @@ type RedisConfig struct {
 
 type TelegramConfig struct {
 	Token         string `koanf:"token"`
-	Mode          string `koanf:"mode"`           // "polling" (default) or "webhook"
-	WebhookURL    string `koanf:"webhook_url"`    // public HTTPS URL for webhook mode
-	WebhookSecret string `koanf:"webhook_secret"` // secret token for webhook validation
-	WebhookListen string `koanf:"webhook_listen"` // local listen addr, e.g. ":8443"
+	Mode          string `koanf:"mode"`
+	WebhookURL    string `koanf:"webhook_url"`
+	WebhookSecret string `koanf:"webhook_secret"`
+	WebhookListen string `koanf:"webhook_listen"`
 }
 
 type DiscordConfig struct {
 	Token      string `koanf:"token"`
-	ShardID    int    `koanf:"shard_id"`    // 0-indexed shard identifier
-	ShardCount int    `koanf:"shard_count"` // total shards (0 or 1 = no sharding)
+	ShardID    int    `koanf:"shard_id"`
+	ShardCount int    `koanf:"shard_count"`
 }
 
 func Load() (*Config, error) {
 	k := koanf.New(".")
 
 	if err := k.Load(file.Provider("config.yaml"), yaml.Parser()); err != nil {
-
 		if !isFileNotFound(err) {
 			return nil, fmt.Errorf("loading config.yaml: %w", err)
 		}
@@ -89,6 +95,7 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("unmarshalling config: %w", err)
 	}
 
+	// Defaults
 	if cfg.DefaultLocale == "" {
 		cfg.DefaultLocale = "en"
 	}
@@ -115,6 +122,14 @@ func Load() (*Config, error) {
 	}
 	if cfg.Discord.ShardCount <= 0 {
 		cfg.Discord.ShardCount = 1
+	}
+
+	// Defaults for SpiceDB
+	if cfg.SpiceDB.Endpoint == "" {
+		cfg.SpiceDB.Endpoint = "localhost:50051"
+	}
+	if cfg.SpiceDB.Token == "" {
+		cfg.SpiceDB.Token = "my-secret-token" // Дефолтный токен для Docker
 	}
 
 	if err := cfg.Validate(); err != nil {

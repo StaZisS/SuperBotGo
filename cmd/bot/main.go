@@ -41,7 +41,12 @@ import (
 	"SuperBotGo/internal/wasm/registry"
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 
+	// Импорты для SpiceDB
+	authzed "github.com/authzed/authzed-go/v1"
+	"github.com/authzed/grpcutil"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"google.golang.org/grpc"                      // <--- ДОБАВИТЬ
+	"google.golang.org/grpc/credentials/insecure" // <--- ДОБАВИТЬ
 )
 
 func main() {
@@ -117,7 +122,6 @@ func main() {
 			return fmt.Errorf("sender API not initialized")
 		}
 
-		// Send to user DM — resolve locale from user profile.
 		if msg.UserID != 0 {
 			u, err := localizedUserService.GetUser(ctx, model.GlobalUserID(msg.UserID))
 			if err != nil {
@@ -130,7 +134,6 @@ func main() {
 			return senderAPI.SendToUser(ctx, model.GlobalUserID(msg.UserID), model.NewTextMessage(text))
 		}
 
-		// Send to chat — resolve locale from chat settings.
 		chType := msg.ChannelType
 		if chType == "" {
 			chType = fallbackChannelType
@@ -139,14 +142,14 @@ func main() {
 			return fmt.Errorf("localized send: no channel type for chat %s", msg.ChatID)
 		}
 
-		locale := ""
+		localeStr := ""
 		if localizedChatRegistry != nil {
 			if chatRef, err := localizedChatRegistry.FindChat(ctx, chType, msg.ChatID); err == nil && chatRef != nil {
-				locale = chatRef.Locale
+				localeStr = chatRef.Locale
 			}
 		}
 
-		text := adapter.ResolveLocalizedText(msg.Texts, locale)
+		text := adapter.ResolveLocalizedText(msg.Texts, localeStr)
 		return senderAPI.ReplyToChat(ctx, chType, msg.ChatID, model.NewTextMessage(text))
 	}))
 
@@ -229,15 +232,38 @@ func main() {
 
 	userService := user.NewService(userRepo, accountRepo)
 
-	// Wire deferred dependencies for localized send.
 	localizedUserService = userService
 	localizedChatRegistry = chatRegistry
 
-	// Wire notification host API for WASM plugins.
 	notifyAPI := notification.NewNotifyAPI(adapterRegistry, userService, notifPrefsRepo, chatRegistry)
 	hostAPI.SetNotifier(notification.NewWasmNotifier(notifyAPI))
 
-	authorizer := authz.NewAuthorizer(authzStore, logger, universityProvider)
+	// ==========================================
+	// ИНИЦИАЛИЗАЦИЯ SPICEDB
+	// ==========================================
+	var spiceClient *authzed.Client
+	if cfg.SpiceDB.Endpoint != "" {
+		// Используем grpcutil для правильной настройки токена и insecure соединения
+		client, err := authzed.NewClient(
+			cfg.SpiceDB.Endpoint,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpcutil.WithInsecureBearerToken(cfg.SpiceDB.Token),
+		)
+		if err != nil {
+			logger.Error("failed to create SpiceDB client", slog.Any("error", err))
+			os.Exit(1)
+		}
+		spiceClient = client
+		logger.Info("SpiceDB client initialized", slog.String("endpoint", cfg.SpiceDB.Endpoint))
+	} else {
+		logger.Warn("SpiceDB endpoint not configured, authorization may not work correctly")
+	}
+
+	// ==========================================
+	// АВТОРИЗАТОР
+	// ==========================================
+	authorizer := authz.NewAuthorizer(authzStore, spiceClient, logger, universityProvider)
+
 	schemaBuilder := authz.NewRuleSchemaBuilder(authzStore, universityProvider)
 	ruleSchemaHandler := adminapi.NewRuleSchemaHandler(schemaBuilder)
 
@@ -269,6 +295,9 @@ func main() {
 	adminHandler.RegisterRoutes(adminMux)
 	cmdPermHandler := adminapi.NewCommandPermHandler(cmdPermStore)
 	cmdPermHandler.RegisterRoutes(adminMux)
+	userStore := adminapi.NewPgUserStore(pool)
+	userHandler := adminapi.NewUserHandler(userStore)
+	userHandler.RegisterRoutes(adminMux)
 	pluginPermHandler := adminapi.NewPluginPermHandler(pluginStore, wasmLoader, hostAPI, adminBus)
 	pluginPermHandler.RegisterRoutes(adminMux)
 	chatHandler := adminapi.NewChatHandler(adminChatStore, adapterRegistry)

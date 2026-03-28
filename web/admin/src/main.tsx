@@ -11,12 +11,15 @@ import PluginPermissionsPage from './pages/PluginPermissionsPage'
 import PluginVersions from './pages/PluginVersions'
 import ChatList from './pages/ChatList'
 import Layout from './components/Layout'
+import UserList from './pages/UserList'
+
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
       <Routes>
         <Route element={<Layout />}>
+          <Route path="/admin/users" element={<UserList />} />
           <Route path="/admin/plugins" element={<PluginList />} />
           <Route path="/admin/plugins/upload" element={<PluginUpload />} />
           <Route path="/admin/plugins/:id" element={<PluginDetail />} />

@@ -1,0 +1,19 @@
+definition user {}
+
+
+definition system_role {
+    relation member: user
+    permission is_member = member
+}
+
+definition global_role {
+    relation member: user
+    permission is_member = member
+}
+
+definition plugin {
+    relation viewer: user
+    relation admin: user
+    permission view = viewer
+    permission manage = admin
+}

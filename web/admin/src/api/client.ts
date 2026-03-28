@@ -181,6 +181,40 @@ export interface BroadcastResult {
   error?: string
 }
 
+export interface UserListItem {
+  id: number
+  primary_channel: string
+  locale: string
+  role: string
+  account_count: number
+  created_at?: string
+}
+
+export interface UserDetail {
+  id: number
+  primary_channel: string
+  locale: string
+  role: string
+  accounts: AccountInfo[]
+  created_at?: string
+}
+
+export interface AccountInfo {
+  id: number
+  channel_type: string
+  channel_user_id: string
+  username?: string
+  linked_at: string
+}
+
+export interface UserRole {
+  id: number
+  role_name: string
+  role_type: string
+  scope?: string
+  granted_at: string
+}
+
 export const api = {
   listPlugins: () => request<PluginInfo[]>('/plugins'),
 
@@ -273,4 +307,35 @@ export const api = {
       body: JSON.stringify({ chat_ids: chatIds, text }),
     }),
 
+  // === USERS ===
+
+  listUsers: (params?: { search?: string; role?: string; channel?: string; offset?: number; limit?: number }) => {
+    const q = new URLSearchParams()
+    if (params?.search) q.set('search', params.search)
+    if (params?.role) q.set('role', params.role)
+    if (params?.channel) q.set('channel', params.channel)
+    if (params?.offset) q.set('offset', String(params.offset))
+    if (params?.limit) q.set('limit', String(params.limit))
+    return request<{ users: UserListItem[]; total: number }>(`/users${q.toString() ? '?' + q : ''}`)
+  },
+
+  getUser: (id: number) => request<UserDetail>(`/users/${id}`),
+
+  updateUser: (id: number, data: { locale?: string; role?: string }) =>
+      request<{ status: string }>(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+
+  deleteUser: (id: number) =>
+      request<{ status: string }>(`/users/${id}`, { method: 'DELETE' }),
+
+  getUserRoles: (userId: number) =>
+      request<UserRole[]>(`/users/${userId}/roles`),
+
+  removeUserRole: (userId: number, roleName: string, roleType: string) =>
+      request<{ status: string }>(`/users/${userId}/roles`, {
+        method: 'DELETE',
+        body: JSON.stringify({ role_name: roleName, role_type: roleType }),
+      }),
+
+  unlinkAccount: (userId: number, accountId: number) =>
+      request<{ status: string }>(`/users/${userId}/accounts/${accountId}`, { method: 'DELETE' }),
 }
