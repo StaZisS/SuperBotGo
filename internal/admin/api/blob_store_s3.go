@@ -55,6 +55,8 @@ func NewS3BlobStore(ctx context.Context, cfg S3BlobStoreConfig) (*S3BlobStore, e
 		s3Opts = append(s3Opts, func(o *s3.Options) {
 			o.BaseEndpoint = aws.String(cfg.Endpoint)
 			o.UsePathStyle = true
+			o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+			o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
 		})
 	}
 

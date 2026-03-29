@@ -1,4 +1,4 @@
-FROM golang:1.24-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
 
@@ -18,7 +18,7 @@ RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 
 COPY --from=builder /superbot .
-COPY config.yaml .
+COPY config.example.yaml ./config.yaml
 COPY i18n/ ./i18n/
 COPY migrations/ ./migrations/
 

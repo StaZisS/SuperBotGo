@@ -2,3 +2,6 @@
 .idea
 .env
 *.md
+**/node_modules
+wasm_modules
+bot

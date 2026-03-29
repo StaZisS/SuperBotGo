@@ -54,6 +54,7 @@ func (h *AdminHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	wasmKey := fmt.Sprintf("%s_%s.wasm", meta.ID, meta.Version)
 	if err := h.blobs.Put(r.Context(), wasmKey, bytes.NewReader(wasmBytes), int64(len(wasmBytes))); err != nil {
+		slog.Error("admin: failed to save wasm file", "key", wasmKey, "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to save wasm file")
 		return
 	}
