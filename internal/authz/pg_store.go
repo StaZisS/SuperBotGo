@@ -59,66 +59,6 @@ func (s *PgStore) GetAllRoleNames(ctx context.Context, userID model.GlobalUserID
 	return names, rows.Err()
 }
 
-const allUserRelationsSQL = `
-WITH RECURSIVE
-direct AS (
-	SELECT relation, object_type, object_id
-	FROM authorization_tuples
-	WHERE subject_type = 'user' AND subject_id = $1
-	  AND relation != 'parent'
-),
-expanded AS (
-	SELECT relation, object_type AS ot, object_id AS oid, 0 AS depth
-	FROM direct
-	UNION ALL
-	SELECT e.relation, at.subject_type, at.subject_id, e.depth + 1
-	FROM expanded e
-	JOIN authorization_tuples at
-		ON at.object_type = e.ot AND at.object_id = e.oid AND at.relation = 'parent'
-	WHERE e.depth < 10
-)
-SELECT DISTINCT relation, ot, oid FROM expanded`
-
-func (s *PgStore) GetAllUserRelations(ctx context.Context, subjectID string) ([]RelationEntry, error) {
-	rows, err := s.pool.Query(ctx, allUserRelationsSQL, subjectID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var entries []RelationEntry
-	for rows.Next() {
-		var e RelationEntry
-		if err := rows.Scan(&e.Relation, &e.ObjectType, &e.ObjectID); err != nil {
-			return nil, err
-		}
-		entries = append(entries, e)
-	}
-	return entries, rows.Err()
-}
-
-func (s *PgStore) GetMemberGroups(ctx context.Context, subjectID string) ([]string, error) {
-	rows, err := s.pool.Query(ctx, `
-		SELECT object_id FROM authorization_tuples
-		WHERE subject_type = 'user' AND subject_id = $1 AND relation = 'member'
-		  AND object_type = 'group'
-	`, subjectID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var groups []string
-	for rows.Next() {
-		var g string
-		if err := rows.Scan(&g); err != nil {
-			return nil, err
-		}
-		groups = append(groups, g)
-	}
-	return groups, rows.Err()
-}
-
 func (s *PgStore) GetCommandPolicy(ctx context.Context, pluginID, commandName string) (bool, string, bool, error) {
 	var enabled bool
 	var policyExpr *string

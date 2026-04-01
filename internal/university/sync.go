@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"SuperBotGo/internal/authz/outbox"
 	"SuperBotGo/internal/authz/tuples"
 )
 
@@ -30,6 +31,90 @@ func (s *SyncService) inTx(ctx context.Context, fn func(tx pgx.Tx) error) error 
 	}
 	return tx.Commit(ctx)
 }
+
+// ============================================================
+// Справочные сущности
+// ============================================================
+
+type PersonInput struct {
+	ExternalID string
+	LastName   string
+	FirstName  string
+	MiddleName string
+	Email      string
+	Phone      string
+}
+
+func (s *SyncService) SyncPerson(ctx context.Context, in PersonInput) error {
+	return s.inTx(ctx, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO persons (external_id, last_name, first_name, middle_name, email, phone)
+			VALUES ($1, $2, $3, nullif($4, ''), nullif($5, ''), nullif($6, ''))
+			ON CONFLICT (external_id) DO UPDATE SET
+				last_name = $2, first_name = $3, middle_name = nullif($4, ''),
+				email = nullif($5, ''), phone = nullif($6, ''), updated_at = now()
+		`, in.ExternalID, in.LastName, in.FirstName, in.MiddleName, in.Email, in.Phone)
+		return err
+	})
+}
+
+type CourseInput struct {
+	Code string
+	Name string
+}
+
+func (s *SyncService) SyncCourse(ctx context.Context, in CourseInput) error {
+	return s.inTx(ctx, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO courses (code, name)
+			VALUES ($1, $2)
+			ON CONFLICT (code) DO UPDATE SET name = $2, updated_at = now()
+		`, in.Code, in.Name)
+		return err
+	})
+}
+
+type SemesterInput struct {
+	Year         int
+	SemesterType string
+}
+
+func (s *SyncService) SyncSemester(ctx context.Context, in SemesterInput) error {
+	return s.inTx(ctx, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO semesters (year, semester_type)
+			VALUES ($1, $2)
+			ON CONFLICT (year, semester_type) DO NOTHING
+		`, in.Year, in.SemesterType)
+		return err
+	})
+}
+
+type TeacherPositionInput struct {
+	PersonExternalID string
+	DepartmentCode   string
+	PositionTitle    string
+	EmploymentType   string
+}
+
+func (s *SyncService) SyncTeacherPosition(ctx context.Context, in TeacherPositionInput) error {
+	return s.inTx(ctx, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO teacher_positions (person_id, department_id, position_title, employment_type)
+			VALUES (
+				(SELECT id FROM persons WHERE external_id = $1),
+				(SELECT id FROM departments WHERE code = $2),
+				$3, $4
+			)
+			ON CONFLICT DO NOTHING
+		`, in.PersonExternalID, in.DepartmentCode, in.PositionTitle, in.EmploymentType)
+		return err
+	})
+}
+
+// ============================================================
+// Организационная иерархия
+// ============================================================
 
 type FacultyInput struct {
 	Code      string
@@ -74,8 +159,8 @@ var (
 	LevelDepartment = HierarchyLevel{"departments", "faculty_id", "faculties", "department", "faculty"}
 	LevelProgram    = HierarchyLevel{"programs", "department_id", "departments", "program", "department"}
 	LevelStream     = HierarchyLevel{"streams", "program_id", "programs", "stream", "program"}
-	LevelGroup      = HierarchyLevel{"study_groups", "stream_id", "streams", "group", "stream"}
-	LevelSubgroup   = HierarchyLevel{"subgroups", "study_group_id", "study_groups", "subgroup", "group"}
+	LevelGroup      = HierarchyLevel{"study_groups", "stream_id", "streams", "study_group", "stream"}
+	LevelSubgroup   = HierarchyLevel{"subgroups", "study_group_id", "study_groups", "subgroup", "study_group"}
 )
 
 func (s *SyncService) SyncHierarchyNode(ctx context.Context, level HierarchyLevel, in HierarchyNodeInput) error {
@@ -103,7 +188,7 @@ func (s *SyncService) SyncHierarchyNode(ctx context.Context, level HierarchyLeve
 			return fmt.Errorf("upsert %s %s: %w", level.Table, in.Code, err)
 		}
 
-		return tuples.ReplaceForObject(ctx, tx, level.TupleType, in.Code, "parent", []tuples.Tuple{
+		return outbox.EnqueueReplace(ctx, tx, level.TupleType, in.Code, "parent", []tuples.Tuple{
 			{ObjectType: level.TupleType, ObjectID: in.Code, Relation: "parent", SubjectType: level.ParentTuple, SubjectID: in.ParentCode},
 		})
 	})
@@ -122,7 +207,7 @@ type StudentPositionInput struct {
 
 func (s *SyncService) SyncStudentPosition(ctx context.Context, in StudentPositionInput) error {
 	return s.inTx(ctx, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `
+		if _, err := tx.Exec(ctx, `
 			INSERT INTO student_positions (
 				person_id, program_id, stream_id, study_group_id,
 				status, nationality_type, funding_type, education_form
@@ -136,18 +221,17 @@ func (s *SyncService) SyncStudentPosition(ctx context.Context, in StudentPositio
 			)
 			ON CONFLICT ON CONSTRAINT student_positions_pkey DO NOTHING
 		`, in.PersonExternalID, in.ProgramCode, in.StreamCode, in.GroupCode,
-			in.Status, in.NationalityType, in.FundingType, in.EducationForm)
-		if err != nil {
+			in.Status, in.NationalityType, in.FundingType, in.EducationForm); err != nil {
 			return fmt.Errorf("upsert student_position for %s: %w", in.PersonExternalID, err)
 		}
 
-		if err := tuples.DeleteBySubject(ctx, tx, "user", in.PersonExternalID, "member"); err != nil {
+		if err := outbox.EnqueueDeleteBySubject(ctx, tx, "user", in.PersonExternalID, "member"); err != nil {
 			return err
 		}
 
 		if in.Status == "active" && in.GroupCode != "" {
-			return tuples.WriteTuples(ctx, tx, []tuples.Tuple{
-				{ObjectType: "group", ObjectID: in.GroupCode, Relation: "member", SubjectType: "user", SubjectID: in.PersonExternalID},
+			return outbox.EnqueueTouch(ctx, tx, []tuples.Tuple{
+				{ObjectType: "study_group", ObjectID: in.GroupCode, Relation: "member", SubjectType: "user", SubjectID: in.PersonExternalID},
 			})
 		}
 		return nil
@@ -161,7 +245,7 @@ type StudentSubgroupInput struct {
 
 func (s *SyncService) SyncStudentSubgroup(ctx context.Context, in StudentSubgroupInput) error {
 	return s.inTx(ctx, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `
+		if _, err := tx.Exec(ctx, `
 			INSERT INTO student_subgroups (student_position_id, subgroup_id)
 			VALUES (
 				(SELECT sp.id FROM student_positions sp
@@ -171,12 +255,11 @@ func (s *SyncService) SyncStudentSubgroup(ctx context.Context, in StudentSubgrou
 				(SELECT id FROM subgroups WHERE code = $2)
 			)
 			ON CONFLICT (student_position_id, subgroup_id) DO NOTHING
-		`, in.PersonExternalID, in.SubgroupCode)
-		if err != nil {
-			return fmt.Errorf("upsert student_subgroup %s→%s: %w", in.PersonExternalID, in.SubgroupCode, err)
+		`, in.PersonExternalID, in.SubgroupCode); err != nil {
+			return fmt.Errorf("upsert student_subgroup %s->%s: %w", in.PersonExternalID, in.SubgroupCode, err)
 		}
 
-		return tuples.WriteTuples(ctx, tx, []tuples.Tuple{
+		return outbox.EnqueueTouch(ctx, tx, []tuples.Tuple{
 			{ObjectType: "subgroup", ObjectID: in.SubgroupCode, Relation: "member", SubjectType: "user", SubjectID: in.PersonExternalID},
 		})
 	})
@@ -195,7 +278,7 @@ type TeachingAssignmentInput struct {
 
 func (s *SyncService) SyncTeachingAssignment(ctx context.Context, in TeachingAssignmentInput) error {
 	return s.inTx(ctx, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `
+		if _, err := tx.Exec(ctx, `
 			INSERT INTO teaching_assignments (
 				teacher_position_id, course_id, semester_id,
 				stream_id, study_group_id, assignment_type, student_scope
@@ -213,8 +296,7 @@ func (s *SyncService) SyncTeachingAssignment(ctx context.Context, in TeachingAss
 		`, in.PersonExternalID, in.CourseCode,
 			in.SemesterYear, in.SemesterType,
 			in.StreamCode, in.GroupCode,
-			in.AssignmentType, in.StudentScope)
-		if err != nil {
+			in.AssignmentType, in.StudentScope); err != nil {
 			return fmt.Errorf("insert teaching_assignment for %s: %w", in.PersonExternalID, err)
 		}
 
@@ -224,10 +306,10 @@ func (s *SyncService) SyncTeachingAssignment(ctx context.Context, in TeachingAss
 		}
 		objectType, objectCode := "stream", in.StreamCode
 		if in.GroupCode != "" {
-			objectType, objectCode = "group", in.GroupCode
+			objectType, objectCode = "study_group", in.GroupCode
 		}
 
-		return tuples.WriteTuples(ctx, tx, []tuples.Tuple{
+		return outbox.EnqueueTouch(ctx, tx, []tuples.Tuple{
 			{ObjectType: objectType, ObjectID: objectCode, Relation: relation, SubjectType: "user", SubjectID: in.PersonExternalID},
 		})
 	})
@@ -255,7 +337,7 @@ var scopeToObjectType = map[string]string{
 	"department":      "department",
 	"program":         "program",
 	"stream":          "stream",
-	"group":           "group",
+	"group":           "study_group",
 }
 
 func (s *SyncService) SyncAdminAppointment(ctx context.Context, in AdminAppointmentInput) error {
@@ -272,14 +354,13 @@ func (s *SyncService) SyncAdminAppointment(ctx context.Context, in AdminAppointm
 			}
 		}
 
-		_, err := tx.Exec(ctx, `
+		if _, err := tx.Exec(ctx, `
 			INSERT INTO administrative_appointments (person_id, appointment_type, scope_type, scope_id)
 			VALUES (
 				(SELECT id FROM persons WHERE external_id = $1),
 				$2, $3, $4
 			)
-		`, in.PersonExternalID, in.AppointmentType, in.ScopeType, scopeID)
-		if err != nil {
+		`, in.PersonExternalID, in.AppointmentType, in.ScopeType, scopeID); err != nil {
 			return fmt.Errorf("insert admin_appointment for %s: %w", in.PersonExternalID, err)
 		}
 
@@ -289,7 +370,7 @@ func (s *SyncService) SyncAdminAppointment(ctx context.Context, in AdminAppointm
 		}
 
 		if in.AppointmentType == "foreign_student_curator" {
-			return tuples.WriteTuples(ctx, tx, []tuples.Tuple{
+			return outbox.EnqueueTouch(ctx, tx, []tuples.Tuple{
 				{ObjectType: "nationality_category", ObjectID: "foreign", Relation: relation, SubjectType: "user", SubjectID: in.PersonExternalID},
 			})
 		}
@@ -303,7 +384,7 @@ func (s *SyncService) SyncAdminAppointment(ctx context.Context, in AdminAppointm
 			objectID = "main"
 		}
 
-		return tuples.WriteTuples(ctx, tx, []tuples.Tuple{
+		return outbox.EnqueueTouch(ctx, tx, []tuples.Tuple{
 			{ObjectType: objectType, ObjectID: objectID, Relation: relation, SubjectType: "user", SubjectID: in.PersonExternalID},
 		})
 	})

@@ -7,6 +7,12 @@ default_locale: en
 
 
 
+university_sync:
+  enabled: false
+  interval: "1h"         # pull interval: "30m", "1h", "24h", etc.
+  base_url: ""           # external system API base URL
+  token: ""              # auth token for external system
+
 spicedb:
   endpoint: "localhost:50051"
   token: "my-secret-token"    

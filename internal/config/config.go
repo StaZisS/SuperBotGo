@@ -11,13 +11,21 @@ import (
 )
 
 type Config struct {
-	DefaultLocale string         `koanf:"default_locale"`
-	Database      DatabaseConfig `koanf:"database"`
-	Redis         RedisConfig    `koanf:"redis"`
-	Telegram      TelegramConfig `koanf:"telegram"`
-	Discord       DiscordConfig  `koanf:"discord"`
-	Admin         AdminConfig    `koanf:"admin"`
-	SpiceDB       SpiceDBConfig  `koanf:"spicedb"` // <-- ДОБАВЛЕНО
+	DefaultLocale  string               `koanf:"default_locale"`
+	Database       DatabaseConfig       `koanf:"database"`
+	Redis          RedisConfig          `koanf:"redis"`
+	Telegram       TelegramConfig       `koanf:"telegram"`
+	Discord        DiscordConfig        `koanf:"discord"`
+	Admin          AdminConfig          `koanf:"admin"`
+	SpiceDB        SpiceDBConfig        `koanf:"spicedb"`
+	UniversitySync UniversitySyncConfig `koanf:"university_sync"`
+}
+
+type UniversitySyncConfig struct {
+	Enabled  bool   `koanf:"enabled"`
+	Interval string `koanf:"interval"` // e.g. "1h", "30m", "24h"
+	BaseURL  string `koanf:"base_url"` // external system API base URL
+	Token    string `koanf:"token"`    // auth token for external system
 }
 
 type SpiceDBConfig struct {

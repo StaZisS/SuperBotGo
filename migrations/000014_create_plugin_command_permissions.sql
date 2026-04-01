@@ -1,12 +1,8 @@
 -- +goose Up
 
 -- ============================================================
--- Настройки команд плагинов (вкл/выкл)
--- Контроль доступа реализован через authorization_tuples (ReBAC):
---   object_type = 'plugin_command'
---   object_id   = '{plugin_id}:{command_name}'
---   relation    = 'executor'
---   subject_type / subject_id = кому разрешено (user, group, stream, faculty, ...)
+-- Настройки команд плагинов (вкл/выкл + policy expressions)
+-- Контроль доступа реализован через policy expressions (evaluator.go)
 -- ============================================================
 
 CREATE TABLE plugin_command_settings (
@@ -22,7 +18,7 @@ CREATE TABLE plugin_command_settings (
 
 CREATE INDEX idx_plugin_cmd_settings_plugin ON plugin_command_settings(plugin_id);
 
-COMMENT ON TABLE plugin_command_settings IS 'Вкл/выкл команд плагинов. Доступ к командам — через authorization_tuples с object_type=plugin_command';
+COMMENT ON TABLE plugin_command_settings IS 'Вкл/выкл команд плагинов и policy expressions';
 
 -- +goose Down
 DROP TABLE IF EXISTS plugin_command_settings;

@@ -4,56 +4,95 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jackc/pgx/v5"
+	v1 "github.com/authzed/authzed-go/proto/authzed/api/v1"
+	authzed "github.com/authzed/authzed-go/v1"
 )
 
-func WriteTuples(ctx context.Context, tx pgx.Tx, tt []Tuple) error {
-	for _, t := range tt {
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO authorization_tuples (object_type, object_id, relation, subject_type, subject_id)
-			VALUES ($1, $2, $3, $4, $5)
-			ON CONFLICT (object_type, object_id, relation, subject_type, subject_id) DO NOTHING
-		`, t.ObjectType, t.ObjectID, t.Relation, t.SubjectType, t.SubjectID); err != nil {
-			return fmt.Errorf("write tuple (%s:%s#%s@%s:%s): %w",
-				t.ObjectType, t.ObjectID, t.Relation, t.SubjectType, t.SubjectID, err)
+// Writer manages SpiceDB relationships.
+type Writer struct {
+	client *authzed.Client
+}
+
+// NewWriter creates a new SpiceDB relationship writer.
+func NewWriter(client *authzed.Client) *Writer {
+	return &Writer{client: client}
+}
+
+// WriteTuples creates or touches relationships in SpiceDB.
+func (w *Writer) WriteTuples(ctx context.Context, tt []Tuple) error {
+	if len(tt) == 0 {
+		return nil
+	}
+	updates := make([]*v1.RelationshipUpdate, len(tt))
+	for i, t := range tt {
+		updates[i] = &v1.RelationshipUpdate{
+			Operation:    v1.RelationshipUpdate_OPERATION_TOUCH,
+			Relationship: t.toRelationship(),
 		}
+	}
+	_, err := w.client.WriteRelationships(ctx, &v1.WriteRelationshipsRequest{Updates: updates})
+	if err != nil {
+		return fmt.Errorf("spicedb write relationships: %w", err)
 	}
 	return nil
 }
 
-func DeleteTuples(ctx context.Context, tx pgx.Tx, tt []Tuple) error {
-	for _, t := range tt {
-		if _, err := tx.Exec(ctx, `
-			DELETE FROM authorization_tuples
-			WHERE object_type = $1 AND object_id = $2 AND relation = $3
-			  AND subject_type = $4 AND subject_id = $5
-		`, t.ObjectType, t.ObjectID, t.Relation, t.SubjectType, t.SubjectID); err != nil {
-			return fmt.Errorf("delete tuple (%s:%s#%s@%s:%s): %w",
-				t.ObjectType, t.ObjectID, t.Relation, t.SubjectType, t.SubjectID, err)
+// DeleteTuples removes exact relationships from SpiceDB.
+func (w *Writer) DeleteTuples(ctx context.Context, tt []Tuple) error {
+	if len(tt) == 0 {
+		return nil
+	}
+	updates := make([]*v1.RelationshipUpdate, len(tt))
+	for i, t := range tt {
+		updates[i] = &v1.RelationshipUpdate{
+			Operation:    v1.RelationshipUpdate_OPERATION_DELETE,
+			Relationship: t.toRelationship(),
 		}
+	}
+	_, err := w.client.WriteRelationships(ctx, &v1.WriteRelationshipsRequest{Updates: updates})
+	if err != nil {
+		return fmt.Errorf("spicedb delete relationships: %w", err)
 	}
 	return nil
 }
 
-func DeleteByObject(ctx context.Context, tx pgx.Tx, objectType, objectID, relation string) error {
-	_, err := tx.Exec(ctx, `
-		DELETE FROM authorization_tuples
-		WHERE object_type = $1 AND object_id = $2 AND relation = $3
-	`, objectType, objectID, relation)
-	return err
+// DeleteByObject removes all relationships for an object/relation pair using DeleteRelationships API.
+func (w *Writer) DeleteByObject(ctx context.Context, objectType, objectID, relation string) error {
+	_, err := w.client.DeleteRelationships(ctx, &v1.DeleteRelationshipsRequest{
+		RelationshipFilter: &v1.RelationshipFilter{
+			ResourceType:       objectType,
+			OptionalResourceId: objectID,
+			OptionalRelation:   relation,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("spicedb delete by object %s:%s#%s: %w", objectType, objectID, relation, err)
+	}
+	return nil
 }
 
-func DeleteBySubject(ctx context.Context, tx pgx.Tx, subjectType, subjectID, relation string) error {
-	_, err := tx.Exec(ctx, `
-		DELETE FROM authorization_tuples
-		WHERE subject_type = $1 AND subject_id = $2 AND relation = $3
-	`, subjectType, subjectID, relation)
-	return err
+// DeleteBySubject removes all relationships for a subject/relation pair.
+func (w *Writer) DeleteBySubject(ctx context.Context, subjectType, subjectID, relation string) error {
+	_, err := w.client.DeleteRelationships(ctx, &v1.DeleteRelationshipsRequest{
+		RelationshipFilter: &v1.RelationshipFilter{
+			ResourceType:     "",
+			OptionalRelation: relation,
+			OptionalSubjectFilter: &v1.SubjectFilter{
+				SubjectType:       subjectType,
+				OptionalSubjectId: subjectID,
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("spicedb delete by subject %s:%s#%s: %w", subjectType, subjectID, relation, err)
+	}
+	return nil
 }
 
-func ReplaceForObject(ctx context.Context, tx pgx.Tx, objectType, objectID, relation string, newTuples []Tuple) error {
-	if err := DeleteByObject(ctx, tx, objectType, objectID, relation); err != nil {
+// ReplaceForObject atomically replaces all relationships for an object/relation.
+func (w *Writer) ReplaceForObject(ctx context.Context, objectType, objectID, relation string, newTuples []Tuple) error {
+	if err := w.DeleteByObject(ctx, objectType, objectID, relation); err != nil {
 		return err
 	}
-	return WriteTuples(ctx, tx, newTuples)
+	return w.WriteTuples(ctx, newTuples)
 }

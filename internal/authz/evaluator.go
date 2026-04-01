@@ -1,11 +1,17 @@
 package authz
 
 import (
+	"context"
 	"fmt"
+	"strconv"
 	"sync"
 
+	v1 "github.com/authzed/authzed-go/proto/authzed/api/v1"
+	authzed "github.com/authzed/authzed-go/v1"
 	"github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/vm"
+
+	"SuperBotGo/internal/model"
 )
 
 type exprEnv struct {
@@ -17,13 +23,7 @@ type exprEnv struct {
 	HasAnyRole func(roleNames ...string) bool                   `expr:"has_any_role"`
 }
 
-type relationKey struct {
-	relation   string
-	objectType string
-	objectID   string
-}
-
-func buildExprEnv(sc *SubjectContext, relations []RelationEntry) exprEnv {
+func buildUserMap(sc *SubjectContext) map[string]any {
 	userMap := map[string]any{
 		"id":              int64(sc.UserID),
 		"external_id":     sc.ExternalID,
@@ -32,9 +32,70 @@ func buildExprEnv(sc *SubjectContext, relations []RelationEntry) exprEnv {
 		"primary_channel": sc.PrimaryChannel,
 		"locale":          sc.Locale,
 	}
-
 	for k, v := range sc.Attrs {
 		userMap[k] = v
+	}
+	return userMap
+}
+
+func buildExprEnv(ctx context.Context, sc *SubjectContext, client *authzed.Client) exprEnv {
+	roleSet := make(map[string]bool, len(sc.Roles))
+	for _, r := range sc.Roles {
+		roleSet[r] = true
+	}
+
+	subject := &v1.SubjectReference{
+		Object: &v1.ObjectReference{
+			ObjectType: "user",
+			ObjectId:   strconv.FormatInt(int64(sc.UserID), 10),
+		},
+	}
+
+	checkSpice := func(permission, objectType, objectID string) bool {
+		if client == nil {
+			return false
+		}
+		resp, err := client.CheckPermission(ctx, &v1.CheckPermissionRequest{
+			Resource:   &v1.ObjectReference{ObjectType: objectType, ObjectId: objectID},
+			Permission: permission,
+			Subject:    subject,
+		})
+		if err != nil {
+			return false
+		}
+		return resp.Permissionship == v1.CheckPermissionResponse_PERMISSIONSHIP_HAS_PERMISSION
+	}
+
+	return exprEnv{
+		User: buildUserMap(sc),
+
+		Check: checkSpice,
+
+		IsMember: func(objectType, objectID string) bool {
+			return checkSpice("member", objectType, objectID)
+		},
+
+		HasRole: func(roleName string) bool {
+			return roleSet[roleName]
+		},
+
+		HasAnyRole: func(roleNames ...string) bool {
+			for _, rn := range roleNames {
+				if roleSet[rn] {
+					return true
+				}
+			}
+			return false
+		},
+	}
+}
+
+// buildExprEnvLegacy builds an expression environment using pre-loaded relations (for testing).
+func buildExprEnvLegacy(sc *SubjectContext, relations []RelationEntry) exprEnv {
+	type relationKey struct {
+		relation   string
+		objectType string
+		objectID   string
 	}
 
 	relSet := make(map[relationKey]bool, len(relations))
@@ -48,7 +109,7 @@ func buildExprEnv(sc *SubjectContext, relations []RelationEntry) exprEnv {
 	}
 
 	return exprEnv{
-		User: userMap,
+		User: buildUserMap(sc),
 
 		Check: func(relation, objectType, objectID string) bool {
 			return relSet[relationKey{relation, objectType, objectID}]
@@ -71,6 +132,17 @@ func buildExprEnv(sc *SubjectContext, relations []RelationEntry) exprEnv {
 			return false
 		},
 	}
+}
+
+// EvalWithContext evaluates a policy expression using SpiceDB for graph checks.
+func EvalWithContext(ctx context.Context, expression string, sc *SubjectContext, client *authzed.Client) (bool, error) {
+	env := buildExprEnv(ctx, sc, client)
+	return evaluate(expression, env)
+}
+
+// EvalPolicyForUser is a convenience wrapper for the Authorizer.
+func EvalPolicyForUser(ctx context.Context, expression string, userID model.GlobalUserID, sc *SubjectContext, client *authzed.Client) (bool, error) {
+	return EvalWithContext(ctx, expression, sc, client)
 }
 
 var compiledExprs sync.Map // expression string -> *vm.Program

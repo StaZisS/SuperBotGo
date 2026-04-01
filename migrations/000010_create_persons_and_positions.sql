@@ -9,7 +9,7 @@
 -- Человек (идентичность)
 CREATE TABLE persons (
     id              BIGSERIAL    PRIMARY KEY,
-    external_id     VARCHAR(255) UNIQUE,                -- логин/SSO, используется как subject_id в authorization_tuples
+    external_id     VARCHAR(255) UNIQUE,                -- логин/SSO, используется как SubjectID в SpiceDB
     last_name       VARCHAR(255) NOT NULL,
     first_name      VARCHAR(255) NOT NULL,
     middle_name     VARCHAR(255),

@@ -1,6 +1,5 @@
 definition user {}
 
-
 definition system_role {
     relation member: user
     permission is_member = member
@@ -14,6 +13,81 @@ definition global_role {
 definition plugin {
     relation viewer: user
     relation admin: user
-    permission view = viewer
+    permission view = viewer + admin
     permission manage = admin
+}
+
+definition faculty {
+    relation dean: user
+
+    permission admin = dean
+    permission view_all = dean
+}
+
+definition department {
+    relation parent: faculty
+    relation head: user
+    relation staff: user
+
+    permission admin = head + parent->admin
+    permission view_all = head + staff + parent->view_all
+}
+
+definition program {
+    relation parent: department
+    relation director: user
+
+    permission admin = director + parent->admin
+    permission view_all = director + parent->view_all
+}
+
+definition stream {
+    relation parent: program
+    relation curator: user
+    relation teacher: user
+    relation foreign_teacher: user
+
+    permission admin = curator + parent->admin
+    permission view_all_students = teacher + curator + parent->view_all
+    permission view_foreign_students = foreign_teacher + view_all_students
+}
+
+definition study_group {
+    relation parent: stream
+    relation curator: user
+    relation teacher: user
+    relation member: user
+
+    permission admin = curator + parent->admin
+    permission view_all_students = teacher + curator + parent->view_all_students
+    permission view_foreign_students = parent->view_foreign_students + view_all_students
+    permission view_own_data = member
+}
+
+definition subgroup {
+    relation parent: study_group
+    relation teacher: user
+    relation member: user
+
+    permission view_all_students = teacher + parent->view_all_students
+    permission view_own_data = member
+}
+
+definition nationality_category {
+    relation member: user
+    relation curator: user
+
+    permission view_members = curator
+}
+
+definition student_record {
+    relation owner: user
+    relation in_group: study_group
+    relation in_stream: stream
+    relation has_nationality: nationality_category
+
+    permission view = owner
+        + in_group->view_all_students
+        + (in_stream->view_foreign_students & has_nationality->member)
+    permission edit = in_group->admin
 }

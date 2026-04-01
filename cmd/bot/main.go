@@ -15,7 +15,9 @@ import (
 	"SuperBotGo/internal/admin"
 	adminapi "SuperBotGo/internal/admin/api"
 	"SuperBotGo/internal/authz"
+	"SuperBotGo/internal/authz/outbox"
 	"SuperBotGo/internal/authz/providers"
+	"SuperBotGo/internal/authz/tuples"
 	"SuperBotGo/internal/channel"
 	"SuperBotGo/internal/channel/dedup"
 	"SuperBotGo/internal/channel/discord"
@@ -34,6 +36,7 @@ import (
 	"SuperBotGo/internal/state"
 	"SuperBotGo/internal/state/storage"
 	"SuperBotGo/internal/trigger"
+	"SuperBotGo/internal/university"
 	"SuperBotGo/internal/user"
 	"SuperBotGo/internal/wasm/adapter"
 	"SuperBotGo/internal/wasm/eventbus"
@@ -42,6 +45,7 @@ import (
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 
 	// Импорты для SpiceDB
+	v1 "github.com/authzed/authzed-go/proto/authzed/api/v1"
 	authzed "github.com/authzed/authzed-go/v1"
 	"github.com/authzed/grpcutil"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -255,6 +259,29 @@ func main() {
 		}
 		spiceClient = client
 		logger.Info("SpiceDB client initialized", slog.String("endpoint", cfg.SpiceDB.Endpoint))
+
+		// Загрузка схемы авторизации в SpiceDB (идемпотентно)
+		schemaBytes, err := os.ReadFile("deployments/schema.zed")
+		if err != nil {
+			logger.Error("failed to read SpiceDB schema file", slog.Any("error", err))
+			os.Exit(1)
+		}
+		if _, err := spiceClient.WriteSchema(wasmCtx, &v1.WriteSchemaRequest{
+			Schema: string(schemaBytes),
+		}); err != nil {
+			logger.Error("failed to write SpiceDB schema", slog.Any("error", err))
+			os.Exit(1)
+		}
+		logger.Info("SpiceDB schema loaded")
+
+		// Outbox worker: processes authz_outbox table and writes to SpiceDB.
+		tupleWriter := tuples.NewWriter(spiceClient)
+		outboxWorker := outbox.NewWorker(pool, tupleWriter, logger)
+		go func() {
+			if err := outboxWorker.Run(wasmCtx); err != nil && wasmCtx.Err() == nil {
+				logger.Error("authz outbox worker stopped", slog.Any("error", err))
+			}
+		}()
 	} else {
 		logger.Warn("SpiceDB endpoint not configured, authorization may not work correctly")
 	}
@@ -308,6 +335,32 @@ func main() {
 	})
 	channelStatusHandler.RegisterRoutes(adminMux)
 	ruleSchemaHandler.RegisterRoutes(adminMux)
+	if spiceClient != nil {
+		relHandler := adminapi.NewRelationshipHandler(spiceClient)
+		relHandler.RegisterRoutes(adminMux)
+	}
+
+	syncService := university.NewSyncService(pool)
+	universitySyncHandler := adminapi.NewUniversitySyncHandler(syncService, cfg.Admin.APIKey)
+	universitySyncHandler.RegisterRoutes(adminMux)
+
+	if cfg.UniversitySync.Enabled {
+		pullInterval, err := time.ParseDuration(cfg.UniversitySync.Interval)
+		if err != nil {
+			pullInterval = 1 * time.Hour
+		}
+		dataSource := &university.StubDataSource{
+			BaseURL: cfg.UniversitySync.BaseURL,
+			Token:   cfg.UniversitySync.Token,
+		}
+		puller := university.NewPuller(dataSource, syncService, logger, pullInterval)
+		go func() {
+			if err := puller.Run(wasmCtx); err != nil && wasmCtx.Err() == nil {
+				logger.Error("university puller stopped", slog.Any("error", err))
+			}
+		}()
+	}
+
 	httpTrigger := trigger.NewHTTPTriggerHandler(triggerRouter, triggerRegistry)
 	httpTrigger.SetMetrics(m)
 	adminMux.Handle("/api/triggers/http/", httpTrigger)

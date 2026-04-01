@@ -8,7 +8,7 @@
 -- Факультеты
 CREATE TABLE faculties (
     id          BIGSERIAL    PRIMARY KEY,
-    code        VARCHAR(100) NOT NULL UNIQUE,       -- краткий код, используется в authorization_tuples
+    code        VARCHAR(100) NOT NULL UNIQUE,       -- краткий код, используется как ObjectID в SpiceDB
     name        VARCHAR(500) NOT NULL,
     short_name  VARCHAR(100),
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),

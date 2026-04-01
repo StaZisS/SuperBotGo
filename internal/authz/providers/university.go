@@ -200,74 +200,33 @@ func (p *UniversityProvider) loadDistinctValues(ctx context.Context, table, colu
 	return opts
 }
 
-func (p *UniversityProvider) loadDistinctRelations(ctx context.Context) []authz.RuleParamOption {
-	rows, err := p.pool.Query(ctx, `
-		SELECT DISTINCT relation FROM authorization_tuples
-		WHERE relation NOT IN ('parent')
-		ORDER BY relation
-	`)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
+// Relations and object types are derived from the SpiceDB schema (deployments/schema.zed)
+// rather than querying the authorization_tuples table.
 
-	labels := map[string]string{
-		"member":          "member (член)",
-		"teacher":         "teacher (преподаватель)",
-		"foreign_teacher": "foreign_teacher (преп. иностранцев)",
-		"dean":            "dean (декан)",
-		"head":            "head (завкаф)",
-		"director":        "director (руководитель)",
-		"curator":         "curator (куратор)",
-		"executor":        "executor (исполнитель)",
+func (p *UniversityProvider) loadDistinctRelations(_ context.Context) []authz.RuleParamOption {
+	return []authz.RuleParamOption{
+		{Value: "member", Label: "member (член)"},
+		{Value: "teacher", Label: "teacher (преподаватель)"},
+		{Value: "foreign_teacher", Label: "foreign_teacher (преп. иностранцев)"},
+		{Value: "dean", Label: "dean (декан)"},
+		{Value: "head", Label: "head (завкаф)"},
+		{Value: "director", Label: "director (руководитель)"},
+		{Value: "curator", Label: "curator (куратор)"},
+		{Value: "staff", Label: "staff (сотрудник)"},
+		{Value: "owner", Label: "owner (владелец)"},
 	}
-
-	var opts []authz.RuleParamOption
-	for rows.Next() {
-		var val string
-		if rows.Scan(&val) == nil {
-			lbl := val
-			if l, ok := labels[val]; ok {
-				lbl = l
-			}
-			opts = append(opts, authz.RuleParamOption{Value: val, Label: lbl})
-		}
-	}
-	return opts
 }
 
-func (p *UniversityProvider) loadDistinctObjectTypes(ctx context.Context) []authz.RuleParamOption {
-	rows, err := p.pool.Query(ctx, `
-		SELECT DISTINCT object_type FROM authorization_tuples
-		WHERE object_type NOT IN ('plugin_command')
-		ORDER BY object_type
-	`)
-	if err != nil {
-		return nil
+func (p *UniversityProvider) loadDistinctObjectTypes(_ context.Context) []authz.RuleParamOption {
+	return []authz.RuleParamOption{
+		{Value: "faculty", Label: "Факультет"},
+		{Value: "department", Label: "Кафедра"},
+		{Value: "program", Label: "Направление"},
+		{Value: "stream", Label: "Поток"},
+		{Value: "study_group", Label: "Группа"},
+		{Value: "subgroup", Label: "Подгруппа"},
+		{Value: "nationality_category", Label: "Категория гражданства"},
 	}
-	defer rows.Close()
-
-	labels := map[string]string{
-		"faculty":    "Факультет",
-		"department": "Кафедра",
-		"program":    "Направление",
-		"stream":     "Поток",
-		"group":      "Группа",
-		"subgroup":   "Подгруппа",
-	}
-
-	var opts []authz.RuleParamOption
-	for rows.Next() {
-		var val string
-		if rows.Scan(&val) == nil {
-			lbl := val
-			if l, ok := labels[val]; ok {
-				lbl = l
-			}
-			opts = append(opts, authz.RuleParamOption{Value: val, Label: lbl})
-		}
-	}
-	return opts
 }
 
 var (

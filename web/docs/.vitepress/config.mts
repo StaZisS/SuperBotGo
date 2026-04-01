@@ -88,6 +88,7 @@ export default withMermaid(defineConfig({
             { text: 'Стейт-машина диалогов', link: '/architecture/dialog-state' },
             { text: 'Система триггеров', link: '/architecture/triggers' },
             { text: 'Host API (WASM)', link: '/architecture/hostapi' },
+            { text: 'Авторизация', link: '/architecture/authorization' },
           ],
         },
       ],
