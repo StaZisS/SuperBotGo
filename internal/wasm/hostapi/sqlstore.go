@@ -234,34 +234,25 @@ func cleanupExecutionLocked(ps *pluginSQLState, execID string) {
 	eh.mu.Lock()
 	defer eh.mu.Unlock()
 
-	for id, h := range eh.handles {
-		if h.kind == handleRows {
-			if h.rows != nil {
-				h.rows.Close()
-			}
-			delete(eh.handles, id)
+	// Close in dependency order: rows → transactions → connections.
+	for _, h := range eh.handles {
+		if h.kind == handleRows && h.rows != nil {
+			h.rows.Close()
 		}
 	}
-
 	for id, h := range eh.handles {
-		if h.kind == handleTx {
-			if h.tx != nil {
-				if err := h.tx.Rollback(context.Background()); err != nil {
-					slog.Debug("sql cleanup: rollback tx", "exec", execID, "handle", id, "error", err)
-				}
+		if h.kind == handleTx && h.tx != nil {
+			if err := h.tx.Rollback(context.Background()); err != nil {
+				slog.Debug("sql cleanup: rollback tx", "exec", execID, "handle", id, "error", err)
 			}
-			delete(eh.handles, id)
 		}
 	}
-
-	for id, h := range eh.handles {
-		if h.kind == handleConn {
-			if h.conn != nil {
-				h.conn.Release()
-			}
-			delete(eh.handles, id)
+	for _, h := range eh.handles {
+		if h.kind == handleConn && h.conn != nil {
+			h.conn.Release()
 		}
 	}
+	clear(eh.handles)
 }
 
 // HasDSN checks whether a named database DSN is registered for a plugin.

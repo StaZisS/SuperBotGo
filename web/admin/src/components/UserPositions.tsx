@@ -19,6 +19,7 @@ import {
   DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
 import CascadingSelect, { CascadeLevel } from './CascadingSelect'
+import { getErrorMessage } from '@/lib/utils'
 
 // ---- Label maps ----
 
@@ -97,7 +98,7 @@ export default function UserPositions({ userId }: Props) {
       setCreatePersonOpen(false)
       loadPerson()
     } catch (e: unknown) {
-      toast.error((e as Error).message)
+      toast.error(getErrorMessage(e))
     }
   }
 
@@ -108,7 +109,7 @@ export default function UserPositions({ userId }: Props) {
       const results = await api.searchUnlinkedPersons(searchQuery.trim())
       setSearchResults(results || [])
     } catch (e: unknown) {
-      toast.error((e as Error).message)
+      toast.error(getErrorMessage(e))
     } finally {
       setSearching(false)
     }
@@ -123,7 +124,7 @@ export default function UserPositions({ userId }: Props) {
       setSearchResults([])
       loadPerson()
     } catch (e: unknown) {
-      toast.error((e as Error).message)
+      toast.error(getErrorMessage(e))
     }
   }
 
@@ -296,20 +297,20 @@ function StudentTab({ userId, items, onReload }: { userId: number; items: Studen
 
   const handleSave = async () => {
     const data = {
-      program_id: cascade.program ?? null, stream_id: cascade.stream ?? null, study_group_id: cascade.group ?? null,
+      program_id: cascade.program, stream_id: cascade.stream, study_group_id: cascade.group,
       status, nationality_type: nationality, funding_type: funding, education_form: education,
     }
     try {
       if (editing) {
-        await api.updateStudentPosition(userId, editing.id, data as any)
+        await api.updateStudentPosition(userId, editing.id, data)
         toast.success('Позиция обновлена')
       } else {
-        await api.createStudentPosition(userId, data as any)
+        await api.createStudentPosition(userId, data)
         toast.success('Позиция создана')
       }
       setOpen(false)
       onReload()
-    } catch (e: unknown) { toast.error((e as Error).message) }
+    } catch (e: unknown) { toast.error(getErrorMessage(e)) }
   }
 
   const handleDelete = async (id: number) => {
@@ -317,7 +318,7 @@ function StudentTab({ userId, items, onReload }: { userId: number; items: Studen
       await api.deleteStudentPosition(userId, id)
       toast.success('Позиция удалена')
       onReload()
-    } catch (e: unknown) { toast.error((e as Error).message) }
+    } catch (e: unknown) { toast.error(getErrorMessage(e)) }
   }
 
   return (
@@ -407,22 +408,22 @@ function TeacherTab({ userId, items, onReload }: { userId: number; items: Teache
   }
 
   const handleSave = async () => {
-    const data = { department_id: cascade.department ?? null, position_title: title, employment_type: employment, status }
+    const data = { department_id: cascade.department, position_title: title, employment_type: employment, status }
     try {
       if (editing) {
-        await api.updateTeacherPosition(userId, editing.id, data as any)
+        await api.updateTeacherPosition(userId, editing.id, data)
         toast.success('Позиция обновлена')
       } else {
-        await api.createTeacherPosition(userId, data as any)
+        await api.createTeacherPosition(userId, data)
         toast.success('Позиция создана')
       }
       setOpen(false); onReload()
-    } catch (e: unknown) { toast.error((e as Error).message) }
+    } catch (e: unknown) { toast.error(getErrorMessage(e)) }
   }
 
   const handleDelete = async (id: number) => {
     try { await api.deleteTeacherPosition(userId, id); toast.success('Позиция удалена'); onReload() }
-    catch (e: unknown) { toast.error((e as Error).message) }
+    catch (e: unknown) { toast.error(getErrorMessage(e)) }
   }
 
   return (
@@ -515,13 +516,13 @@ function AdminTab({ userId, items, onReload }: { userId: number; items: AdminApp
     setCascade({})
   }
 
-  const getScopeId = (): number | null => {
-    if (scopeType === 'university_wide') return null
+  const getScopeId = (): number | undefined => {
+    if (scopeType === 'university_wide') return undefined
     const scopeKeys: Record<string, string> = {
       faculty: 'faculty', department: 'department', program: 'program', stream: 'stream', group: 'group',
     }
     const key = scopeKeys[scopeType]
-    return key ? (cascade[key] ?? null) : null
+    return key ? cascade[key] : undefined
   }
 
   const handleSave = async () => {
@@ -531,19 +532,19 @@ function AdminTab({ userId, items, onReload }: { userId: number; items: AdminApp
     }
     try {
       if (editing) {
-        await api.updateAdminAppointment(userId, editing.id, data as any)
+        await api.updateAdminAppointment(userId, editing.id, data)
         toast.success('Назначение обновлено')
       } else {
-        await api.createAdminAppointment(userId, data as any)
+        await api.createAdminAppointment(userId, data)
         toast.success('Назначение создано')
       }
       setOpen(false); onReload()
-    } catch (e: unknown) { toast.error((e as Error).message) }
+    } catch (e: unknown) { toast.error(getErrorMessage(e)) }
   }
 
   const handleDelete = async (id: number) => {
     try { await api.deleteAdminAppointment(userId, id); toast.success('Назначение удалено'); onReload() }
-    catch (e: unknown) { toast.error((e as Error).message) }
+    catch (e: unknown) { toast.error(getErrorMessage(e)) }
   }
 
   return (

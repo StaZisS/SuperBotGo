@@ -19,7 +19,7 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog'
-import { cn, formatRelativeDate } from '@/lib/utils'
+import { cn, formatRelativeDate, getErrorMessage } from '@/lib/utils'
 
 function LoadingSkeleton() {
   return (
@@ -90,7 +90,7 @@ export default function PluginVersions() {
       toast.success(`Откат выполнен на версию ${res.version}`)
       load()
     } catch (e: unknown) {
-      toast.error((e as Error).message)
+      toast.error(getErrorMessage(e))
     } finally {
       setActionLoading(null)
     }
@@ -104,7 +104,7 @@ export default function PluginVersions() {
       toast.success('Версия удалена')
       load()
     } catch (e: unknown) {
-      toast.error((e as Error).message)
+      toast.error(getErrorMessage(e))
     } finally {
       setActionLoading(null)
     }

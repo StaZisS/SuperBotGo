@@ -14,7 +14,7 @@ import {
   AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader,
   AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction, AlertDialogCancel,
 } from '@/components/ui/alert-dialog'
-import { formatDate } from '@/lib/utils'
+import { formatDate, getErrorMessage } from '@/lib/utils'
 import UserPositions from '@/components/UserPositions'
 
 export default function UserDetail() {
@@ -49,7 +49,7 @@ export default function UserDetail() {
       await api.updateUser(Number(id), { locale, role })
       toast.success('Пользователь обновлён')
     } catch (e: unknown) {
-      toast.error((e as Error).message)
+      toast.error(getErrorMessage(e))
     } finally {
       setSaving(false)
     }
@@ -62,7 +62,7 @@ export default function UserDetail() {
       toast.success('Пользователь удалён')
       navigate('/admin/users')
     } catch (e: unknown) {
-      toast.error((e as Error).message)
+      toast.error(getErrorMessage(e))
     }
   }
 
@@ -73,7 +73,7 @@ export default function UserDetail() {
       setRoles(prev => prev.filter(r => !(r.role_name === roleName && r.role_type === roleType)))
       toast.success('Роль удалена')
     } catch (e: unknown) {
-      toast.error((e as Error).message)
+      toast.error(getErrorMessage(e))
     }
   }
 
@@ -84,7 +84,7 @@ export default function UserDetail() {
       setUser(prev => prev ? { ...prev, accounts: prev.accounts.filter(a => a.id !== accountId) } : prev)
       toast.success('Аккаунт отвязан')
     } catch (e: unknown) {
-      toast.error((e as Error).message)
+      toast.error(getErrorMessage(e))
     }
   }
 

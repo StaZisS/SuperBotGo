@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"strings"
 
 	"SuperBotGo/internal/channel"
 	"SuperBotGo/internal/model"
@@ -26,20 +27,11 @@ func stripTelebotPrefix(data string) string {
 		return data
 	}
 	rest := data[1:]
-	if idx := indexOf(rest, '|'); idx >= 0 {
+	if idx := strings.IndexByte(rest, '|'); idx >= 0 {
 		return rest[idx+1:]
 	}
-	if idx := indexOf(rest, '\f'); idx >= 0 {
+	if idx := strings.IndexByte(rest, '\f'); idx >= 0 {
 		return rest[idx+1:]
 	}
 	return rest
-}
-
-func indexOf(s string, ch byte) int {
-	for i := 0; i < len(s); i++ {
-		if s[i] == ch {
-			return i
-		}
-	}
-	return -1
 }

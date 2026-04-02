@@ -66,8 +66,9 @@ func (r *Renderer) Render(msg model.Message) RenderedMessage {
 	}
 
 	text := strings.Join(parts.TextParts, "\n")
-	if len(text) > discordMaxMessageLength {
-		text = text[:discordMaxMessageLength-3] + "..."
+	if len([]rune(text)) > discordMaxMessageLength {
+		runes := []rune(text)
+		text = string(runes[:discordMaxMessageLength-3]) + "..."
 	}
 
 	return RenderedMessage{

@@ -53,6 +53,15 @@ import (
 	"google.golang.org/grpc/credentials/insecure" // <--- ДОБАВИТЬ
 )
 
+const (
+	defaultWasmMemoryLimitPages = 8192 // 512 MiB
+	defaultSyncInterval         = 1 * time.Hour
+	httpReadTimeout             = 30 * time.Second
+	httpWriteTimeout            = 60 * time.Second
+	httpIdleTimeout             = 120 * time.Second
+	focusTrackerTimeout         = 10 * time.Minute
+)
+
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
@@ -79,7 +88,7 @@ func main() {
 
 	rt, err := wasmrt.NewRuntime(wasmCtx, wasmrt.Config{
 		CacheDir:                cfg.Admin.ModulesDir + "/.cache",
-		DefaultMemoryLimitPages: 8192, // 512 MiB
+		DefaultMemoryLimitPages: defaultWasmMemoryLimitPages,
 	})
 	if err != nil {
 		logger.Error("failed to create wasm runtime", slog.Any("error", err))
@@ -354,7 +363,7 @@ func main() {
 	if cfg.UniversitySync.Enabled {
 		pullInterval, err := time.ParseDuration(cfg.UniversitySync.Interval)
 		if err != nil {
-			pullInterval = 1 * time.Hour
+			pullInterval = defaultSyncInterval
 		}
 		dataSource := &university.StubDataSource{
 			BaseURL: cfg.UniversitySync.BaseURL,
@@ -379,9 +388,9 @@ func main() {
 	adminServer := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Admin.Port),
 		Handler:      adminMux,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		ReadTimeout:  httpReadTimeout,
+		WriteTimeout: httpWriteTimeout,
+		IdleTimeout:  httpIdleTimeout,
 	}
 
 	go func() {
@@ -416,7 +425,7 @@ func main() {
 
 	cronScheduler.Start()
 
-	focusTracker := plugin.NewFocusTracker(10 * time.Minute)
+	focusTracker := plugin.NewFocusTracker(focusTrackerTimeout)
 
 	channelMgr := channel.NewChannelManager(
 		userService,
@@ -544,6 +553,9 @@ func main() {
 
 func generateInstanceID() string {
 	b := make([]byte, 8)
-	_, _ = rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		slog.Error("failed to generate random instance ID", slog.Any("error", err))
+		os.Exit(1)
+	}
 	return hex.EncodeToString(b)
 }

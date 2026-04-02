@@ -4,6 +4,7 @@ import { ArrowLeft, Settings } from 'lucide-react'
 import { api, PluginDetail } from '@/api/client'
 import JsonSchemaForm, { validateSchema } from '@/components/JsonSchemaForm'
 import { toast } from 'sonner'
+import { getErrorMessage } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -84,7 +85,7 @@ export default function PluginConfig() {
       toast.success('Конфигурация сохранена')
       navigate(`/admin/plugins/${id}`)
     } catch (e: unknown) {
-      toast.error((e as Error).message)
+      toast.error(getErrorMessage(e))
     } finally {
       setSaving(false)
     }

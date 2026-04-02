@@ -26,7 +26,8 @@ export default function CascadingSelect({ levels, values, onChange }: Props) {
     try {
       const items = await level.fetchFn(parentId)
       setOptions(prev => ({ ...prev, [level.key]: items || [] }))
-    } catch {
+    } catch (err) {
+      console.error(`Failed to load cascade level "${level.key}":`, err)
       setOptions(prev => ({ ...prev, [level.key]: [] }))
     } finally {
       setLoading(prev => ({ ...prev, [level.key]: false }))

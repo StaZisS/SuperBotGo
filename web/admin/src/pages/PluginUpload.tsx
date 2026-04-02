@@ -26,7 +26,7 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog'
-import { cn, compareVersions } from '@/lib/utils'
+import { cn, compareVersions, getErrorMessage } from '@/lib/utils'
 
 const steps = [
   { num: 1, label: 'Загрузка файла' },
@@ -99,7 +99,7 @@ export default function PluginUpload() {
       setMeta(result)
       toast.success('Файл загружен, проверьте метаданные ниже')
     } catch (e: unknown) {
-      toast.error((e as Error).message)
+      toast.error(getErrorMessage(e))
     } finally {
       setUploading(false)
     }
@@ -126,7 +126,7 @@ export default function PluginUpload() {
       toast.success('Плагин успешно установлен')
       navigate(`/admin/plugins/${meta.id}`)
     } catch (e: unknown) {
-      toast.error((e as Error).message)
+      toast.error(getErrorMessage(e))
     } finally {
       setInstalling(false)
     }

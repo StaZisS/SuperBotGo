@@ -187,12 +187,7 @@ func (b *Bot) registerHandlers() {
 		}
 
 		data := i.MessageComponentData()
-		platformUserID := ""
-		if i.Member != nil && i.Member.User != nil {
-			platformUserID = i.Member.User.ID
-		} else if i.User != nil {
-			platformUserID = i.User.ID
-		}
+		platformUserID, discordUsername := extractInteractionUser(i)
 		chatID := i.ChannelID
 
 		b.logger.Info("discord: received button interaction",
@@ -205,12 +200,6 @@ func (b *Bot) registerHandlers() {
 		})
 
 		ctx := context.Background()
-		discordUsername := ""
-		if i.Member != nil && i.Member.User != nil {
-			discordUsername = i.Member.User.Username
-		} else if i.User != nil {
-			discordUsername = i.User.Username
-		}
 		if err := b.handler(ctx, channel.Update{
 			ChannelType:      model.ChannelDiscord,
 			PlatformUserID:   model.PlatformUserID(platformUserID),
@@ -224,4 +213,16 @@ func (b *Bot) registerHandlers() {
 				slog.Any("error", err))
 		}
 	})
+}
+
+// extractInteractionUser returns the user ID and username from a Discord interaction,
+// handling both guild (Member) and DM (User) contexts.
+func extractInteractionUser(i *discordgo.InteractionCreate) (id, username string) {
+	if i.Member != nil && i.Member.User != nil {
+		return i.Member.User.ID, i.Member.User.Username
+	}
+	if i.User != nil {
+		return i.User.ID, i.User.Username
+	}
+	return "", ""
 }

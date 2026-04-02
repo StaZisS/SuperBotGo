@@ -26,6 +26,12 @@ export function formatDate(dateStr: string): string {
   })
 }
 
+export function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'string') return error
+  return 'Unknown error'
+}
+
 export function formatRelativeDate(dateStr: string): string {
   const date = new Date(dateStr)
   const now = new Date()

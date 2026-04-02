@@ -6,13 +6,6 @@ import (
 	"SuperBotGo/internal/model"
 )
 
-// RelationEntry is kept for legacy/testing purposes.
-type RelationEntry struct {
-	Relation   string
-	ObjectType string
-	ObjectID   string
-}
-
 type Store interface {
 	GetRoles(ctx context.Context, userID model.GlobalUserID, roleType model.RoleLayer) ([]model.UserRole, error)
 	GetAllRoleNames(ctx context.Context, userID model.GlobalUserID) ([]string, error)

@@ -51,7 +51,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { compareVersions, formatDate } from '@/lib/utils'
+import { compareVersions, formatDate, getErrorMessage } from '@/lib/utils'
 
 function describeCron(expr: string): string {
   const parts = expr.trim().split(/\s+/)
@@ -195,7 +195,7 @@ export default function PluginDetail() {
       setPlugin((prev) =>
         prev ? { ...prev, status: wasActive ? 'active' : 'disabled' } : prev,
       )
-      toast.error((e as Error).message)
+      toast.error(getErrorMessage(e))
     }
   }
 
@@ -207,7 +207,7 @@ export default function PluginDetail() {
       toast.success('Плагин удалён')
       navigate('/admin/plugins')
     } catch (e: unknown) {
-      toast.error((e as Error).message)
+      toast.error(getErrorMessage(e))
     } finally {
       setActionLoading(false)
     }
@@ -232,7 +232,7 @@ export default function PluginDetail() {
 
       await doUpdate(file)
     } catch (e: unknown) {
-      toast.error((e as Error).message)
+      toast.error(getErrorMessage(e))
     } finally {
       setActionLoading(false)
     }
@@ -249,7 +249,7 @@ export default function PluginDetail() {
       setUpdateFile(null)
       load()
     } catch (e: unknown) {
-      toast.error((e as Error).message)
+      toast.error(getErrorMessage(e))
     } finally {
       setActionLoading(false)
     }

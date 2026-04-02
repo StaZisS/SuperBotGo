@@ -42,7 +42,9 @@ func (r *PgUserRepo) FindByID(ctx context.Context, id model.GlobalUserID) (*mode
 		u.Locale = *locale
 	}
 	if profileJSON != nil && *profileJSON != "" {
-		_ = json.Unmarshal([]byte(*profileJSON), &u.ProfileData)
+		if err := json.Unmarshal([]byte(*profileJSON), &u.ProfileData); err != nil {
+			return nil, fmt.Errorf("unmarshal profile data for user %d: %w", id, err)
+		}
 	}
 
 	rows, err := r.pool.Query(ctx, `
@@ -68,7 +70,10 @@ func (r *PgUserRepo) FindByID(ctx context.Context, id model.GlobalUserID) (*mode
 func (r *PgUserRepo) Save(ctx context.Context, user *model.GlobalUser) (*model.GlobalUser, error) {
 	var profileStr *string
 	if user.ProfileData != nil {
-		b, _ := json.Marshal(user.ProfileData)
+		b, err := json.Marshal(user.ProfileData)
+		if err != nil {
+			return nil, fmt.Errorf("marshal profile data: %w", err)
+		}
 		s := string(b)
 		profileStr = &s
 	}

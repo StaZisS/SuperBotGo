@@ -136,7 +136,8 @@ func (wp *WasmPlugin) stepNodeDefToStepNode(nd wasmrt.NodeDef) state.StepNode {
 		node.Validate = func(input model.UserInput) bool {
 			re, err := regexp.Compile(pattern)
 			if err != nil {
-				return true
+				slog.Warn("wasm: invalid validation regex", "pattern", pattern, "error", err)
+				return false
 			}
 			return re.MatchString(input.TextValue())
 		}

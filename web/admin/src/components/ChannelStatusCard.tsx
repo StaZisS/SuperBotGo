@@ -23,7 +23,7 @@ export default function ChannelStatusCard() {
     api
       .listChannelStatus()
       .then(setChannels)
-      .catch(() => {})
+      .catch((err) => console.error('Failed to load channel status:', err))
       .finally(() => setLoading(false))
   }, [])
 

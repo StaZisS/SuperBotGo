@@ -10,8 +10,6 @@ import (
 	authzed "github.com/authzed/authzed-go/v1"
 	"github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/vm"
-
-	"SuperBotGo/internal/model"
 )
 
 type exprEnv struct {
@@ -94,59 +92,10 @@ func buildExprEnv(ctx context.Context, sc *SubjectContext, client *authzed.Clien
 	}
 }
 
-// buildExprEnvLegacy builds an expression environment using pre-loaded relations (for testing).
-func buildExprEnvLegacy(sc *SubjectContext, relations []RelationEntry) exprEnv {
-	type relationKey struct {
-		relation   string
-		objectType string
-		objectID   string
-	}
-
-	relSet := make(map[relationKey]bool, len(relations))
-	for _, r := range relations {
-		relSet[relationKey{r.Relation, r.ObjectType, r.ObjectID}] = true
-	}
-
-	roleSet := make(map[string]bool, len(sc.Roles))
-	for _, r := range sc.Roles {
-		roleSet[r] = true
-	}
-
-	return exprEnv{
-		User: buildUserMap(sc),
-
-		Check: func(relation, objectType, objectID string) bool {
-			return relSet[relationKey{relation, objectType, objectID}]
-		},
-
-		IsMember: func(objectType, objectID string) bool {
-			return relSet[relationKey{"member", objectType, objectID}]
-		},
-
-		HasRole: func(roleName string) bool {
-			return roleSet[roleName]
-		},
-
-		HasAnyRole: func(roleNames ...string) bool {
-			for _, rn := range roleNames {
-				if roleSet[rn] {
-					return true
-				}
-			}
-			return false
-		},
-	}
-}
-
 // EvalWithContext evaluates a policy expression using SpiceDB for graph checks.
 func EvalWithContext(ctx context.Context, expression string, sc *SubjectContext, client *authzed.Client) (bool, error) {
 	env := buildExprEnv(ctx, sc, client)
 	return evaluate(expression, env)
-}
-
-// EvalPolicyForUser is a convenience wrapper for the Authorizer.
-func EvalPolicyForUser(ctx context.Context, expression string, userID model.GlobalUserID, sc *SubjectContext, client *authzed.Client) (bool, error) {
-	return EvalWithContext(ctx, expression, sc, client)
 }
 
 var compiledExprs sync.Map // expression string -> *vm.Program

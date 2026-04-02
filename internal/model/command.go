@@ -19,14 +19,6 @@ type CommandRequest struct {
 	Locale      string       `json:"locale"`
 }
 
-type StepResult int
-
-const (
-	StepContinue StepResult = iota
-	StepComplete
-	StepInvalid
-)
-
 // CommandCandidate describes one plugin's claim on a command alias.
 // Used during disambiguation when multiple plugins register the same short name.
 type CommandCandidate struct {

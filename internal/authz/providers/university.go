@@ -22,13 +22,17 @@ func (p *UniversityProvider) LoadAttributes(ctx context.Context, sc *authz.Subje
 	}
 
 	var natType, fundType, eduForm *string
-	_ = p.pool.QueryRow(ctx, `
+	err := p.pool.QueryRow(ctx, `
 		SELECT sp.nationality_type, sp.funding_type, sp.education_form
 		FROM student_positions sp
 		JOIN persons pe ON pe.id = sp.person_id
 		WHERE pe.external_id = $1 AND sp.status = 'active'
 		LIMIT 1
 	`, sc.ExternalID).Scan(&natType, &fundType, &eduForm)
+	if err != nil {
+		// No active student position — not an error, just skip attributes.
+		return nil
+	}
 
 	if natType != nil {
 		sc.Attrs["nationality_type"] = *natType

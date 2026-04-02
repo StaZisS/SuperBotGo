@@ -3,6 +3,7 @@ package state
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"SuperBotGo/internal/locale"
@@ -86,7 +87,11 @@ func (h *DslStateHandler) RestoreState(ds model.DialogState) (State, error) {
 }
 
 func (h *DslStateHandler) PersistState(s State) model.DialogState {
-	ds := requireDslState(s)
+	ds, ok := s.(*DslState)
+	if !ok {
+		slog.Error("PersistState: expected *DslState", "got", fmt.Sprintf("%T", s))
+		return model.DialogState{CommandName: h.command.Name}
+	}
 	return model.DialogState{
 		CommandName: h.command.Name,
 		Params:      copyOptionMap(ds.Params),
@@ -95,7 +100,10 @@ func (h *DslStateHandler) PersistState(s State) model.DialogState {
 }
 
 func (h *DslStateHandler) ProcessInput(_ model.GlobalUserID, s State, input model.UserInput) (State, StepOutcome, error) {
-	ds := requireDslState(s)
+	ds, ok := s.(*DslState)
+	if !ok {
+		return nil, StepOutcome{}, fmt.Errorf("expected *DslState but got %T", s)
+	}
 	step := h.command.CurrentStep(ds.Params)
 	if step == nil {
 
@@ -159,7 +167,11 @@ func (h *DslStateHandler) ProcessInput(_ model.GlobalUserID, s State, input mode
 }
 
 func (h *DslStateHandler) BuildStepMessage(s State, locale string) model.Message {
-	ds := requireDslState(s)
+	ds, ok := s.(*DslState)
+	if !ok {
+		slog.Error("BuildStepMessage: expected *DslState", "got", fmt.Sprintf("%T", s))
+		return model.Message{}
+	}
 	step := h.command.CurrentStep(ds.Params)
 	if step == nil {
 		return model.Message{}
@@ -216,14 +228,6 @@ func (h *DslStateHandler) applyPagination(message model.Message, step *StepNode,
 	blocks = append(blocks, paginatedBlock)
 
 	return model.Message{Blocks: blocks}
-}
-
-func requireDslState(s State) *DslState {
-	ds, ok := s.(*DslState)
-	if !ok {
-		panic(fmt.Sprintf("expected *DslState but got %T", s))
-	}
-	return ds
 }
 
 var _ StateHandler = (*DslStateHandler)(nil)

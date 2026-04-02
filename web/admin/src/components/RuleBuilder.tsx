@@ -36,7 +36,7 @@ type RuleItem = Condition | RuleGroup
 type Logic = 'AND' | 'OR'
 
 let idSeq = 0
-function newId() { return `r_${++idSeq}` }
+function newId() { return `r_${Date.now()}_${++idSeq}` }
 
 function newCondition(schema: RuleSchema): Condition {
   const firstType = schema.condition_types[0]

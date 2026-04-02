@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { api, RefItem } from '@/api/client'
 import { toast } from 'sonner'
+import { getErrorMessage } from '@/lib/utils'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -77,7 +78,7 @@ function EntityTab({ config }: { config: EntityTabConfig }) {
     try {
       const data = await config.listFn(parentId)
       setItems(data || [])
-    } catch (e: unknown) { toast.error((e as Error).message) }
+    } catch (e: unknown) { toast.error(getErrorMessage(e)) }
     finally { setLoading(false) }
   }, [canList, parentId, config])
 
@@ -116,7 +117,7 @@ function EntityTab({ config }: { config: EntityTabConfig }) {
       }
       setDialogOpen(false)
       load()
-    } catch (e: unknown) { toast.error((e as Error).message) }
+    } catch (e: unknown) { toast.error(getErrorMessage(e)) }
   }
 
   const handleDelete = async (id: number) => {
@@ -125,7 +126,7 @@ function EntityTab({ config }: { config: EntityTabConfig }) {
       await config.deleteFn(id)
       toast.success('Удалено')
       load()
-    } catch (e: unknown) { toast.error((e as Error).message) }
+    } catch (e: unknown) { toast.error(getErrorMessage(e)) }
   }
 
   const setField = (key: string, value: any) => setForm(prev => ({ ...prev, [key]: value }))
