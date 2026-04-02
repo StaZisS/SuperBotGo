@@ -78,7 +78,8 @@ func main() {
 	wasmCtx := context.Background()
 
 	rt, err := wasmrt.NewRuntime(wasmCtx, wasmrt.Config{
-		CacheDir: cfg.Admin.ModulesDir + "/.cache",
+		CacheDir:                cfg.Admin.ModulesDir + "/.cache",
+		DefaultMemoryLimitPages: 8192, // 512 MiB
 	})
 	if err != nil {
 		logger.Error("failed to create wasm runtime", slog.Any("error", err))
