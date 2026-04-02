@@ -24,18 +24,25 @@ func NewManager(store storage.DialogStorage) *Manager {
 	}
 }
 
-func (m *Manager) RegisterCommand(def *CommandDefinition) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.commands[def.Name] = def
-	m.handlers[def.Name] = NewDslStateHandler(def)
+// fqKey builds a fully-qualified map key: "pluginID.commandName".
+func fqKey(pluginID, name string) string {
+	return pluginID + "." + name
 }
 
-func (m *Manager) UnregisterCommand(name string) {
+func (m *Manager) RegisterCommand(pluginID string, def *CommandDefinition) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	delete(m.commands, name)
-	delete(m.handlers, name)
+	key := fqKey(pluginID, def.Name)
+	m.commands[key] = def
+	m.handlers[key] = NewDslStateHandler(def)
+}
+
+func (m *Manager) UnregisterCommand(pluginID, name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := fqKey(pluginID, name)
+	delete(m.commands, key)
+	delete(m.handlers, key)
 }
 
 func (m *Manager) RegisterHandler(name string, handler StateHandler) {
@@ -44,33 +51,35 @@ func (m *Manager) RegisterHandler(name string, handler StateHandler) {
 	m.handlers[name] = handler
 }
 
-func (m *Manager) IsCommandImmediate(commandName string) bool {
+func (m *Manager) IsCommandImmediate(pluginID, commandName string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	def, ok := m.commands[commandName]
+	def, ok := m.commands[fqKey(pluginID, commandName)]
 	if !ok {
 		return false
 	}
 	return def.IsComplete(nil)
 }
 
-func (m *Manager) StartCommand(ctx context.Context, userID model.GlobalUserID, chatID string, commandName string, locale string) (model.Message, error) {
+func (m *Manager) StartCommand(ctx context.Context, userID model.GlobalUserID, chatID string, pluginID string, commandName string, locale string) (model.Message, error) {
+	key := fqKey(pluginID, commandName)
 	m.mu.RLock()
-	handler, ok := m.handlers[commandName]
+	handler, ok := m.handlers[key]
 	m.mu.RUnlock()
 	if !ok {
-		return model.Message{}, fmt.Errorf("%w: %s", ErrCommandNotFound, commandName)
+		return model.Message{}, fmt.Errorf("%w: %s", ErrCommandNotFound, key)
 	}
 
 	state, err := handler.CreateNewState(commandName)
 	if err != nil {
-		return model.Message{}, fmt.Errorf("creating state for %s: %w", commandName, err)
+		return model.Message{}, fmt.Errorf("creating state for %s: %w", key, err)
 	}
 
 	msg := handler.BuildStepMessage(state, locale)
 
 	ds := handler.PersistState(state)
 	ds.ChatID = chatID
+	ds.PluginID = pluginID
 	if err := m.storage.Save(ctx, userID, ds); err != nil {
 		return model.Message{}, fmt.Errorf("saving state: %w", err)
 	}
@@ -90,11 +99,12 @@ func (m *Manager) ProcessInput(ctx context.Context, userID model.GlobalUserID, c
 		return model.Message{}, nil, nil
 	}
 
+	key := fqKey(ds.PluginID, ds.CommandName)
 	m.mu.RLock()
-	handler, ok := m.handlers[ds.CommandName]
+	handler, ok := m.handlers[key]
 	m.mu.RUnlock()
 	if !ok {
-		return model.Message{}, nil, fmt.Errorf("%w: %s", ErrCommandNotFound, ds.CommandName)
+		return model.Message{}, nil, fmt.Errorf("%w: %s", ErrCommandNotFound, key)
 	}
 
 	state, err := handler.RestoreState(*ds)
@@ -116,6 +126,7 @@ func (m *Manager) ProcessInput(ctx context.Context, userID model.GlobalUserID, c
 		}
 		cmdReq := &model.CommandRequest{
 			UserID:      userID,
+			PluginID:    ds.PluginID,
 			CommandName: outcome.CommandName,
 			Params:      outcome.Params,
 			Locale:      locale,
@@ -125,6 +136,7 @@ func (m *Manager) ProcessInput(ctx context.Context, userID model.GlobalUserID, c
 
 	persistedDS := handler.PersistState(nextState)
 	persistedDS.ChatID = ds.ChatID
+	persistedDS.PluginID = ds.PluginID
 	if err := m.storage.Save(ctx, userID, persistedDS); err != nil {
 		return model.Message{}, nil, fmt.Errorf("saving state: %w", err)
 	}
@@ -153,10 +165,10 @@ func (m *Manager) RelocateDialog(ctx context.Context, userID model.GlobalUserID,
 	return m.storage.Save(ctx, userID, *ds)
 }
 
-func (m *Manager) IsPreservesDialog(commandName string) bool {
+func (m *Manager) IsPreservesDialog(pluginID, commandName string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	def, ok := m.commands[commandName]
+	def, ok := m.commands[fqKey(pluginID, commandName)]
 	if !ok {
 		return false
 	}
@@ -172,11 +184,12 @@ func (m *Manager) GetCurrentStepMessage(ctx context.Context, userID model.Global
 		return nil, "", nil
 	}
 
+	key := fqKey(ds.PluginID, ds.CommandName)
 	m.mu.RLock()
-	handler, ok := m.handlers[ds.CommandName]
+	handler, ok := m.handlers[key]
 	m.mu.RUnlock()
 	if !ok {
-		return nil, "", fmt.Errorf("%w: %s", ErrCommandNotFound, ds.CommandName)
+		return nil, "", fmt.Errorf("%w: %s", ErrCommandNotFound, key)
 	}
 
 	state, err := handler.RestoreState(*ds)

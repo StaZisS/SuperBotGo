@@ -45,3 +45,13 @@ find_room_line = "{{.Building}} {{.Bld}}, этаж {{.Floor}}"
 find_room_wing = "{{.Building}} {{.Bld}}, этаж {{.Floor}}, крыло {{.Wing}}"
 find_entry = "  {{.Building}} {{.Bld}} — {{.Time}} ({{.Teacher}})"
 notify_enabled = "Уведомления включены."
+
+# Settings command
+settings = "Настройки расписания"
+settings_prompt = "Что вы хотите настроить?"
+default_building = "Корпус по умолчанию"
+reminder_time = "Время напоминания"
+setting_saved = "Настройка сохранена!"
+morning = "Утро (07:00)"
+evening = "Вечер (20:00)"
+off = "Выкл"

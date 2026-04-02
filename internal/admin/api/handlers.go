@@ -45,8 +45,8 @@ type cmdInfo struct {
 }
 
 type StateManagerRegistrar interface {
-	RegisterCommand(def *state.CommandDefinition)
-	UnregisterCommand(name string)
+	RegisterCommand(pluginID string, def *state.CommandDefinition)
+	UnregisterCommand(pluginID, name string)
 }
 
 type AdminHandler struct {
@@ -132,7 +132,7 @@ func (h *AdminHandler) registerPluginCommands(p plugin.Plugin) {
 		return
 	}
 	for _, def := range p.Commands() {
-		h.stateMgr.RegisterCommand(def)
+		h.stateMgr.RegisterCommand(p.ID(), def)
 	}
 }
 

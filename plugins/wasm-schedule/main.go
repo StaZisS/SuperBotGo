@@ -33,6 +33,7 @@ func main() {
 		Triggers: []wasmplugin.Trigger{
 			scheduleCommand(),
 			findCommand(),
+			settingsCommand(),
 			{
 				Name:        "api",
 				Type:        wasmplugin.TriggerHTTP,
@@ -364,6 +365,61 @@ func findCommand() wasmplugin.Trigger {
 			return nil
 		},
 	}
+}
+
+func settingsCommand() wasmplugin.Trigger {
+	return wasmplugin.Trigger{
+		Name:        "settings",
+		Type:        wasmplugin.TriggerMessenger,
+		Description: "Configure schedule preferences",
+		Nodes: []wasmplugin.Node{
+			wasmplugin.NewStep("setting").
+				LocalizedText(cat.L("settings"), wasmplugin.StyleHeader).
+				LocalizedDynamicOptions(cat.L("settings_prompt"), func(ctx *wasmplugin.CallbackContext) []wasmplugin.Option {
+					return []wasmplugin.Option{
+						cat.Opt("default_building", "building"),
+						cat.Opt("reminder_time", "reminder"),
+					}
+				}),
+
+			wasmplugin.BranchOn("setting",
+				wasmplugin.Case("building",
+					wasmplugin.NewStep("building").
+						LocalizedText(cat.L("building"), wasmplugin.StyleSubheader).
+						LocalizedPaginatedOptions(cat.L("building"), 2, buildingPages),
+				),
+				wasmplugin.Case("reminder",
+					wasmplugin.NewStep("reminder").
+						LocalizedText(cat.L("reminder_time"), wasmplugin.StyleSubheader).
+						LocalizedDynamicOptions(cat.L("reminder_time"), func(ctx *wasmplugin.CallbackContext) []wasmplugin.Option {
+							return []wasmplugin.Option{
+								cat.Opt("morning", "morning"),
+								cat.Opt("evening", "evening"),
+								cat.Opt("off", "off"),
+							}
+						}),
+				),
+			),
+		},
+		Handler: handleSettingsCmd,
+	}
+}
+
+func handleSettingsCmd(ctx *wasmplugin.EventContext) error {
+	setting := ctx.Param("setting")
+	ctx.Log("settings: " + setting)
+
+	tr := cat.Tr(ctx.Locale())
+
+	switch setting {
+	case "building":
+		building := ctx.Param("building")
+		ctx.Reply(tr("setting_saved") + "\n" + tr("default_building") + ": " + building)
+	case "reminder":
+		reminder := ctx.Param("reminder")
+		ctx.Reply(tr("setting_saved") + "\n" + tr("reminder_time") + ": " + tr(reminder))
+	}
+	return nil
 }
 
 func handleDailyReminder(ctx *wasmplugin.EventContext) error {

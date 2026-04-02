@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 
 	"SuperBotGo/internal/errs"
+	"SuperBotGo/internal/i18n"
 	"SuperBotGo/internal/locale"
 	"SuperBotGo/internal/model"
 	"SuperBotGo/internal/state"
@@ -18,15 +20,16 @@ type UserService interface {
 }
 
 type StateManager interface {
-	Register(def *state.CommandDefinition)
-	StartCommand(ctx context.Context, userID model.GlobalUserID, channelType model.ChannelType, chatID string, commandName string, locale string) (*StateResult, error)
+	Register(pluginID string, def *state.CommandDefinition)
+	StartCommand(ctx context.Context, userID model.GlobalUserID, channelType model.ChannelType, chatID string, pluginID string, commandName string, locale string) (*StateResult, error)
 	ProcessInput(ctx context.Context, userID model.GlobalUserID, channelType model.ChannelType, chatID string, input model.UserInput, locale string) (*StateResult, error)
 	CancelCommand(ctx context.Context, userID model.GlobalUserID, channelType model.ChannelType) error
-	IsPreservesDialog(commandName string) bool
+	IsPreservesDialog(pluginID, commandName string) bool
 	GetCurrentStepMessage(ctx context.Context, userID model.GlobalUserID, locale string) (*model.Message, string, error)
 }
 
 type StateResult struct {
+	PluginID    string
 	Message     model.Message
 	CommandName string
 	IsComplete  bool
@@ -36,6 +39,7 @@ type StateResult struct {
 type PluginRegistry interface {
 	GetCommandDefinition(commandName string) *state.CommandDefinition
 	GetPluginIDByCommand(commandName string) string
+	ResolveCommand(input string) (pluginID string, def *state.CommandDefinition, candidates []model.CommandCandidate)
 }
 
 type EventRouter interface {
@@ -46,6 +50,12 @@ type Authorizer interface {
 	CheckCommand(ctx context.Context, userID model.GlobalUserID, pluginID string, commandName string, requirements *model.RoleRequirements) (bool, error)
 }
 
+// FocusTracker tracks per-user last-used plugin for disambiguation sorting.
+type FocusTracker interface {
+	Record(userID model.GlobalUserID, pluginID string)
+	LastPlugin(userID model.GlobalUserID) string
+}
+
 type ChannelManager struct {
 	userService UserService
 	router      EventRouter
@@ -53,6 +63,7 @@ type ChannelManager struct {
 	plugins     PluginRegistry
 	authorizer  Authorizer
 	adapters    *AdapterRegistry
+	focus       FocusTracker
 	logger      *slog.Logger
 }
 
@@ -63,6 +74,7 @@ func NewChannelManager(
 	plugins PluginRegistry,
 	authorizer Authorizer,
 	adapters *AdapterRegistry,
+	focus FocusTracker,
 	logger *slog.Logger,
 ) *ChannelManager {
 	if logger == nil {
@@ -75,6 +87,7 @@ func NewChannelManager(
 		plugins:     plugins,
 		authorizer:  authorizer,
 		adapters:    adapters,
+		focus:       focus,
 		logger:      logger,
 	}
 }
@@ -120,17 +133,29 @@ func (m *ChannelManager) handleCommand(
 	channelType model.ChannelType,
 	input model.UserInput,
 	chatID string,
-	locale string,
+	loc string,
 ) error {
-	commandName := input.CommandName()
+	rawName := input.CommandName()
+
+	pluginID, def, candidates := m.plugins.ResolveCommand(rawName)
+
+	// Ambiguous alias — send disambiguation message.
+	if len(candidates) > 0 {
+		msg := m.buildDisambiguationMessage(userID, candidates, loc)
+		return m.adapters.SendToChat(ctx, channelType, chatID, msg)
+	}
+
+	// Not found.
+	if def == nil {
+		return errs.NewSilentError(errs.ErrCommandNotFound, rawName)
+	}
+
+	commandName := def.Name
 
 	var requirements *model.RoleRequirements
-	def := m.plugins.GetCommandDefinition(commandName)
 	if def != nil {
 		requirements = def.Requirements
 	}
-
-	pluginID := m.plugins.GetPluginIDByCommand(commandName)
 
 	ok, err := m.authorizer.CheckCommand(ctx, userID, pluginID, commandName, requirements)
 	if err != nil {
@@ -141,23 +166,25 @@ func (m *ChannelManager) handleCommand(
 			model.NewTextMessage("Access denied. You don't have permission for this command."))
 	}
 
-	if !m.state.IsPreservesDialog(commandName) {
+	if !m.state.IsPreservesDialog(pluginID, commandName) {
 		_ = m.state.CancelCommand(ctx, userID, channelType)
 	}
 
-	result, err := m.state.StartCommand(ctx, userID, channelType, chatID, commandName, locale)
+	result, err := m.state.StartCommand(ctx, userID, channelType, chatID, pluginID, commandName, loc)
 	if err != nil {
 		return err
 	}
 
 	if result.IsComplete {
+		m.recordFocus(userID, pluginID)
 		return m.routeCommand(ctx, pluginID, model.CommandRequest{
 			UserID:      userID,
 			ChannelType: channelType,
 			ChatID:      chatID,
+			PluginID:    pluginID,
 			CommandName: commandName,
 			Params:      result.Params,
-			Locale:      locale,
+			Locale:      loc,
 		})
 	}
 
@@ -170,9 +197,9 @@ func (m *ChannelManager) handleInput(
 	channelType model.ChannelType,
 	input model.UserInput,
 	chatID string,
-	locale string,
+	loc string,
 ) error {
-	result, err := m.state.ProcessInput(ctx, userID, channelType, chatID, input, locale)
+	result, err := m.state.ProcessInput(ctx, userID, channelType, chatID, input, loc)
 	if err != nil {
 		return err
 	}
@@ -184,18 +211,79 @@ func (m *ChannelManager) handleInput(
 	}
 
 	if result.IsComplete {
-		pluginID := m.plugins.GetPluginIDByCommand(result.CommandName)
+		pluginID := result.PluginID
+		if pluginID == "" {
+			// Fallback for dialogs started before the PluginID field existed.
+			pluginID = m.plugins.GetPluginIDByCommand(result.CommandName)
+		}
+		m.recordFocus(userID, pluginID)
 		return m.routeCommand(ctx, pluginID, model.CommandRequest{
 			UserID:      userID,
+			PluginID:    pluginID,
 			CommandName: result.CommandName,
 			Params:      result.Params,
 			ChannelType: channelType,
 			ChatID:      chatID,
-			Locale:      locale,
+			Locale:      loc,
 		})
 	}
 
 	return nil
+}
+
+// buildDisambiguationMessage builds an options message listing all candidates.
+// The candidate whose plugin matches the user's recent focus is placed first
+// and marked as probable; the rest are sorted alphabetically by FQ name.
+func (m *ChannelManager) buildDisambiguationMessage(userID model.GlobalUserID, candidates []model.CommandCandidate, loc string) model.Message {
+	focusPlugin := ""
+	if m.focus != nil {
+		focusPlugin = m.focus.LastPlugin(userID)
+	}
+
+	// Sort: focused candidate first, then alphabetical by FQ name.
+	sorted := make([]model.CommandCandidate, len(candidates))
+	copy(sorted, candidates)
+	sort.Slice(sorted, func(i, j int) bool {
+		iFocused := sorted[i].PluginID == focusPlugin && focusPlugin != ""
+		jFocused := sorted[j].PluginID == focusPlugin && focusPlugin != ""
+		if iFocused != jFocused {
+			return iFocused
+		}
+		return sorted[i].FQName < sorted[j].FQName
+	})
+
+	options := make([]model.Option, len(sorted))
+	for i, c := range sorted {
+		label := c.FQName
+		if c.Description != "" {
+			label = c.FQName + " — " + c.Description
+		}
+		if c.PluginID == focusPlugin && focusPlugin != "" && i == 0 {
+			label = "⟶ " + label
+		}
+		options[i] = model.Option{
+			Label: label,
+			Value: "/" + c.FQName,
+		}
+	}
+
+	return model.Message{
+		Blocks: []model.ContentBlock{
+			model.TextBlock{
+				Text:  i18n.Get("disambiguate.prompt", loc),
+				Style: model.StylePlain,
+			},
+			model.OptionsBlock{
+				Options: options,
+			},
+		},
+	}
+}
+
+func (m *ChannelManager) recordFocus(userID model.GlobalUserID, pluginID string) {
+	if m.focus != nil && pluginID != "" {
+		m.focus.Record(userID, pluginID)
+	}
 }
 
 func (m *ChannelManager) routeCommand(ctx context.Context, pluginID string, req model.CommandRequest) error {

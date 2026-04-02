@@ -179,7 +179,7 @@ func (h *AdminHandler) syncTriggersOnUpdate(ctx context.Context, pluginID string
 
 	if h.stateMgr != nil {
 		for _, name := range removed {
-			h.stateMgr.UnregisterCommand(name)
+			h.stateMgr.UnregisterCommand(pluginID, name)
 		}
 	}
 

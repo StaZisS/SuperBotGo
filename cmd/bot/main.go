@@ -399,13 +399,13 @@ func main() {
 
 	for _, p := range allPlugins {
 		for _, def := range p.Commands() {
-			stateMgr.RegisterCommand(def)
+			stateMgr.RegisterCommand(p.ID(), def)
 		}
 	}
 
 	for _, wp := range pluginManager.All() {
 		for _, def := range wp.Commands() {
-			stateMgr.RegisterCommand(def)
+			stateMgr.RegisterCommand(wp.ID(), def)
 		}
 	}
 
@@ -415,6 +415,8 @@ func main() {
 
 	cronScheduler.Start()
 
+	focusTracker := plugin.NewFocusTracker(10 * time.Minute)
+
 	channelMgr := channel.NewChannelManager(
 		userService,
 		triggerRouter,
@@ -422,6 +424,7 @@ func main() {
 		pluginManager,
 		authorizer,
 		adapterRegistry,
+		focusTracker,
 		logger,
 	)
 

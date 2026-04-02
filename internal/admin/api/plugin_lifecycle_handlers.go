@@ -195,7 +195,7 @@ func (h *AdminHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	if h.stateMgr != nil {
 		if p, ok := h.manager.Get(pluginID); ok {
 			for _, def := range p.Commands() {
-				h.stateMgr.UnregisterCommand(def.Name)
+				h.stateMgr.UnregisterCommand(pluginID, def.Name)
 			}
 		}
 	}

@@ -142,3 +142,6 @@
 "settings.custom_tz_prompt" = "Введите часовой пояс (например, Asia/Almaty):"
 "settings.work_hours_set" = "Уведомления со звуком с {{.V0}} до {{.V1}} ({{.V2}})."
 "settings.work_hours_disabled" = "Ограничение по времени снято."
+
+# Дизамбигуация
+"disambiguate.prompt" = "Несколько плагинов предоставляют эту команду. Выберите:"

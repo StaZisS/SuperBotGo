@@ -15,29 +15,31 @@ func NewStateManagerAdapter(mgr *state.Manager) *StateManagerAdapter {
 	return &StateManagerAdapter{mgr: mgr}
 }
 
-func (a *StateManagerAdapter) Register(def *state.CommandDefinition) {
-	a.mgr.RegisterCommand(def)
+func (a *StateManagerAdapter) Register(pluginID string, def *state.CommandDefinition) {
+	a.mgr.RegisterCommand(pluginID, def)
 }
 
-func (a *StateManagerAdapter) StartCommand(ctx context.Context, userID model.GlobalUserID, _ model.ChannelType, chatID string, commandName string, locale string) (*StateResult, error) {
+func (a *StateManagerAdapter) StartCommand(ctx context.Context, userID model.GlobalUserID, _ model.ChannelType, chatID string, pluginID string, commandName string, locale string) (*StateResult, error) {
 
-	if a.mgr.IsCommandImmediate(commandName) {
+	if a.mgr.IsCommandImmediate(pluginID, commandName) {
 
-		if !a.mgr.IsPreservesDialog(commandName) {
+		if !a.mgr.IsPreservesDialog(pluginID, commandName) {
 			_ = a.mgr.CancelCommand(ctx, userID)
 		}
 		return &StateResult{
+			PluginID:    pluginID,
 			Message:     model.Message{},
 			CommandName: commandName,
 			IsComplete:  true,
 		}, nil
 	}
 
-	msg, err := a.mgr.StartCommand(ctx, userID, chatID, commandName, locale)
+	msg, err := a.mgr.StartCommand(ctx, userID, chatID, pluginID, commandName, locale)
 	if err != nil {
 		return nil, err
 	}
 	return &StateResult{
+		PluginID:    pluginID,
 		Message:     msg,
 		CommandName: commandName,
 		IsComplete:  false,
@@ -56,6 +58,7 @@ func (a *StateManagerAdapter) ProcessInput(ctx context.Context, userID model.Glo
 	}
 
 	if cmdReq != nil {
+		result.PluginID = cmdReq.PluginID
 		result.CommandName = cmdReq.CommandName
 		result.Params = cmdReq.Params
 	}
@@ -67,8 +70,8 @@ func (a *StateManagerAdapter) CancelCommand(ctx context.Context, userID model.Gl
 	return a.mgr.CancelCommand(ctx, userID)
 }
 
-func (a *StateManagerAdapter) IsPreservesDialog(commandName string) bool {
-	return a.mgr.IsPreservesDialog(commandName)
+func (a *StateManagerAdapter) IsPreservesDialog(pluginID, commandName string) bool {
+	return a.mgr.IsPreservesDialog(pluginID, commandName)
 }
 
 func (a *StateManagerAdapter) GetCurrentStepMessage(ctx context.Context, userID model.GlobalUserID, locale string) (*model.Message, string, error) {

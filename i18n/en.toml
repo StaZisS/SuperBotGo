@@ -142,3 +142,6 @@
 "settings.custom_tz_prompt" = "Enter timezone (e.g. Asia/Almaty):"
 "settings.work_hours_set" = "Notifications with sound from {{.V0}} to {{.V1}} ({{.V2}})."
 "settings.work_hours_disabled" = "Time restrictions removed."
+
+# Disambiguation
+"disambiguate.prompt" = "Multiple plugins provide this command. Please choose:"

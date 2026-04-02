@@ -22,8 +22,8 @@ type PluginFetcher func(ctx context.Context, id string) (*PluginData, error)
 type BlobGetter func(ctx context.Context, key string) (io.ReadCloser, error)
 
 type StateManagerRegistrar interface {
-	RegisterCommand(def *state.CommandDefinition)
-	UnregisterCommand(name string)
+	RegisterCommand(pluginID string, def *state.CommandDefinition)
+	UnregisterCommand(pluginID, name string)
 }
 
 type AdminEventHandler struct {
@@ -95,7 +95,7 @@ func (h *AdminEventHandler) handleLoad(ctx context.Context, pluginID string) {
 	h.manager.Register(wp)
 	if h.stateMgr != nil {
 		for _, def := range wp.Commands() {
-			h.stateMgr.RegisterCommand(def)
+			h.stateMgr.RegisterCommand(pluginID, def)
 		}
 	}
 	slog.Info("pubsub: plugin loaded", "id", pluginID)
@@ -144,7 +144,7 @@ func (h *AdminEventHandler) handleUpdate(ctx context.Context, pluginID string) {
 		h.manager.Register(wp)
 		if h.stateMgr != nil {
 			for _, def := range wp.Commands() {
-				h.stateMgr.RegisterCommand(def)
+				h.stateMgr.RegisterCommand(pluginID, def)
 			}
 		}
 	}
@@ -169,7 +169,7 @@ func (h *AdminEventHandler) unregisterCommands(pluginID string) {
 	}
 	if p, ok := h.manager.Get(pluginID); ok {
 		for _, def := range p.Commands() {
-			h.stateMgr.UnregisterCommand(def.Name)
+			h.stateMgr.UnregisterCommand(pluginID, def.Name)
 		}
 	}
 }
