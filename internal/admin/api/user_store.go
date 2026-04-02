@@ -18,12 +18,12 @@ func NewPgUserStore(pool *pgxpool.Pool) *PgUserStore {
 }
 
 func (s *PgUserStore) ListUsers(ctx context.Context, opts UserListOptions) ([]UserListItem, int, error) {
-	baseQuery := "FROM global_users gu LEFT JOIN channel_accounts ca ON ca.global_user_id = gu.id WHERE 1=1"
+	baseQuery := "FROM global_users gu LEFT JOIN persons pe ON pe.global_user_id = gu.id WHERE 1=1"
 	args := make([]interface{}, 0, 4)
 	argNum := 1
 
 	if opts.Search != "" {
-		baseQuery += fmt.Sprintf(" AND (gu.id::text LIKE $%d OR EXISTS (SELECT 1 FROM channel_accounts ca2 WHERE ca2.global_user_id = gu.id AND ca2.channel_user_id ILIKE $%d))", argNum, argNum)
+		baseQuery += fmt.Sprintf(" AND (gu.id::text LIKE $%d OR pe.last_name ILIKE $%d OR pe.first_name ILIKE $%d OR EXISTS (SELECT 1 FROM channel_accounts ca2 WHERE ca2.global_user_id = gu.id AND (ca2.channel_user_id ILIKE $%d OR ca2.username ILIKE $%d)))", argNum, argNum, argNum, argNum, argNum)
 		args = append(args, "%"+opts.Search+"%")
 		argNum++
 	}
@@ -44,7 +44,11 @@ func (s *PgUserStore) ListUsers(ctx context.Context, opts UserListOptions) ([]Us
 		return nil, 0, fmt.Errorf("count users: %w", err)
 	}
 
-	dataQuery := "SELECT gu.id, gu.primary_channel, COALESCE(gu.locale, ''), gu.role, COUNT(DISTINCT ca.id), gu.created_at" + baseQuery + " GROUP BY gu.id ORDER BY gu.id DESC"
+	dataQuery := `SELECT gu.id, COALESCE(gu.locale, ''), gu.role,
+		COALESCE(TRIM(CONCAT(pe.last_name, ' ', pe.first_name, ' ', COALESCE(pe.middle_name, ''))), ''),
+		COALESCE((SELECT json_agg(json_build_object('channel_type', ca.channel_type, 'username', COALESCE(ca.username, '')))
+		          FROM channel_accounts ca WHERE ca.global_user_id = gu.id)::text, '[]'),
+		gu.created_at ` + baseQuery + " ORDER BY gu.id DESC"
 	if opts.Limit > 0 {
 		dataQuery += fmt.Sprintf(" LIMIT $%d OFFSET $%d", argNum, argNum+1)
 		args = append(args, opts.Limit, opts.Offset)
@@ -56,12 +60,15 @@ func (s *PgUserStore) ListUsers(ctx context.Context, opts UserListOptions) ([]Us
 	}
 	defer rows.Close()
 
-	var users []UserListItem
+	users := make([]UserListItem, 0)
 	for rows.Next() {
 		var u UserListItem
-		if err := rows.Scan(&u.ID, &u.PrimaryChannel, &u.Locale, &u.Role, &u.AccountCount, &u.CreatedAt); err != nil {
+		var accountsStr string
+		if err := rows.Scan(&u.ID, &u.Locale, &u.Role, &u.PersonName, &accountsStr, &u.CreatedAt); err != nil {
 			return nil, 0, fmt.Errorf("scan user: %w", err)
 		}
+		u.Accounts = make([]AccountBrief, 0)
+		_ = json.Unmarshal([]byte(accountsStr), &u.Accounts)
 		users = append(users, u)
 	}
 	return users, total, nil
@@ -70,7 +77,14 @@ func (s *PgUserStore) ListUsers(ctx context.Context, opts UserListOptions) ([]Us
 func (s *PgUserStore) GetUser(ctx context.Context, id int64) (*UserDetail, error) {
 	var u UserDetail
 	var profileJSON []byte
-	err := s.pool.QueryRow(ctx, `SELECT id, primary_channel, COALESCE(locale, ''), role, profile_data, created_at FROM global_users WHERE id = $1`, id).Scan(&u.ID, &u.PrimaryChannel, &u.Locale, &u.Role, &profileJSON, &u.CreatedAt)
+	err := s.pool.QueryRow(ctx,
+		`SELECT gu.id, gu.primary_channel, COALESCE(gu.locale, ''), gu.role,
+		        COALESCE(TRIM(CONCAT(pe.last_name, ' ', pe.first_name, ' ', COALESCE(pe.middle_name, ''))), ''),
+		        gu.profile_data, gu.created_at
+		 FROM global_users gu
+		 LEFT JOIN persons pe ON pe.global_user_id = gu.id
+		 WHERE gu.id = $1`, id,
+	).Scan(&u.ID, &u.PrimaryChannel, &u.Locale, &u.Role, &u.PersonName, &profileJSON, &u.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("user not found")
 	}
@@ -97,11 +111,8 @@ func (s *PgUserStore) GetUser(ctx context.Context, id int64) (*UserDetail, error
 }
 
 func (s *PgUserStore) UpdateUser(ctx context.Context, id int64, req UpdateUserRequest) error {
-	var _ []byte
-	if req.ProfileData != nil {
-		_, _ = json.Marshal(req.ProfileData)
-	}
-	result, err := s.pool.Exec(ctx, `UPDATE global_users SET locale = COALESCE(NULLIF($2, ''), locale), role = COALESCE(NULLIF($3, ''), role) WHERE id = $1`, id, req.Locale, req.Role)
+	result, err := s.pool.Exec(ctx, `UPDATE global_users SET locale = COALESCE(NULLIF($2, ''), locale), role = COALESCE(NULLIF($3, ''), role) WHERE id = $1`,
+		id, req.Locale, req.Role)
 	if err != nil {
 		return fmt.Errorf("update user: %w", err)
 	}

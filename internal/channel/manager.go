@@ -13,7 +13,7 @@ import (
 )
 
 type UserService interface {
-	FindOrCreateUser(ctx context.Context, channelType model.ChannelType, platformUserID model.PlatformUserID) (*model.GlobalUser, error)
+	FindOrCreateUser(ctx context.Context, channelType model.ChannelType, platformUserID model.PlatformUserID, username ...string) (*model.GlobalUser, error)
 	GetUser(ctx context.Context, id model.GlobalUserID) (*model.GlobalUser, error)
 }
 
@@ -84,7 +84,7 @@ func (m *ChannelManager) RegisterAdapter(adapter ChannelAdapter) {
 }
 
 func (m *ChannelManager) OnUpdate(ctx context.Context, u Update) error {
-	user, err := m.userService.FindOrCreateUser(ctx, u.ChannelType, u.PlatformUserID)
+	user, err := m.userService.FindOrCreateUser(ctx, u.ChannelType, u.PlatformUserID, u.Username)
 	if err != nil {
 		return err
 	}

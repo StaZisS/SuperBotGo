@@ -14,6 +14,7 @@ type UserDetail struct {
 	PrimaryChannel model.ChannelType `json:"primary_channel"`
 	Locale         string            `json:"locale"`
 	Role           string            `json:"role"`
+	PersonName     string            `json:"person_name,omitempty"`
 	ProfileData    map[string]any    `json:"profile_data,omitempty"`
 	Accounts       []AccountInfo     `json:"accounts"`
 	CreatedAt      *time.Time        `json:"created_at,omitempty"`
@@ -27,13 +28,18 @@ type AccountInfo struct {
 	LinkedAt      time.Time         `json:"linked_at"`
 }
 
+type AccountBrief struct {
+	ChannelType model.ChannelType `json:"channel_type"`
+	Username    string            `json:"username,omitempty"`
+}
+
 type UserListItem struct {
-	ID             int64             `json:"id"`
-	PrimaryChannel model.ChannelType `json:"primary_channel"`
-	Locale         string            `json:"locale"`
-	Role           string            `json:"role"`
-	AccountCount   int               `json:"account_count"`
-	CreatedAt      *time.Time        `json:"created_at,omitempty"`
+	ID         int64          `json:"id"`
+	Locale     string         `json:"locale"`
+	Role       string         `json:"role"`
+	PersonName string         `json:"person_name,omitempty"`
+	Accounts   []AccountBrief `json:"accounts"`
+	CreatedAt  *time.Time     `json:"created_at,omitempty"`
 }
 
 type UpdateUserRequest struct {
@@ -82,6 +88,9 @@ func (h *UserHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/users/{id}", h.handleGetUser)
 	mux.HandleFunc("PUT /api/admin/users/{id}", h.handleUpdateUser)
 	mux.HandleFunc("DELETE /api/admin/users/{id}", h.handleDeleteUser)
+	mux.HandleFunc("GET /api/admin/users/{id}/roles", h.handleGetUserRoles)
+	mux.HandleFunc("DELETE /api/admin/users/{id}/roles", h.handleRemoveUserRole)
+	mux.HandleFunc("DELETE /api/admin/users/{id}/accounts/{accountId}", h.handleUnlinkAccount)
 }
 
 func (h *UserHandler) handleListUsers(w http.ResponseWriter, r *http.Request) {

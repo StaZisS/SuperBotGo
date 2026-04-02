@@ -4,18 +4,33 @@ import (
 	"net/http"
 )
 
-type CommandPermHandler struct {
-	store CommandPermStore
+type PolicyInvalidator interface {
+	InvalidateCommandPolicy(pluginID, commandName string)
 }
 
-func NewCommandPermHandler(store CommandPermStore) *CommandPermHandler {
-	return &CommandPermHandler{store: store}
+type CommandPermHandler struct {
+	store       CommandPermStore
+	invalidator PolicyInvalidator
+}
+
+func NewCommandPermHandler(store CommandPermStore, invalidator ...PolicyInvalidator) *CommandPermHandler {
+	h := &CommandPermHandler{store: store}
+	if len(invalidator) > 0 {
+		h.invalidator = invalidator[0]
+	}
+	return h
 }
 
 func (h *CommandPermHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/plugins/{id}/commands/settings", h.handleListSettings)
 	mux.HandleFunc("PUT /api/admin/plugins/{id}/commands/{cmd}/enabled", h.handleSetEnabled)
 	mux.HandleFunc("PUT /api/admin/plugins/{id}/commands/{cmd}/policy", h.handleSetPolicy)
+}
+
+func (h *CommandPermHandler) invalidate(pluginID, cmd string) {
+	if h.invalidator != nil {
+		h.invalidator.InvalidateCommandPolicy(pluginID, cmd)
+	}
 }
 
 func (h *CommandPermHandler) handleListSettings(w http.ResponseWriter, r *http.Request) {
@@ -54,6 +69,7 @@ func (h *CommandPermHandler) handleSetEnabled(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusInternalServerError, "failed to update command setting")
 		return
 	}
+	h.invalidate(pluginID, cmd)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
 }
 
@@ -76,5 +92,6 @@ func (h *CommandPermHandler) handleSetPolicy(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusInternalServerError, "failed to save policy expression")
 		return
 	}
+	h.invalidate(pluginID, cmd)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
 }

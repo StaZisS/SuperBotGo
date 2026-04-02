@@ -173,6 +173,7 @@ func (b *Bot) registerHandlers() {
 			PlatformUpdateID: "dc:msg:" + m.ID,
 			Input:            model.TextInput{Text: text},
 			ChatID:           chatID,
+			Username:         m.Author.Username,
 		}); err != nil {
 			b.logger.Error("discord: error handling message",
 				slog.String("user", platformUserID),
@@ -204,12 +205,19 @@ func (b *Bot) registerHandlers() {
 		})
 
 		ctx := context.Background()
+		discordUsername := ""
+		if i.Member != nil && i.Member.User != nil {
+			discordUsername = i.Member.User.Username
+		} else if i.User != nil {
+			discordUsername = i.User.Username
+		}
 		if err := b.handler(ctx, channel.Update{
 			ChannelType:      model.ChannelDiscord,
 			PlatformUserID:   model.PlatformUserID(platformUserID),
 			PlatformUpdateID: "dc:int:" + i.ID,
 			Input:            model.CallbackInput{Data: data.CustomID},
 			ChatID:           chatID,
+			Username:         discordUsername,
 		}); err != nil {
 			b.logger.Error("discord: error handling button",
 				slog.String("user", platformUserID),

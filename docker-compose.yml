@@ -19,6 +19,16 @@ services:
     networks:
       - superbot
 
+  spicedb-migrate:
+    image: authzed/spicedb:latest
+    container_name: superbot-spicedb-migrate
+    command: [ "migrate", "head", "--datastore-engine", "postgres", "--datastore-conn-uri", "postgres://superbot:superbot_secret@postgres:5432/superbot?sslmode=disable" ]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - superbot
+
   spicedb:
     image: authzed/spicedb:latest
     container_name: superbot-spicedb
@@ -27,7 +37,10 @@ services:
     ports:
       - "50051:50051"
     depends_on:
-      - postgres # SpiceDB нужна база данных для своих данных
+      postgres:
+        condition: service_healthy
+      spicedb-migrate:
+        condition: service_completed_successfully
     environment:
       - SPICEDB_GRPC_PRESHARED_KEY=my-secret-token
       - SPICEDB_DATASTORE_ENGINE=postgres

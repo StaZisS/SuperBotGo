@@ -129,6 +129,7 @@ func (b *Bot) handleTextMessage(c tele.Context) error {
 		PlatformUpdateID: "tg:" + updateID,
 		Input:            model.TextInput{Text: text},
 		ChatID:           chatID,
+		Username:         c.Sender().Username,
 	}); err != nil {
 		b.logger.Error("telegram: error handling message",
 			slog.String("user", platformUserID),
@@ -235,6 +236,7 @@ func (b *Bot) registerHandlers() {
 			PlatformUpdateID: "tg:" + updateID,
 			Input:            model.CallbackInput{Data: data},
 			ChatID:           chatID,
+			Username:         c.Sender().Username,
 		}); err != nil {
 			b.logger.Error("telegram: error handling callback",
 				slog.String("user", platformUserID),

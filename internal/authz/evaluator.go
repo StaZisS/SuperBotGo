@@ -44,10 +44,14 @@ func buildExprEnv(ctx context.Context, sc *SubjectContext, client *authzed.Clien
 		roleSet[r] = true
 	}
 
+	subjectID := sc.ExternalID
+	if subjectID == "" {
+		subjectID = strconv.FormatInt(int64(sc.UserID), 10)
+	}
 	subject := &v1.SubjectReference{
 		Object: &v1.ObjectReference{
 			ObjectType: "user",
-			ObjectId:   strconv.FormatInt(int64(sc.UserID), 10),
+			ObjectId:   subjectID,
 		},
 	}
 

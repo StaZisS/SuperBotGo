@@ -12,6 +12,7 @@ type Update struct {
 	PlatformUpdateID string
 	Input            model.UserInput
 	ChatID           string
+	Username         string
 }
 
 type UpdateHandlerFunc func(ctx context.Context, u Update) error

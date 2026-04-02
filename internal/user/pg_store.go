@@ -129,17 +129,21 @@ func NewPgAccountRepo(pool *pgxpool.Pool) *PgAccountRepo {
 
 func (r *PgAccountRepo) FindByChannelAndPlatformID(ctx context.Context, ct model.ChannelType, platformID model.PlatformUserID) (*model.ChannelAccount, error) {
 	var acc model.ChannelAccount
+	var username *string
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, channel_type, channel_user_id, global_user_id
+		SELECT id, channel_type, channel_user_id, global_user_id, username
 		FROM channel_accounts
 		WHERE channel_type = $1 AND channel_user_id = $2
-	`, ct, platformID).Scan(&acc.ID, &acc.ChannelType, &acc.ChannelUserID, &acc.GlobalUserID)
+	`, ct, platformID).Scan(&acc.ID, &acc.ChannelType, &acc.ChannelUserID, &acc.GlobalUserID, &username)
 
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("find account %s/%s: %w", ct, platformID, err)
+	}
+	if username != nil {
+		acc.Username = *username
 	}
 	return &acc, nil
 }
@@ -168,19 +172,19 @@ func (r *PgAccountRepo) FindByGlobalUserID(ctx context.Context, globalUserID mod
 func (r *PgAccountRepo) Save(ctx context.Context, account *model.ChannelAccount) (*model.ChannelAccount, error) {
 	if account.ID == 0 {
 		err := r.pool.QueryRow(ctx, `
-			INSERT INTO channel_accounts (channel_type, channel_user_id, global_user_id)
-			VALUES ($1, $2, $3)
+			INSERT INTO channel_accounts (channel_type, channel_user_id, global_user_id, username)
+			VALUES ($1, $2, $3, NULLIF($4, ''))
 			RETURNING id
-		`, account.ChannelType, account.ChannelUserID, account.GlobalUserID).Scan(&account.ID)
+		`, account.ChannelType, account.ChannelUserID, account.GlobalUserID, account.Username).Scan(&account.ID)
 		if err != nil {
 			return nil, fmt.Errorf("insert account: %w", err)
 		}
 	} else {
 		_, err := r.pool.Exec(ctx, `
 			UPDATE channel_accounts
-			SET channel_type = $2, channel_user_id = $3, global_user_id = $4
+			SET channel_type = $2, channel_user_id = $3, global_user_id = $4, username = COALESCE(NULLIF($5, ''), username)
 			WHERE id = $1
-		`, account.ID, account.ChannelType, account.ChannelUserID, account.GlobalUserID)
+		`, account.ID, account.ChannelType, account.ChannelUserID, account.GlobalUserID, account.Username)
 		if err != nil {
 			return nil, fmt.Errorf("update account %d: %w", account.ID, err)
 		}

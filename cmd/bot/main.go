@@ -320,7 +320,7 @@ func main() {
 
 	adminMux := http.NewServeMux()
 	adminHandler.RegisterRoutes(adminMux)
-	cmdPermHandler := adminapi.NewCommandPermHandler(cmdPermStore)
+	cmdPermHandler := adminapi.NewCommandPermHandler(cmdPermStore, authorizer)
 	cmdPermHandler.RegisterRoutes(adminMux)
 	userStore := adminapi.NewPgUserStore(pool)
 	userHandler := adminapi.NewUserHandler(userStore)
@@ -339,6 +339,12 @@ func main() {
 		relHandler := adminapi.NewRelationshipHandler(spiceClient)
 		relHandler.RegisterRoutes(adminMux)
 	}
+
+	universityRefHandler := adminapi.NewUniversityRefHandler(pool)
+	universityRefHandler.RegisterRoutes(adminMux)
+	positionStore := adminapi.NewPgPositionStore(pool)
+	positionHandler := adminapi.NewPositionHandler(positionStore)
+	positionHandler.RegisterRoutes(adminMux)
 
 	syncService := university.NewSyncService(pool)
 	universitySyncHandler := adminapi.NewUniversitySyncHandler(syncService, cfg.Admin.APIKey)

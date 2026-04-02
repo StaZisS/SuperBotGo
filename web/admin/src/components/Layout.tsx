@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
-import { Bot, Package, Upload, MessageSquare, Users } from 'lucide-react'
+import { Bot, Package, Upload, Users, Building2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Toaster } from '@/components/ui/sonner'
 import { cn } from '@/lib/utils'
@@ -8,7 +8,7 @@ const navItems = [
     { to: '/admin/plugins', label: 'Плагины', icon: Package, exact: true },
     { to: '/admin/plugins/upload', label: 'Загрузка', icon: Upload, exact: true },
     { to: '/admin/users', label: 'Пользователи', icon: Users, exact: true },
-    { to: '/admin/chats', label: 'Чаты', icon: MessageSquare, exact: true },
+    { to: '/admin/university', label: 'Структура', icon: Building2, exact: true },
 ]
 
 // ... остальной код компонента

@@ -181,12 +181,17 @@ export interface BroadcastResult {
   error?: string
 }
 
+export interface AccountBrief {
+  channel_type: string
+  username?: string
+}
+
 export interface UserListItem {
   id: number
-  primary_channel: string
   locale: string
   role: string
-  account_count: number
+  person_name?: string
+  accounts: AccountBrief[]
   created_at?: string
 }
 
@@ -195,6 +200,7 @@ export interface UserDetail {
   primary_channel: string
   locale: string
   role: string
+  person_name?: string
   accounts: AccountInfo[]
   created_at?: string
 }
@@ -213,6 +219,65 @@ export interface UserRole {
   role_type: string
   scope?: string
   granted_at: string
+}
+
+// === POSITIONS ===
+
+export interface RefItem {
+  id: number
+  code: string
+  name: string
+}
+
+export interface PersonInfo {
+  id: number
+  external_id?: string
+  last_name: string
+  first_name: string
+  middle_name?: string
+  email?: string
+  phone?: string
+}
+
+export interface StudentPositionInfo {
+  id: number
+  program_id?: number
+  program_name?: string
+  stream_id?: number
+  stream_name?: string
+  study_group_id?: number
+  study_group_name?: string
+  status: string
+  nationality_type: string
+  funding_type: string
+  education_form: string
+  department_id?: number
+  faculty_id?: number
+}
+
+export interface TeacherPositionInfo {
+  id: number
+  department_id?: number
+  department_name?: string
+  position_title: string
+  employment_type: string
+  status: string
+  faculty_id?: number
+}
+
+export interface AdminAppointmentInfo {
+  id: number
+  appointment_type: string
+  scope_type: string
+  scope_id?: number
+  scope_name?: string
+  status: string
+}
+
+export interface AllPositions {
+  student: StudentPositionInfo[]
+  teacher: TeacherPositionInfo[]
+  admin: AdminAppointmentInfo[]
 }
 
 export const api = {
@@ -338,4 +403,97 @@ export const api = {
 
   unlinkAccount: (userId: number, accountId: number) =>
       request<{ status: string }>(`/users/${userId}/accounts/${accountId}`, { method: 'DELETE' }),
+
+  // === UNIVERSITY REFERENCE DATA + CRUD ===
+
+  listFaculties: () => request<RefItem[]>('/university/faculties'),
+  createFaculty: (data: { code: string; name: string; short_name?: string }) =>
+      request<{ id: number }>('/university/manage/faculties', { method: 'POST', body: JSON.stringify(data) }),
+  updateFaculty: (id: number, data: { code: string; name: string; short_name?: string }) =>
+      request<{ status: string }>(`/university/manage/faculties/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteFaculty: (id: number) => request<{ status: string }>(`/university/manage/faculties/${id}`, { method: 'DELETE' }),
+
+  listDepartments: (facultyId: number) => request<RefItem[]>(`/university/departments?faculty_id=${facultyId}`),
+  createDepartment: (data: { faculty_id: number; code: string; name: string; short_name?: string }) =>
+      request<{ id: number }>('/university/manage/departments', { method: 'POST', body: JSON.stringify(data) }),
+  updateDepartment: (id: number, data: { faculty_id: number; code: string; name: string; short_name?: string }) =>
+      request<{ status: string }>(`/university/manage/departments/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteDepartment: (id: number) => request<{ status: string }>(`/university/manage/departments/${id}`, { method: 'DELETE' }),
+
+  listPrograms: (departmentId: number) => request<RefItem[]>(`/university/programs?department_id=${departmentId}`),
+  createProgram: (data: { department_id: number; code: string; name: string; degree_level: string }) =>
+      request<{ id: number }>('/university/manage/programs', { method: 'POST', body: JSON.stringify(data) }),
+  updateProgram: (id: number, data: { department_id: number; code: string; name: string; degree_level: string }) =>
+      request<{ status: string }>(`/university/manage/programs/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteProgram: (id: number) => request<{ status: string }>(`/university/manage/programs/${id}`, { method: 'DELETE' }),
+
+  listStreams: (programId: number) => request<RefItem[]>(`/university/streams?program_id=${programId}`),
+  createStream: (data: { program_id: number; code: string; name?: string; year_started?: number }) =>
+      request<{ id: number }>('/university/manage/streams', { method: 'POST', body: JSON.stringify(data) }),
+  updateStream: (id: number, data: { program_id: number; code: string; name?: string; year_started?: number }) =>
+      request<{ status: string }>(`/university/manage/streams/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteStream: (id: number) => request<{ status: string }>(`/university/manage/streams/${id}`, { method: 'DELETE' }),
+
+  listGroups: (streamId: number) => request<RefItem[]>(`/university/groups?stream_id=${streamId}`),
+  createGroup: (data: { stream_id: number; code: string; name?: string }) =>
+      request<{ id: number }>('/university/manage/groups', { method: 'POST', body: JSON.stringify(data) }),
+  updateGroup: (id: number, data: { stream_id: number; code: string; name?: string }) =>
+      request<{ status: string }>(`/university/manage/groups/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteGroup: (id: number) => request<{ status: string }>(`/university/manage/groups/${id}`, { method: 'DELETE' }),
+
+  listSubgroups: (groupId: number) => request<RefItem[]>(`/university/subgroups?study_group_id=${groupId}`),
+  createSubgroup: (data: { study_group_id: number; code: string; name?: string; subgroup_type: string }) =>
+      request<{ id: number }>('/university/manage/subgroups', { method: 'POST', body: JSON.stringify(data) }),
+  updateSubgroup: (id: number, data: { study_group_id: number; code: string; name?: string; subgroup_type: string }) =>
+      request<{ status: string }>(`/university/manage/subgroups/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteSubgroup: (id: number) => request<{ status: string }>(`/university/manage/subgroups/${id}`, { method: 'DELETE' }),
+
+  listCourses: () => request<RefItem[]>('/university/courses'),
+  createCourse: (data: { code: string; name: string }) =>
+      request<{ id: number }>('/university/manage/courses', { method: 'POST', body: JSON.stringify(data) }),
+  updateCourse: (id: number, data: { code: string; name: string }) =>
+      request<{ status: string }>(`/university/manage/courses/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteCourse: (id: number) => request<{ status: string }>(`/university/manage/courses/${id}`, { method: 'DELETE' }),
+
+  listSemesters: () => request<{ id: number; year: number; semester_type: string }[]>('/university/semesters'),
+  createSemester: (data: { year: number; semester_type: string }) =>
+      request<{ id: number }>('/university/manage/semesters', { method: 'POST', body: JSON.stringify(data) }),
+  updateSemester: (id: number, data: { year: number; semester_type: string }) =>
+      request<{ status: string }>(`/university/manage/semesters/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteSemester: (id: number) => request<{ status: string }>(`/university/manage/semesters/${id}`, { method: 'DELETE' }),
+
+  // === PERSON & POSITIONS ===
+
+  getUserPerson: (userId: number) => request<PersonInfo | null>(`/users/${userId}/person`),
+
+  searchUnlinkedPersons: (query: string) => request<PersonInfo[]>(`/persons/search?q=${encodeURIComponent(query)}`),
+
+  linkPersonToUser: (userId: number, personId: number) =>
+      request<{ status: string }>(`/users/${userId}/person/link`, { method: 'POST', body: JSON.stringify({ person_id: personId }) }),
+
+  createUserPerson: (userId: number, data: Omit<PersonInfo, 'id'>) =>
+      request<PersonInfo>(`/users/${userId}/person`, { method: 'POST', body: JSON.stringify(data) }),
+
+  getUserPositions: (userId: number) => request<AllPositions>(`/users/${userId}/positions`),
+
+  createStudentPosition: (userId: number, data: Omit<StudentPositionInfo, 'id' | 'program_name' | 'stream_name' | 'study_group_name' | 'department_id' | 'faculty_id'>) =>
+      request<StudentPositionInfo>(`/users/${userId}/positions/student`, { method: 'POST', body: JSON.stringify(data) }),
+  updateStudentPosition: (userId: number, posId: number, data: Omit<StudentPositionInfo, 'id' | 'program_name' | 'stream_name' | 'study_group_name' | 'department_id' | 'faculty_id'>) =>
+      request<{ status: string }>(`/users/${userId}/positions/student/${posId}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteStudentPosition: (userId: number, posId: number) =>
+      request<{ status: string }>(`/users/${userId}/positions/student/${posId}`, { method: 'DELETE' }),
+
+  createTeacherPosition: (userId: number, data: Omit<TeacherPositionInfo, 'id' | 'department_name' | 'faculty_id'>) =>
+      request<TeacherPositionInfo>(`/users/${userId}/positions/teacher`, { method: 'POST', body: JSON.stringify(data) }),
+  updateTeacherPosition: (userId: number, posId: number, data: Omit<TeacherPositionInfo, 'id' | 'department_name' | 'faculty_id'>) =>
+      request<{ status: string }>(`/users/${userId}/positions/teacher/${posId}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteTeacherPosition: (userId: number, posId: number) =>
+      request<{ status: string }>(`/users/${userId}/positions/teacher/${posId}`, { method: 'DELETE' }),
+
+  createAdminAppointment: (userId: number, data: Omit<AdminAppointmentInfo, 'id' | 'scope_name'>) =>
+      request<AdminAppointmentInfo>(`/users/${userId}/positions/admin-appointment`, { method: 'POST', body: JSON.stringify(data) }),
+  updateAdminAppointment: (userId: number, posId: number, data: Omit<AdminAppointmentInfo, 'id' | 'scope_name'>) =>
+      request<{ status: string }>(`/users/${userId}/positions/admin-appointment/${posId}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteAdminAppointment: (userId: number, posId: number) =>
+      request<{ status: string }>(`/users/${userId}/positions/admin-appointment/${posId}`, { method: 'DELETE' }),
 }

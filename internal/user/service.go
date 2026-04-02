@@ -19,7 +19,11 @@ func NewService(userRepo UserRepository, accountRepo AccountRepository) *Service
 	}
 }
 
-func (s *Service) FindOrCreateUser(ctx context.Context, channelType model.ChannelType, platformUserID model.PlatformUserID) (*model.GlobalUser, error) {
+func (s *Service) FindOrCreateUser(ctx context.Context, channelType model.ChannelType, platformUserID model.PlatformUserID, username ...string) (*model.GlobalUser, error) {
+	uname := ""
+	if len(username) > 0 {
+		uname = username[0]
+	}
 
 	account, err := s.accountRepo.FindByChannelAndPlatformID(ctx, channelType, platformUserID)
 	if err != nil {
@@ -27,6 +31,11 @@ func (s *Service) FindOrCreateUser(ctx context.Context, channelType model.Channe
 	}
 
 	if account != nil {
+		// Update username if changed
+		if uname != "" && account.Username != uname {
+			account.Username = uname
+			_, _ = s.accountRepo.Save(ctx, account)
+		}
 
 		user, err := s.userRepo.FindByID(ctx, account.GlobalUserID)
 		if err != nil {
@@ -51,6 +60,7 @@ func (s *Service) FindOrCreateUser(ctx context.Context, channelType model.Channe
 		ChannelType:   channelType,
 		ChannelUserID: platformUserID,
 		GlobalUserID:  savedUser.ID,
+		Username:      uname,
 	}
 
 	savedAccount, err := s.accountRepo.Save(ctx, newAccount)

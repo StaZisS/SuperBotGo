@@ -24,6 +24,7 @@ import {
   TableCell,
 } from '@/components/ui/table'
 import { Search, Package, Upload, FilterX } from 'lucide-react'
+import ChannelStatusCard from '@/components/ChannelStatusCard'
 
 export default function PluginList() {
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
@@ -69,6 +70,10 @@ export default function PluginList() {
             Загрузить плагин
           </Link>
         </Button>
+      </div>
+
+      <div className="mb-6">
+        <ChannelStatusCard />
       </div>
 
       {/* Filters */}

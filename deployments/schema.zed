@@ -86,8 +86,6 @@ definition student_record {
     relation in_stream: stream
     relation has_nationality: nationality_category
 
-    permission view = owner
-        + in_group->view_all_students
-        + (in_stream->view_foreign_students & has_nationality->member)
+    permission view = owner + in_group->view_all_students + (in_stream->view_foreign_students & has_nationality->member)
     permission edit = in_group->admin
 }
