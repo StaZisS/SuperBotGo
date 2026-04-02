@@ -45,19 +45,11 @@ func (h *UniversitySyncHandler) requireAuth(next http.HandlerFunc) http.HandlerF
 	return requireBearerAuth(h.apiKey, next)
 }
 
-// ============================================================
-// Batch request/response types
-// ============================================================
-
 type batchResult struct {
 	Total   int      `json:"total"`
 	Success int      `json:"success"`
 	Errors  []string `json:"errors,omitempty"`
 }
-
-// ============================================================
-// Справочные сущности
-// ============================================================
 
 type syncPersonRequest struct {
 	ExternalID string `json:"external_id"`
@@ -154,10 +146,6 @@ func (h *UniversitySyncHandler) handleSyncSemesters(w http.ResponseWriter, r *ht
 	writeJSON(w, statusForBatch(res), res)
 }
 
-// ============================================================
-// Организационная иерархия
-// ============================================================
-
 type syncFacultyRequest struct {
 	Code      string `json:"code"`
 	Name      string `json:"name"`
@@ -241,10 +229,6 @@ func (h *UniversitySyncHandler) handleSyncGroups(w http.ResponseWriter, r *http.
 func (h *UniversitySyncHandler) handleSyncSubgroups(w http.ResponseWriter, r *http.Request) {
 	h.handleHierarchyNodes(w, r, university.LevelSubgroup)
 }
-
-// ============================================================
-// Позиции и назначения
-// ============================================================
 
 type syncTeacherPositionRequest struct {
 	PersonExternalID string `json:"person_external_id"`
@@ -422,10 +406,6 @@ func (h *UniversitySyncHandler) handleSyncAdminAppointments(w http.ResponseWrite
 	}
 	writeJSON(w, statusForBatch(res), res)
 }
-
-// ============================================================
-// Helpers
-// ============================================================
 
 func statusForBatch(res batchResult) int {
 	if res.Success == 0 && len(res.Errors) > 0 {

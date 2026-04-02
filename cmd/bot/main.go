@@ -252,9 +252,6 @@ func main() {
 	notifyAPI := notification.NewNotifyAPI(adapterRegistry, userService, notifPrefsRepo, chatRegistry)
 	hostAPI.SetNotifier(notification.NewWasmNotifier(notifyAPI))
 
-	// ==========================================
-	// ИНИЦИАЛИЗАЦИЯ SPICEDB
-	// ==========================================
 	var spiceClient *authzed.Client
 	if cfg.SpiceDB.Endpoint != "" {
 		// Используем grpcutil для правильной настройки токена и insecure соединения
@@ -296,9 +293,6 @@ func main() {
 		logger.Warn("SpiceDB endpoint not configured, authorization may not work correctly")
 	}
 
-	// ==========================================
-	// АВТОРИЗАТОР
-	// ==========================================
 	authorizer := authz.NewAuthorizer(authzStore, spiceClient, logger, universityProvider)
 
 	schemaBuilder := authz.NewRuleSchemaBuilder(authzStore, universityProvider)

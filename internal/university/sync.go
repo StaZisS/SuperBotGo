@@ -32,10 +32,6 @@ func (s *SyncService) inTx(ctx context.Context, fn func(tx pgx.Tx) error) error 
 	return tx.Commit(ctx)
 }
 
-// ============================================================
-// Справочные сущности
-// ============================================================
-
 type PersonInput struct {
 	ExternalID string
 	LastName   string
@@ -111,10 +107,6 @@ func (s *SyncService) SyncTeacherPosition(ctx context.Context, in TeacherPositio
 		return err
 	})
 }
-
-// ============================================================
-// Организационная иерархия
-// ============================================================
 
 type FacultyInput struct {
 	Code      string

@@ -69,8 +69,6 @@ func (h *UniversityRefHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE "+p+"/semesters/{id}", h.handleDeleteSemester)
 }
 
-// ---- helpers ----
-
 func (h *UniversityRefHandler) pathID(r *http.Request) (int64, error) {
 	return strconv.ParseInt(r.PathValue("id"), 10, 64)
 }
@@ -111,10 +109,6 @@ func (h *UniversityRefHandler) deleteEntity(w http.ResponseWriter, r *http.Reque
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
-
-// ============================================================
-// Faculties
-// ============================================================
 
 func (h *UniversityRefHandler) handleListFaculties(w http.ResponseWriter, r *http.Request) {
 	h.listRefItems(w, r, `SELECT id, code, name FROM faculties ORDER BY name`)
@@ -167,10 +161,6 @@ func (h *UniversityRefHandler) handleUpdateFaculty(w http.ResponseWriter, r *htt
 func (h *UniversityRefHandler) handleDeleteFaculty(w http.ResponseWriter, r *http.Request) {
 	h.deleteEntity(w, r, "faculties")
 }
-
-// ============================================================
-// Departments
-// ============================================================
 
 func (h *UniversityRefHandler) handleListDepartments(w http.ResponseWriter, r *http.Request) {
 	facultyID, err := h.queryInt64(r, "faculty_id")
@@ -231,10 +221,6 @@ func (h *UniversityRefHandler) handleDeleteDepartment(w http.ResponseWriter, r *
 	h.deleteEntity(w, r, "departments")
 }
 
-// ============================================================
-// Programs
-// ============================================================
-
 func (h *UniversityRefHandler) handleListPrograms(w http.ResponseWriter, r *http.Request) {
 	departmentID, err := h.queryInt64(r, "department_id")
 	if err != nil {
@@ -293,10 +279,6 @@ func (h *UniversityRefHandler) handleUpdateProgram(w http.ResponseWriter, r *htt
 func (h *UniversityRefHandler) handleDeleteProgram(w http.ResponseWriter, r *http.Request) {
 	h.deleteEntity(w, r, "programs")
 }
-
-// ============================================================
-// Streams
-// ============================================================
 
 func (h *UniversityRefHandler) handleListStreams(w http.ResponseWriter, r *http.Request) {
 	programID, err := h.queryInt64(r, "program_id")
@@ -357,10 +339,6 @@ func (h *UniversityRefHandler) handleDeleteStream(w http.ResponseWriter, r *http
 	h.deleteEntity(w, r, "streams")
 }
 
-// ============================================================
-// Study Groups
-// ============================================================
-
 func (h *UniversityRefHandler) handleListGroups(w http.ResponseWriter, r *http.Request) {
 	streamID, err := h.queryInt64(r, "stream_id")
 	if err != nil {
@@ -417,10 +395,6 @@ func (h *UniversityRefHandler) handleUpdateGroup(w http.ResponseWriter, r *http.
 func (h *UniversityRefHandler) handleDeleteGroup(w http.ResponseWriter, r *http.Request) {
 	h.deleteEntity(w, r, "study_groups")
 }
-
-// ============================================================
-// Subgroups
-// ============================================================
 
 func (h *UniversityRefHandler) handleListSubgroups(w http.ResponseWriter, r *http.Request) {
 	groupID, err := h.queryInt64(r, "study_group_id")
@@ -481,10 +455,6 @@ func (h *UniversityRefHandler) handleDeleteSubgroup(w http.ResponseWriter, r *ht
 	h.deleteEntity(w, r, "subgroups")
 }
 
-// ============================================================
-// Courses
-// ============================================================
-
 func (h *UniversityRefHandler) handleListCourses(w http.ResponseWriter, r *http.Request) {
 	h.listRefItems(w, r, `SELECT id, code, name FROM courses ORDER BY name`)
 }
@@ -534,10 +504,6 @@ func (h *UniversityRefHandler) handleUpdateCourse(w http.ResponseWriter, r *http
 func (h *UniversityRefHandler) handleDeleteCourse(w http.ResponseWriter, r *http.Request) {
 	h.deleteEntity(w, r, "courses")
 }
-
-// ============================================================
-// Semesters
-// ============================================================
 
 func (h *UniversityRefHandler) handleListSemesters(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.pool.Query(r.Context(), `SELECT id, year, semester_type FROM semesters ORDER BY year DESC, semester_type`)

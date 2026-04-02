@@ -11,8 +11,6 @@ import (
 	"SuperBotGo/internal/authz/tuples"
 )
 
-// ---------- Types ----------
-
 type PersonInfo struct {
 	ID         int64  `json:"id"`
 	ExternalID string `json:"external_id,omitempty"`
@@ -98,8 +96,6 @@ type AllPositions struct {
 	Admin   []AdminAppointmentInfo `json:"admin"`
 }
 
-// ---------- Interface ----------
-
 type PositionStore interface {
 	GetPersonByUserID(ctx context.Context, globalUserID int64) (*PersonInfo, error)
 	SearchUnlinkedPersons(ctx context.Context, query string) ([]PersonInfo, error)
@@ -120,8 +116,6 @@ type PositionStore interface {
 	DeleteAdminAppointment(ctx context.Context, posID int64) error
 }
 
-// ---------- Implementation ----------
-
 type PgPositionStore struct {
 	pool *pgxpool.Pool
 }
@@ -131,8 +125,6 @@ func NewPgPositionStore(pool *pgxpool.Pool) *PgPositionStore {
 }
 
 var _ PositionStore = (*PgPositionStore)(nil)
-
-// ---- Person ----
 
 func (s *PgPositionStore) GetPersonByUserID(ctx context.Context, globalUserID int64) (*PersonInfo, error) {
 	var p PersonInfo
@@ -199,8 +191,6 @@ func (s *PgPositionStore) CreatePersonForUser(ctx context.Context, globalUserID 
 	}
 	return &p, nil
 }
-
-// ---- All Positions ----
 
 func (s *PgPositionStore) GetAllPositions(ctx context.Context, personID int64) (*AllPositions, error) {
 	result := &AllPositions{
@@ -281,8 +271,6 @@ func (s *PgPositionStore) GetAllPositions(ctx context.Context, personID int64) (
 	return result, nil
 }
 
-// ---- SpiceDB outbox helpers ----
-
 func (s *PgPositionStore) syncStudentMemberTuple(ctx context.Context, tx pgx.Tx, personID int64) error {
 	var externalID *string
 	err := tx.QueryRow(ctx, `SELECT external_id FROM persons WHERE id = $1`, personID).Scan(&externalID)
@@ -316,8 +304,6 @@ func (s *PgPositionStore) syncStudentMemberTuple(ctx context.Context, tx pgx.Tx,
 	}
 	return nil
 }
-
-// ---- Student CRUD ----
 
 func (s *PgPositionStore) CreateStudentPosition(ctx context.Context, personID int64, req StudentPositionRequest) (*StudentPositionInfo, error) {
 	tx, err := s.pool.Begin(ctx)
@@ -398,8 +384,6 @@ func (s *PgPositionStore) DeleteStudentPosition(ctx context.Context, posID int64
 	return tx.Commit(ctx)
 }
 
-// ---- Teacher CRUD ----
-
 func (s *PgPositionStore) CreateTeacherPosition(ctx context.Context, personID int64, req TeacherPositionRequest) (*TeacherPositionInfo, error) {
 	var id int64
 	err := s.pool.QueryRow(ctx,
@@ -428,8 +412,6 @@ func (s *PgPositionStore) DeleteTeacherPosition(ctx context.Context, posID int64
 	_, err := s.pool.Exec(ctx, `DELETE FROM teacher_positions WHERE id = $1`, posID)
 	return err
 }
-
-// ---- Admin Appointment CRUD ----
 
 func (s *PgPositionStore) CreateAdminAppointment(ctx context.Context, personID int64, req AdminAppointmentRequest) (*AdminAppointmentInfo, error) {
 	var id int64

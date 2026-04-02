@@ -33,8 +33,6 @@ func (h *PositionHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/admin/users/{id}/positions/admin-appointment/{posId}", h.handleDeleteAdminAppointment)
 }
 
-// ---- helpers ----
-
 func (h *PositionHandler) requirePerson(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	userID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -52,8 +50,6 @@ func (h *PositionHandler) requirePerson(w http.ResponseWriter, r *http.Request) 
 	}
 	return person.ID, true
 }
-
-// ---- Person ----
 
 func (h *PositionHandler) handleGetPerson(w http.ResponseWriter, r *http.Request) {
 	userID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -132,8 +128,6 @@ func (h *PositionHandler) handleLinkPerson(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]string{"status": "linked"})
 }
 
-// ---- All positions ----
-
 func (h *PositionHandler) handleGetPositions(w http.ResponseWriter, r *http.Request) {
 	personID, ok := h.requirePerson(w, r)
 	if !ok {
@@ -146,8 +140,6 @@ func (h *PositionHandler) handleGetPositions(w http.ResponseWriter, r *http.Requ
 	}
 	writeJSON(w, http.StatusOK, positions)
 }
-
-// ---- Student ----
 
 func (h *PositionHandler) handleCreateStudentPosition(w http.ResponseWriter, r *http.Request) {
 	personID, ok := h.requirePerson(w, r)
@@ -196,8 +188,6 @@ func (h *PositionHandler) handleDeleteStudentPosition(w http.ResponseWriter, r *
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
-// ---- Teacher ----
-
 func (h *PositionHandler) handleCreateTeacherPosition(w http.ResponseWriter, r *http.Request) {
 	personID, ok := h.requirePerson(w, r)
 	if !ok {
@@ -244,8 +234,6 @@ func (h *PositionHandler) handleDeleteTeacherPosition(w http.ResponseWriter, r *
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
-
-// ---- Admin Appointment ----
 
 func (h *PositionHandler) handleCreateAdminAppointment(w http.ResponseWriter, r *http.Request) {
 	personID, ok := h.requirePerson(w, r)
