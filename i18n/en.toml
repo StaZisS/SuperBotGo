@@ -1,3 +1,7 @@
+# Start / Welcome
+"start.welcome" = "Welcome!"
+"start.description" = "I'm the HITs bot.\n\nAvailable commands:\n/settings — configure language, notifications, work hours\n/link — link accounts across platforms\n/resume — continue an active command"
+
 # Pagination
 "pagination.next" = "Next →"
 "pagination.prev" = "← Back"

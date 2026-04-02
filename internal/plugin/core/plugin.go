@@ -33,6 +33,7 @@ func New(
 		userService: userService,
 		prefsRepo:   prefsRepo,
 		cmdDefs: []*state.CommandDefinition{
+			StartCommand(),
 			LinkCommand(),
 			ResumeCommand(),
 			SettingsCommand(),
@@ -52,6 +53,8 @@ func (p *Plugin) HandleEvent(ctx context.Context, event model.Event) (*model.Eve
 	}
 
 	switch m.CommandName {
+	case "start":
+		return nil, p.handleStart(ctx, m)
 	case "link":
 		return nil, p.handleLink(ctx, m)
 	case "resume":
