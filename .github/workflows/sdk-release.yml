@@ -1,0 +1,56 @@
+name: Release SDK go-plugin
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 0.2.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: sdk/go-plugin/go.mod
+
+      - name: Run tests
+        working-directory: sdk/go-plugin
+        run: go test ./...
+
+      - name: Create tag
+        run: |
+          TAG="sdk/go-plugin/v${{ inputs.version }}"
+          git tag "$TAG"
+          git push origin "$TAG"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="sdk/go-plugin/v${{ inputs.version }}"
+          gh release create "$TAG" \
+            --title "go-plugin ${{ inputs.version }}" \
+            --generate-notes \
+            --notes-start-tag "$(git tag -l 'sdk/go-plugin/v*' --sort=-v:refname | sed -n '2p')"
+
+      - name: Update SDK version in docs
+        run: |
+          sed -i 's|go-plugin@v[0-9]\+\.[0-9]\+\.[0-9]\+|go-plugin@v${{ inputs.version }}|g' \
+            web/docs/guide/quick-start.md
+
+      - name: Commit and push docs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/docs/
+          git diff --staged --quiet && exit 0
+          git commit -m "docs: update SDK version to v${{ inputs.version }}"
+          git push origin main
