@@ -17,7 +17,7 @@ import (
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 )
 
-const pluginDrainTimeout = 10 * time.Second
+var pluginDrainTimeout = wasmrt.PluginDrainTimeout
 
 type Loader struct {
 	mu              sync.RWMutex

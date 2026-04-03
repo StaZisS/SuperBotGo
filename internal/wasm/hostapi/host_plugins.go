@@ -18,7 +18,7 @@ var wasmCallPluginMaxTimeout = time.Duration(wasmrt.DefaultHostCallPluginTimeout
 
 var wasmPublishEventMaxTimeout = time.Duration(wasmrt.DefaultHostEventTimeoutSeconds) * time.Second
 
-const MaxCallDepth = 5
+const MaxCallDepth = wasmrt.MaxCallDepth
 
 type callDepthKey struct{}
 

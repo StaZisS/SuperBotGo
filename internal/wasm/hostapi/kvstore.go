@@ -5,12 +5,8 @@ import (
 	"strings"
 	"sync"
 	"time"
-)
 
-const (
-	kvMaxKeysPerPlugin  = 1000
-	kvMaxValueSize      = 64 * 1024
-	kvMaxTotalPerPlugin = 10 * 1024 * 1024
+	wasmrt "SuperBotGo/internal/wasm/runtime"
 )
 
 type kvEntry struct {
@@ -82,8 +78,8 @@ func (s *KVStore) Get(pluginID, key string) (string, bool, error) {
 }
 
 func (s *KVStore) Set(pluginID, key, value string, ttl time.Duration) error {
-	if len(value) > kvMaxValueSize {
-		return fmt.Errorf("value too large: %d bytes (max %d)", len(value), kvMaxValueSize)
+	if len(value) > wasmrt.KVMaxValueSize {
+		return fmt.Errorf("value too large: %d bytes (max %d)", len(value), wasmrt.KVMaxValueSize)
 	}
 
 	pk := s.getOrCreatePluginKV(pluginID)
@@ -99,13 +95,13 @@ func (s *KVStore) Set(pluginID, key, value string, ttl time.Duration) error {
 		oldSize = old.size
 	}
 
-	if oldSize == 0 && len(pk.entries) >= kvMaxKeysPerPlugin {
-		return fmt.Errorf("too many keys: max %d per plugin", kvMaxKeysPerPlugin)
+	if oldSize == 0 && len(pk.entries) >= wasmrt.KVMaxKeysPerPlugin {
+		return fmt.Errorf("too many keys: max %d per plugin", wasmrt.KVMaxKeysPerPlugin)
 	}
 
 	newTotal := pk.totalSize - oldSize + entrySize
-	if newTotal > kvMaxTotalPerPlugin {
-		return fmt.Errorf("total storage exceeded: would use %d bytes (max %d)", newTotal, kvMaxTotalPerPlugin)
+	if newTotal > wasmrt.KVMaxTotalPerPlugin {
+		return fmt.Errorf("total storage exceeded: would use %d bytes (max %d)", newTotal, wasmrt.KVMaxTotalPerPlugin)
 	}
 
 	entry := &kvEntry{

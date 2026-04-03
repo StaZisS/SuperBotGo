@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"time"
 
+	wasmrt "SuperBotGo/internal/wasm/runtime"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/tetratelabs/wazero/api"
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-const wasmSQLMaxTimeout = 4 * time.Second
+var wasmSQLMaxTimeout = time.Duration(wasmrt.DefaultHostSQLTimeoutSeconds) * time.Second
 
 type sqlCallContext struct {
 	pluginID string

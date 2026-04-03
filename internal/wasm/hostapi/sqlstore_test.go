@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+
+	wasmrt "SuperBotGo/internal/wasm/runtime"
 )
 
 func TestSQLHandleStore_AllocAndGet(t *testing.T) {
@@ -130,7 +132,7 @@ func TestSQLHandleStore_MaxHandlesLimit(t *testing.T) {
 	store := NewSQLHandleStore()
 	store.RegisterDSN("p1", "default", "postgres://localhost/test")
 
-	for i := 0; i < sqlMaxHandlesPerExecution; i++ {
+	for i := 0; i < wasmrt.SQLMaxHandlesPerExecution; i++ {
 		_, err := store.Alloc("p1", "exec1", &sqlHandle{kind: handleConn})
 		if err != nil {
 			t.Fatalf("Alloc %d: %v", i, err)

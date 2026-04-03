@@ -10,13 +10,10 @@ import (
 	"SuperBotGo/internal/filestore"
 	"SuperBotGo/internal/model"
 
+	wasmrt "SuperBotGo/internal/wasm/runtime"
+
 	"github.com/tetratelabs/wazero/api"
 	"github.com/vmihailenco/msgpack/v5"
-)
-
-const (
-	maxFileChunkSize = 1048576          // 1 MB per read chunk
-	maxFileStoreSize = 50 * 1024 * 1024 // 50 MB max file size via host API
 )
 
 // --- file_meta ---
@@ -124,8 +121,8 @@ func (h *HostAPI) fileReadFunc() api.GoModuleFunc {
 
 		// Clamp length to max chunk size
 		readLen := req.Length
-		if readLen <= 0 || readLen > maxFileChunkSize {
-			readLen = maxFileChunkSize
+		if readLen <= 0 || readLen > wasmrt.MaxFileChunkSize {
+			readLen = wasmrt.MaxFileChunkSize
 		}
 
 		rc, _, err := h.deps.FileStore.Get(ctx, req.FileID)
@@ -272,10 +269,10 @@ func (h *HostAPI) fileStoreFunc() api.GoModuleFunc {
 			return
 		}
 
-		if int64(len(req.Data)) > maxFileStoreSize {
+		if int64(len(req.Data)) > wasmrt.MaxFileStoreSize {
 			SetHostCallStatus(ctx, "error")
 			writeResult(ctx, mod, stack, fileStoreResponse{
-				Error: fmt.Sprintf("file too large: %d bytes (max %d)", len(req.Data), maxFileStoreSize),
+				Error: fmt.Sprintf("file too large: %d bytes (max %d)", len(req.Data), wasmrt.MaxFileStoreSize),
 			})
 			return
 		}

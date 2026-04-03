@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	wasmrt "SuperBotGo/internal/wasm/runtime"
 )
 
 func TestKVStore_BasicSetGet(t *testing.T) {
@@ -151,7 +153,7 @@ func TestKVStore_MaxKeysLimit(t *testing.T) {
 	store := NewKVStore()
 
 	// Fill up to the limit.
-	for i := 0; i < kvMaxKeysPerPlugin; i++ {
+	for i := 0; i < wasmrt.KVMaxKeysPerPlugin; i++ {
 		key := fmt.Sprintf("key_%d", i)
 		if err := store.Set("p1", key, "v", 0); err != nil {
 			t.Fatalf("Set key %d: %v", i, err)
@@ -171,7 +173,7 @@ func TestKVStore_MaxKeysLimit(t *testing.T) {
 func TestKVStore_MaxValueSize(t *testing.T) {
 	store := NewKVStore()
 
-	bigValue := strings.Repeat("x", kvMaxValueSize+1)
+	bigValue := strings.Repeat("x", wasmrt.KVMaxValueSize+1)
 	err := store.Set("p1", "big", bigValue, 0)
 	if err == nil {
 		t.Fatal("expected error for oversized value")
@@ -185,7 +187,7 @@ func TestKVStore_MaxTotalSize(t *testing.T) {
 	store := NewKVStore()
 
 	// Each value is ~64KB (just under the per-value limit).
-	valueSize := kvMaxValueSize
+	valueSize := wasmrt.KVMaxValueSize
 	value := strings.Repeat("x", valueSize)
 
 	// 10 MB / 64 KB = 160 entries needed to exceed total.

@@ -6,12 +6,10 @@ import (
 	"log/slog"
 	"sync"
 
+	wasmrt "SuperBotGo/internal/wasm/runtime"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-)
-
-const (
-	sqlMaxHandlesPerExecution = 16
 )
 
 type handleKind uint8
@@ -164,8 +162,8 @@ func (s *SQLHandleStore) Alloc(pluginID, execID string, h *sqlHandle) (uint32, e
 	eh.mu.Lock()
 	defer eh.mu.Unlock()
 
-	if len(eh.handles) >= sqlMaxHandlesPerExecution {
-		return 0, fmt.Errorf("too many open SQL handles: max %d per execution", sqlMaxHandlesPerExecution)
+	if len(eh.handles) >= wasmrt.SQLMaxHandlesPerExecution {
+		return 0, fmt.Errorf("too many open SQL handles: max %d per execution", wasmrt.SQLMaxHandlesPerExecution)
 	}
 
 	id := eh.nextID
