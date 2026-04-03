@@ -1,10 +1,9 @@
 package api
 
 import (
+	"SuperBotGo/internal/model"
 	"context"
 	"fmt"
-
-	"SuperBotGo/internal/model"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
