@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"io"
 	"strconv"
 	"sync/atomic"
 
@@ -58,6 +59,8 @@ func (a *Adapter) SendToChatSilent(ctx context.Context, chatID string, msg model
 	return a.sendMessage(ctx, chatID, msg, silent)
 }
 
+const telegramCaptionMaxLength = 1024
+
 func (a *Adapter) sendMessage(_ context.Context, chatID string, msg model.Message, silent bool) error {
 	if msg.IsEmpty() {
 		return fmt.Errorf("telegram: refusing to send empty message to chat %s", chatID)
@@ -76,13 +79,76 @@ func (a *Adapter) sendMessage(_ context.Context, chatID string, msg model.Messag
 
 	recipient := &telegramChat{id: id}
 
-	if rendered.Text != "" {
+	// Collect photos into an album and non-photo files separately.
+	var album tele.Album
+	var closers []io.Closer
+	defer func() {
+		for _, c := range closers {
+			_ = c.Close()
+		}
+	}()
+
+	type docEntry struct {
+		name     string
+		mimeType string
+		reader   io.ReadCloser
+	}
+	var docs []docEntry
+
+	for _, photoURL := range rendered.PhotoURLs {
+		album = append(album, &tele.Photo{File: tele.FromURL(photoURL)})
+	}
+
+	if a.fileStore != nil {
+		for _, ref := range rendered.FileRefs {
+			reader, meta, fErr := a.fileStore.Get(context.Background(), ref.ID)
+			if fErr != nil {
+				return fmt.Errorf("telegram: get file %q: %w", ref.ID, fErr)
+			}
+			closers = append(closers, reader)
+
+			name := ref.Name
+			mimeType := ref.MIMEType
+			fileType := ref.FileType
+			if meta != nil {
+				if name == "" {
+					name = meta.Name
+				}
+				if mimeType == "" {
+					mimeType = meta.MIMEType
+				}
+				if fileType == "" {
+					fileType = meta.FileType
+				}
+			}
+
+			if fileType == model.FileTypePhoto {
+				album = append(album, &tele.Photo{File: tele.FromReader(reader)})
+			} else {
+				docs = append(docs, docEntry{name: name, mimeType: mimeType, reader: reader})
+			}
+		}
+	}
+
+	// If there are photos, no keyboard, and text fits in a caption —
+	// embed text as the album caption instead of sending separately.
+	hasKeyboard := len(rendered.Keyboard) > 0
+	textAsCaption := len(album) > 0 && !hasKeyboard &&
+		rendered.Text != "" && len([]rune(rendered.Text)) <= telegramCaptionMaxLength
+	if textAsCaption {
+		if p, ok := album[0].(*tele.Photo); ok {
+			p.Caption = rendered.Text
+		}
+	}
+
+	// Send text as a separate message when it wasn't used as caption.
+	if rendered.Text != "" && !textAsCaption {
 		opts := &tele.SendOptions{
 			ParseMode:           tele.ModeHTML,
 			DisableNotification: silent,
 		}
 
-		if len(rendered.Keyboard) > 0 {
+		if hasKeyboard {
 			rows := make([]tele.Row, 0, len(rendered.Keyboard))
 			markup := &tele.ReplyMarkup{}
 			for _, kbRow := range rendered.Keyboard {
@@ -101,29 +167,34 @@ func (a *Adapter) sendMessage(_ context.Context, chatID string, msg model.Messag
 		}
 	}
 
-	for _, photoURL := range rendered.PhotoURLs {
-		photo := &tele.Photo{File: tele.FromURL(photoURL)}
-		if _, err := a.bot.Send(recipient, photo); err != nil {
+	// Send photos: single photo via Send, multiple via SendAlbum.
+	if len(album) == 1 {
+		opts := &tele.SendOptions{
+			ParseMode:           tele.ModeHTML,
+			DisableNotification: silent,
+		}
+		if _, err := a.bot.Send(recipient, album[0], opts); err != nil {
 			return fmt.Errorf("telegram: send photo: %w", err)
+		}
+	} else if len(album) > 1 {
+		opts := &tele.SendOptions{
+			ParseMode:           tele.ModeHTML,
+			DisableNotification: silent,
+		}
+		if _, err := a.bot.SendAlbum(recipient, album, opts); err != nil {
+			return fmt.Errorf("telegram: send album: %w", err)
 		}
 	}
 
-	if a.fileStore != nil {
-		for _, ref := range rendered.FileRefs {
-			reader, _, fErr := a.fileStore.Get(context.Background(), ref.ID)
-			if fErr != nil {
-				return fmt.Errorf("telegram: get file %q: %w", ref.ID, fErr)
-			}
-			doc := &tele.Document{
-				File:     tele.FromReader(reader),
-				FileName: ref.Name,
-				MIME:     ref.MIMEType,
-			}
-			if _, fErr = a.bot.Send(recipient, doc); fErr != nil {
-				_ = reader.Close()
-				return fmt.Errorf("telegram: send file: %w", fErr)
-			}
-			_ = reader.Close()
+	// Send non-photo files individually.
+	for _, d := range docs {
+		doc := &tele.Document{
+			File:     tele.FromReader(d.reader),
+			FileName: d.name,
+			MIME:     d.mimeType,
+		}
+		if _, err := a.bot.Send(recipient, doc); err != nil {
+			return fmt.Errorf("telegram: send file: %w", err)
 		}
 	}
 

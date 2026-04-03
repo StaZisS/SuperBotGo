@@ -106,12 +106,16 @@ func (a *Adapter) sendMessage(_ context.Context, channelID string, msg model.Mes
 
 	if a.fileStore != nil {
 		for _, ref := range rendered.FileRefs {
-			reader, _, fErr := a.fileStore.Get(context.Background(), ref.ID)
+			reader, meta, fErr := a.fileStore.Get(context.Background(), ref.ID)
 			if fErr != nil {
 				return fmt.Errorf("discord: get file %q: %w", ref.ID, fErr)
 			}
+			name := ref.Name
+			if name == "" && meta != nil {
+				name = meta.Name
+			}
 			msgSend.Files = append(msgSend.Files, &discordgo.File{
-				Name:   ref.Name,
+				Name:   name,
 				Reader: reader,
 			})
 			// Note: reader is closed by discordgo after sending.

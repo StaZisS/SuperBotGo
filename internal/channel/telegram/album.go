@@ -59,6 +59,11 @@ func (ab *albumBuffer) add(albumID string, entry albumEntry) bool {
 		pending.timer = time.AfterFunc(albumFlushDelay, func() {
 			ab.flush(aid)
 		})
+	} else {
+		// Reset the timer so we wait 500ms after the *last* photo,
+		// not 500ms after the first. This gives slower downloads
+		// time to finish before the album is flushed.
+		pending.timer.Reset(albumFlushDelay)
 	}
 
 	pending.entries = append(pending.entries, entry)
