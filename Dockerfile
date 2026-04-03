@@ -21,6 +21,7 @@ COPY --from=builder /superbot .
 COPY config.example.yaml ./config.yaml
 COPY i18n/ ./i18n/
 COPY migrations/ ./migrations/
+COPY deployments/ ./deployments/
 
 EXPOSE 8080
 

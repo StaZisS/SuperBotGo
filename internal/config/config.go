@@ -97,10 +97,14 @@ func Load() (*Config, error) {
 	}
 
 	if err := k.Load(env.Provider("BOT_", ".", func(s string) string {
-		return strings.ReplaceAll(
-			strings.ToLower(strings.TrimPrefix(s, "BOT_")),
-			"_", ".",
-		)
+		key := strings.ToLower(strings.TrimPrefix(s, "BOT_"))
+		// Double underscore (__) → literal underscore in field name
+		// Single underscore (_) → dot (koanf level separator)
+		// Example: BOT_ADMIN_S3_ACCESS__KEY → admin.s3.access_key
+		key = strings.ReplaceAll(key, "__", "\x00")
+		key = strings.ReplaceAll(key, "_", ".")
+		key = strings.ReplaceAll(key, "\x00", "_")
+		return key
 	}), nil); err != nil {
 		return nil, fmt.Errorf("loading env vars: %w", err)
 	}
