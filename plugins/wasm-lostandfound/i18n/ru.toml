@@ -1,0 +1,39 @@
+# Потеряшки — Russian
+
+plugin_name = "Потеряшки"
+
+# Commands
+add_item = "Сообщить о находке"
+list_items = "Список потеряшек"
+my_items = "Мои объявления"
+
+# Add flow
+enter_title = "Название предмета (например, «Синий рюкзак»):"
+enter_description = "Краткое описание (цвет, особые приметы):"
+send_photo = "Отправьте фото предмета (можно несколько):"
+enter_location = "Где нашли? (например, «Корпус 3, ауд. 205»):"
+item_saved = "Предмет сохранён!"
+item_saved_detail = "«%s» добавлен в Потеряшки. ID: #%d"
+photo_missing = "Пожалуйста, отправьте фото вместе с командой /add или на этом шаге."
+
+# List
+no_items = "Сейчас потерянных вещей нет."
+items_header = "Потеряшки (%d шт.):"
+item_line = "#%d  %s — %s"
+item_detail_header = "Предмет #%d"
+item_detail = "%s\n%s\nМесто: %s"
+
+# Detail flow
+enter_item_id = "Введите номер предмета (например, 12):"
+item_not_found = "Предмет #%s не найден."
+
+# My items
+no_my_items = "У вас нет объявлений."
+my_items_header = "Ваши объявления (%d):"
+
+# Status
+resolve = "Отметить как возвращённый"
+resolved = "Предмет #%d отмечен как возвращённый!"
+
+# Errors
+error = "Произошла ошибка. Попробуйте ещё раз."

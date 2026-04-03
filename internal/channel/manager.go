@@ -203,6 +203,13 @@ func (m *ChannelManager) handleInput(
 ) error {
 	result, err := m.state.ProcessInput(ctx, userID, channelType, chatID, input, loc)
 	if err != nil {
+		// Silently ignore files that arrive without an active dialog
+		// (e.g. extra photos from a Telegram media group after dialog completed).
+		if errors.Is(err, state.ErrNoActiveDialog) {
+			if _, ok := input.(model.FileInput); ok {
+				return nil
+			}
+		}
 		return err
 	}
 

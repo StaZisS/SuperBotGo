@@ -1,0 +1,39 @@
+# Lost & Found — English
+
+plugin_name = "Lost & Found"
+
+# Commands
+add_item = "Report found item"
+list_items = "Browse lost items"
+my_items = "My postings"
+
+# Add flow
+enter_title = "Name of the item (e.g. «Blue backpack»):"
+enter_description = "Short description (color, distinguishing marks):"
+send_photo = "Send photos of the item (you can send multiple):"
+enter_location = "Where was it found? (e.g. «Building 3, room 205»):"
+item_saved = "Item saved!"
+item_saved_detail = "«%s» added to Lost & Found. ID: #%d"
+photo_missing = "Please send a photo together with the /add command or at this step."
+
+# List
+no_items = "No lost items at the moment."
+items_header = "Lost & Found (%d items):"
+item_line = "#%d  %s — %s"
+item_detail_header = "Item #%d"
+item_detail = "%s\n%s\nLocation: %s"
+
+# Detail flow
+enter_item_id = "Enter item number (e.g. 12):"
+item_not_found = "Item #%s not found."
+
+# My items
+no_my_items = "You have no postings."
+my_items_header = "Your postings (%d):"
+
+# Status
+resolve = "Mark as returned"
+resolved = "Item #%d marked as returned!"
+
+# Errors
+error = "An error occurred. Please try again."

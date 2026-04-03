@@ -32,6 +32,7 @@ type Bot struct {
 	logger      *slog.Logger
 	connected   atomic.Bool
 	mode        string
+	albums      *albumBuffer
 }
 
 func NewBot(cfg BotConfig, handler channel.UpdateHandlerFunc, joinHandler channel.ChatJoinHandler, fs filestore.FileStore, maxFileSize int64, logger *slog.Logger) (*Bot, error) {
@@ -78,6 +79,10 @@ func NewBot(cfg BotConfig, handler channel.UpdateHandlerFunc, joinHandler channe
 		logger:      logger,
 		mode:        mode,
 	}
+
+	tb.albums = newAlbumBuffer(func(album *pendingAlbum) {
+		tb.flushAlbum(album)
+	})
 
 	tb.registerHandlers()
 
@@ -239,13 +244,29 @@ func (b *Bot) handleFileMessage(c tele.Context, fileType model.FileType) error {
 		slog.String("user", platformUserID),
 		slog.String("chat", chatID),
 		slog.String("file_id", ref.ID),
-		slog.String("file_type", string(fileType)))
+		slog.String("file_type", string(fileType)),
+		slog.String("album_id", msg.AlbumID))
 
 	caption := ""
 	if msg.Caption != "" {
 		caption = msg.Caption
 	}
 
+	entry := albumEntry{
+		ref:      ref,
+		caption:  caption,
+		chatID:   chatID,
+		userID:   platformUserID,
+		updateID: updateID,
+		username: c.Sender().Username,
+	}
+
+	// If part of an album (media group), buffer and wait for more files.
+	if b.albums.add(msg.AlbumID, entry) {
+		return nil
+	}
+
+	// Single file — dispatch immediately.
 	if err := b.handler(ctx, channel.Update{
 		ChannelType:      model.ChannelTelegram,
 		PlatformUserID:   model.PlatformUserID(platformUserID),
@@ -259,6 +280,48 @@ func (b *Bot) handleFileMessage(c tele.Context, fileType model.FileType) error {
 			slog.Any("error", err))
 	}
 	return nil
+}
+
+// flushAlbum is called when an album's flush timer fires. It combines all
+// buffered files into a single FileInput and dispatches it.
+func (b *Bot) flushAlbum(album *pendingAlbum) {
+	if len(album.entries) == 0 {
+		return
+	}
+
+	first := album.entries[0]
+	refs := make([]model.FileRef, len(album.entries))
+	for i, e := range album.entries {
+		refs[i] = e.ref
+	}
+
+	// Use caption from whichever entry has one (Telegram sets caption on first photo only).
+	caption := ""
+	for _, e := range album.entries {
+		if e.caption != "" {
+			caption = e.caption
+			break
+		}
+	}
+
+	b.logger.Info("telegram: flushing album",
+		slog.String("user", first.userID),
+		slog.String("chat", first.chatID),
+		slog.Int("files", len(refs)))
+
+	ctx := context.Background()
+	if err := b.handler(ctx, channel.Update{
+		ChannelType:      model.ChannelTelegram,
+		PlatformUserID:   model.PlatformUserID(first.userID),
+		PlatformUpdateID: "tg:" + first.updateID,
+		Input:            model.FileInput{Caption: caption, Files: refs},
+		ChatID:           first.chatID,
+		Username:         first.username,
+	}); err != nil {
+		b.logger.Error("telegram: error handling album",
+			slog.String("user", first.userID),
+			slog.Any("error", err))
+	}
 }
 
 func (b *Bot) handleMyChatMember(c tele.Context) error {

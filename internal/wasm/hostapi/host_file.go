@@ -3,6 +3,7 @@ package hostapi
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"time"
 
@@ -13,7 +14,10 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-const maxFileChunkSize = 1048576 // 1 MB
+const (
+	maxFileChunkSize = 1048576          // 1 MB per read chunk
+	maxFileStoreSize = 50 * 1024 * 1024 // 50 MB max file size via host API
+)
 
 // --- file_meta ---
 
@@ -132,35 +136,34 @@ func (h *HostAPI) fileReadFunc() api.GoModuleFunc {
 		}
 		defer rc.Close()
 
-		// Read all content
-		content, err := io.ReadAll(rc)
-		if err != nil {
+		// Skip to offset without loading entire file into memory.
+		if req.Offset > 0 {
+			if _, err := io.CopyN(io.Discard, rc, req.Offset); err != nil {
+				if err == io.EOF {
+					writeResult(ctx, mod, stack, fileReadResponse{
+						Data: []byte{}, BytesRead: 0, EOF: true,
+					})
+					return
+				}
+				SetHostCallStatus(ctx, "error")
+				writeResult(ctx, mod, stack, fileReadResponse{Error: err.Error()})
+				return
+			}
+		}
+
+		// Read only the requested chunk.
+		buf := make([]byte, readLen)
+		n, readErr := io.ReadFull(rc, buf)
+		eof := readErr == io.EOF || readErr == io.ErrUnexpectedEOF
+		if readErr != nil && !eof {
 			SetHostCallStatus(ctx, "error")
-			writeResult(ctx, mod, stack, fileReadResponse{Error: err.Error()})
+			writeResult(ctx, mod, stack, fileReadResponse{Error: readErr.Error()})
 			return
-		}
-
-		// Apply offset
-		if req.Offset >= int64(len(content)) {
-			writeResult(ctx, mod, stack, fileReadResponse{
-				Data:      []byte{},
-				BytesRead: 0,
-				EOF:       true,
-			})
-			return
-		}
-
-		remaining := content[req.Offset:]
-		eof := false
-		if int64(len(remaining)) <= readLen {
-			eof = true
-		} else {
-			remaining = remaining[:readLen]
 		}
 
 		writeResult(ctx, mod, stack, fileReadResponse{
-			Data:      remaining,
-			BytesRead: int64(len(remaining)),
+			Data:      buf[:n],
+			BytesRead: int64(n),
 			EOF:       eof,
 		})
 	}
@@ -266,6 +269,14 @@ func (h *HostAPI) fileStoreFunc() api.GoModuleFunc {
 
 		if h.deps.FileStore == nil {
 			returnError(ctx, mod, stack, errDepNotAvailable("FileStore"))
+			return
+		}
+
+		if int64(len(req.Data)) > maxFileStoreSize {
+			SetHostCallStatus(ctx, "error")
+			writeResult(ctx, mod, stack, fileStoreResponse{
+				Error: fmt.Sprintf("file too large: %d bytes (max %d)", len(req.Data), maxFileStoreSize),
+			})
 			return
 		}
 

@@ -43,6 +43,17 @@ discord:
   shard_id: 0                # 0-indexed shard identifier (default 0)
   shard_count: 1             # total number of shards (1 = no sharding)
 
+filestore:
+  default_ttl: "24h"
+  max_file_size: 52428800  # 50 MB
+  s3:
+    bucket: "user-files"
+    region: "us-east-1"
+    endpoint: "http://localhost:9000"  # MinIO from docker-compose; for AWS S3 leave empty
+    access_key: "minioadmin"
+    secret_key: "minioadmin"
+    prefix: "files/"
+
 admin:
   port: 8080
   modules_dir: ./wasm_modules

@@ -21,6 +21,10 @@ var DefaultRateLimits = map[string]int{
 	"sql_rows_close": 100,
 	"sql_begin":      20,
 	"sql_end":        20,
+	"file_meta":      50,
+	"file_read":      50,
+	"file_url":       20,
+	"file_store":     10,
 }
 
 type RateLimiter struct {
