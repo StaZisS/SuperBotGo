@@ -8,6 +8,38 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
+// kvPreamble extracts common fields, checks permissions, reads and unmarshals the payload,
+// and verifies that kvStore is available. Returns nil on failure (error already written to stack).
+func kvPreamble[T any](h *HostAPI, ctx context.Context, mod api.Module, stack []uint64) (string, *T) {
+	pluginID := pluginIDFromContext(ctx)
+	offset := uint32(stack[0])
+	length := uint32(stack[1])
+
+	if err := h.perms.CheckPermission(pluginID, "kv"); err != nil {
+		returnError(ctx, mod, stack, err)
+		return "", nil
+	}
+
+	data, err := readPayload(mod, offset, length)
+	if err != nil {
+		returnError(ctx, mod, stack, err)
+		return "", nil
+	}
+
+	var req T
+	if err := msgpack.Unmarshal(data, &req); err != nil {
+		returnError(ctx, mod, stack, err)
+		return "", nil
+	}
+
+	if h.kvStore == nil {
+		returnError(ctx, mod, stack, errDepNotAvailable("KVStore"))
+		return "", nil
+	}
+
+	return pluginID, &req
+}
+
 type kvGetRequest struct {
 	Key string `msgpack:"key"`
 }
@@ -19,29 +51,8 @@ type kvGetResponse struct {
 
 func (h *HostAPI) kvGetFunc() api.GoModuleFunc {
 	return func(ctx context.Context, mod api.Module, stack []uint64) {
-		pluginID := pluginIDFromContext(ctx)
-		offset := uint32(stack[0])
-		length := uint32(stack[1])
-
-		if err := h.perms.CheckPermission(pluginID, "kv"); err != nil {
-			returnError(ctx, mod, stack, err)
-			return
-		}
-
-		data, err := readPayload(mod, offset, length)
-		if err != nil {
-			returnError(ctx, mod, stack, err)
-			return
-		}
-
-		var req kvGetRequest
-		if err := msgpack.Unmarshal(data, &req); err != nil {
-			returnError(ctx, mod, stack, err)
-			return
-		}
-
-		if h.kvStore == nil {
-			returnError(ctx, mod, stack, errDepNotAvailable("KVStore"))
+		pluginID, req := kvPreamble[kvGetRequest](h, ctx, mod, stack)
+		if req == nil {
 			return
 		}
 
@@ -72,29 +83,8 @@ type kvSetResponse struct {
 
 func (h *HostAPI) kvSetFunc() api.GoModuleFunc {
 	return func(ctx context.Context, mod api.Module, stack []uint64) {
-		pluginID := pluginIDFromContext(ctx)
-		offset := uint32(stack[0])
-		length := uint32(stack[1])
-
-		if err := h.perms.CheckPermission(pluginID, "kv"); err != nil {
-			returnError(ctx, mod, stack, err)
-			return
-		}
-
-		data, err := readPayload(mod, offset, length)
-		if err != nil {
-			returnError(ctx, mod, stack, err)
-			return
-		}
-
-		var req kvSetRequest
-		if err := msgpack.Unmarshal(data, &req); err != nil {
-			returnError(ctx, mod, stack, err)
-			return
-		}
-
-		if h.kvStore == nil {
-			returnError(ctx, mod, stack, errDepNotAvailable("KVStore"))
+		pluginID, req := kvPreamble[kvSetRequest](h, ctx, mod, stack)
+		if req == nil {
 			return
 		}
 
@@ -124,29 +114,8 @@ type kvDeleteResponse struct {
 
 func (h *HostAPI) kvDeleteFunc() api.GoModuleFunc {
 	return func(ctx context.Context, mod api.Module, stack []uint64) {
-		pluginID := pluginIDFromContext(ctx)
-		offset := uint32(stack[0])
-		length := uint32(stack[1])
-
-		if err := h.perms.CheckPermission(pluginID, "kv"); err != nil {
-			returnError(ctx, mod, stack, err)
-			return
-		}
-
-		data, err := readPayload(mod, offset, length)
-		if err != nil {
-			returnError(ctx, mod, stack, err)
-			return
-		}
-
-		var req kvDeleteRequest
-		if err := msgpack.Unmarshal(data, &req); err != nil {
-			returnError(ctx, mod, stack, err)
-			return
-		}
-
-		if h.kvStore == nil {
-			returnError(ctx, mod, stack, errDepNotAvailable("KVStore"))
+		pluginID, req := kvPreamble[kvDeleteRequest](h, ctx, mod, stack)
+		if req == nil {
 			return
 		}
 
@@ -171,29 +140,8 @@ type kvListResponse struct {
 
 func (h *HostAPI) kvListFunc() api.GoModuleFunc {
 	return func(ctx context.Context, mod api.Module, stack []uint64) {
-		pluginID := pluginIDFromContext(ctx)
-		offset := uint32(stack[0])
-		length := uint32(stack[1])
-
-		if err := h.perms.CheckPermission(pluginID, "kv"); err != nil {
-			returnError(ctx, mod, stack, err)
-			return
-		}
-
-		data, err := readPayload(mod, offset, length)
-		if err != nil {
-			returnError(ctx, mod, stack, err)
-			return
-		}
-
-		var req kvListRequest
-		if err := msgpack.Unmarshal(data, &req); err != nil {
-			returnError(ctx, mod, stack, err)
-			return
-		}
-
-		if h.kvStore == nil {
-			returnError(ctx, mod, stack, errDepNotAvailable("KVStore"))
+		pluginID, req := kvPreamble[kvListRequest](h, ctx, mod, stack)
+		if req == nil {
 			return
 		}
 

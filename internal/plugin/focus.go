@@ -38,9 +38,17 @@ func (f *FocusTracker) Record(userID model.GlobalUserID, pluginID string) {
 // or "" if the focus session has expired or no interaction was recorded.
 func (f *FocusTracker) LastPlugin(userID model.GlobalUserID) string {
 	f.mu.RLock()
-	defer f.mu.RUnlock()
 	entry, ok := f.entries[userID]
-	if !ok || time.Since(entry.timestamp) > f.ttl {
+	f.mu.RUnlock()
+	if !ok {
+		return ""
+	}
+	if time.Since(entry.timestamp) > f.ttl {
+		f.mu.Lock()
+		if e, ok2 := f.entries[userID]; ok2 && time.Since(e.timestamp) > f.ttl {
+			delete(f.entries, userID)
+		}
+		f.mu.Unlock()
 		return ""
 	}
 	return entry.pluginID

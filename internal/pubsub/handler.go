@@ -61,9 +61,9 @@ func (h *AdminEventHandler) Handle(event AdminEvent) {
 	case EventPluginInstalled, EventPluginEnabled:
 		h.handleLoad(ctx, event.PluginID)
 	case EventPluginUninstalled:
-		h.handleUninstall(ctx, event.PluginID)
+		h.handleRemove(ctx, event.PluginID, "uninstalled")
 	case EventPluginDisabled:
-		h.handleDisable(ctx, event.PluginID)
+		h.handleRemove(ctx, event.PluginID, "disabled")
 	case EventPluginUpdated:
 		h.handleUpdate(ctx, event.PluginID)
 	case EventConfigChanged:
@@ -73,16 +73,33 @@ func (h *AdminEventHandler) Handle(event AdminEvent) {
 	}
 }
 
-func (h *AdminEventHandler) handleLoad(ctx context.Context, pluginID string) {
+// fetchAndReadBlob fetches plugin data and reads its WASM blob.
+func (h *AdminEventHandler) fetchAndReadBlob(ctx context.Context, pluginID string) (*PluginData, []byte, error) {
 	data, err := h.fetchPlugin(ctx, pluginID)
 	if err != nil {
-		slog.Error("pubsub: failed to get plugin record", "id", pluginID, "error", err)
-		return
+		return nil, nil, err
 	}
-
 	wasmBytes, err := h.readBlob(ctx, data.WasmKey)
 	if err != nil {
-		slog.Error("pubsub: failed to read wasm blob", "id", pluginID, "error", err)
+		return nil, nil, err
+	}
+	return data, wasmBytes, nil
+}
+
+// registerPlugin registers a plugin and its commands with the manager and state manager.
+func (h *AdminEventHandler) registerPlugin(pluginID string, wp plugin.Plugin) {
+	h.manager.Register(wp)
+	if h.stateMgr != nil {
+		for _, def := range wp.Commands() {
+			h.stateMgr.RegisterCommand(pluginID, def)
+		}
+	}
+}
+
+func (h *AdminEventHandler) handleLoad(ctx context.Context, pluginID string) {
+	data, wasmBytes, err := h.fetchAndReadBlob(ctx, pluginID)
+	if err != nil {
+		slog.Error("pubsub: failed to fetch plugin for load", "id", pluginID, "error", err)
 		return
 	}
 
@@ -92,43 +109,24 @@ func (h *AdminEventHandler) handleLoad(ctx context.Context, pluginID string) {
 		return
 	}
 
-	h.manager.Register(wp)
-	if h.stateMgr != nil {
-		for _, def := range wp.Commands() {
-			h.stateMgr.RegisterCommand(pluginID, def)
-		}
-	}
+	h.registerPlugin(pluginID, wp)
 	slog.Info("pubsub: plugin loaded", "id", pluginID)
 }
 
-func (h *AdminEventHandler) handleDisable(ctx context.Context, pluginID string) {
+// handleRemove unloads a plugin and removes it from the manager.
+func (h *AdminEventHandler) handleRemove(ctx context.Context, pluginID string, reason string) {
 	h.unregisterCommands(pluginID)
 	if err := h.loader.UnloadPlugin(ctx, pluginID); err != nil {
 		slog.Warn("pubsub: error unloading plugin", "id", pluginID, "error", err)
 	}
 	h.manager.Remove(pluginID)
-	slog.Info("pubsub: plugin disabled", "id", pluginID)
-}
-
-func (h *AdminEventHandler) handleUninstall(ctx context.Context, pluginID string) {
-	h.unregisterCommands(pluginID)
-	if err := h.loader.UnloadPlugin(ctx, pluginID); err != nil {
-		slog.Warn("pubsub: error unloading plugin", "id", pluginID, "error", err)
-	}
-	h.manager.Remove(pluginID)
-	slog.Info("pubsub: plugin uninstalled", "id", pluginID)
+	slog.Info("pubsub: plugin "+reason, "id", pluginID)
 }
 
 func (h *AdminEventHandler) handleUpdate(ctx context.Context, pluginID string) {
-	data, err := h.fetchPlugin(ctx, pluginID)
+	data, wasmBytes, err := h.fetchAndReadBlob(ctx, pluginID)
 	if err != nil {
-		slog.Error("pubsub: failed to get plugin record for update", "id", pluginID, "error", err)
-		return
-	}
-
-	wasmBytes, err := h.readBlob(ctx, data.WasmKey)
-	if err != nil {
-		slog.Error("pubsub: failed to read wasm blob for update", "id", pluginID, "error", err)
+		slog.Error("pubsub: failed to fetch plugin for update", "id", pluginID, "error", err)
 		return
 	}
 
@@ -141,12 +139,7 @@ func (h *AdminEventHandler) handleUpdate(ctx context.Context, pluginID string) {
 	}
 
 	if wp, ok := h.loader.GetPlugin(pluginID); ok {
-		h.manager.Register(wp)
-		if h.stateMgr != nil {
-			for _, def := range wp.Commands() {
-				h.stateMgr.RegisterCommand(pluginID, def)
-			}
-		}
+		h.registerPlugin(pluginID, wp)
 	}
 	slog.Info("pubsub: plugin updated", "id", pluginID)
 }

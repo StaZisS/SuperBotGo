@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"sync/atomic"
 
 	v1 "github.com/authzed/authzed-go/proto/authzed/api/v1"
 	authzed "github.com/authzed/authzed-go/v1"
@@ -98,7 +99,12 @@ func EvalWithContext(ctx context.Context, expression string, sc *SubjectContext,
 	return evaluate(expression, env)
 }
 
-var compiledExprs sync.Map // expression string -> *vm.Program
+const maxCompiledExprs = 1024
+
+var (
+	compiledExprs sync.Map // expression string -> *vm.Program
+	compiledCount atomic.Int64
+)
 
 func evaluate(expression string, env exprEnv) (bool, error) {
 	var program *vm.Program
@@ -110,7 +116,13 @@ func evaluate(expression string, env exprEnv) (bool, error) {
 		if err != nil {
 			return false, fmt.Errorf("compile expression: %w", err)
 		}
+		if compiledCount.Load() >= maxCompiledExprs {
+			// Evict all entries to prevent unbounded growth.
+			compiledExprs.Clear()
+			compiledCount.Store(0)
+		}
 		compiledExprs.Store(expression, compiled)
+		compiledCount.Add(1)
 		program = compiled
 	}
 

@@ -68,6 +68,22 @@ func (r *AdapterRegistry) SendToUser(ctx context.Context, channelType model.Chan
 	})
 }
 
+// sendWithOpts applies SendOptions (silent mode, mention stripping) and dispatches
+// with retry on transient errors. normalSend and silentSend are the platform-specific senders.
+func sendWithOpts(ctx context.Context, adapter ChannelAdapter, msg model.Message, opts model.SendOptions, normalSend, silentSend func(model.Message) error) error {
+	if opts.StripMentions {
+		msg = model.StripMentionBlocks(msg)
+	}
+	return withRetry(ctx, func() error {
+		if opts.Silent {
+			if _, ok := adapter.(SilentSender); ok {
+				return silentSend(msg)
+			}
+		}
+		return normalSend(msg)
+	})
+}
+
 // SendToChatWithOpts dispatches a message applying SendOptions (silent mode, mention stripping)
 // with retry on transient errors.
 func (r *AdapterRegistry) SendToChatWithOpts(ctx context.Context, channelType model.ChannelType, chatID string, msg model.Message, opts model.SendOptions) error {
@@ -75,17 +91,10 @@ func (r *AdapterRegistry) SendToChatWithOpts(ctx context.Context, channelType mo
 	if err != nil {
 		return err
 	}
-	if opts.StripMentions {
-		msg = model.StripMentionBlocks(msg)
-	}
-	return withRetry(ctx, func() error {
-		if opts.Silent {
-			if ss, ok := adapter.(SilentSender); ok {
-				return ss.SendToChatSilent(ctx, chatID, msg, true)
-			}
-		}
-		return adapter.SendToChat(ctx, chatID, msg)
-	})
+	return sendWithOpts(ctx, adapter, msg, opts,
+		func(m model.Message) error { return adapter.SendToChat(ctx, chatID, m) },
+		func(m model.Message) error { return adapter.(SilentSender).SendToChatSilent(ctx, chatID, m, true) },
+	)
 }
 
 // SendToUserWithOpts dispatches a message applying SendOptions (silent mode, mention stripping)
@@ -95,15 +104,10 @@ func (r *AdapterRegistry) SendToUserWithOpts(ctx context.Context, channelType mo
 	if err != nil {
 		return err
 	}
-	if opts.StripMentions {
-		msg = model.StripMentionBlocks(msg)
-	}
-	return withRetry(ctx, func() error {
-		if opts.Silent {
-			if ss, ok := adapter.(SilentSender); ok {
-				return ss.SendToUserSilent(ctx, platformUserID, msg, true)
-			}
-		}
-		return adapter.SendToUser(ctx, platformUserID, msg)
-	})
+	return sendWithOpts(ctx, adapter, msg, opts,
+		func(m model.Message) error { return adapter.SendToUser(ctx, platformUserID, m) },
+		func(m model.Message) error {
+			return adapter.(SilentSender).SendToUserSilent(ctx, platformUserID, m, true)
+		},
+	)
 }

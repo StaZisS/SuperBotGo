@@ -19,7 +19,7 @@ func (a *StateManagerAdapter) Register(pluginID string, def *state.CommandDefini
 	a.mgr.RegisterCommand(pluginID, def)
 }
 
-func (a *StateManagerAdapter) StartCommand(ctx context.Context, userID model.GlobalUserID, _ model.ChannelType, chatID string, pluginID string, commandName string, locale string) (*StateResult, error) {
+func (a *StateManagerAdapter) StartCommand(ctx context.Context, userID model.GlobalUserID, chatID string, pluginID string, commandName string, locale string) (*StateResult, error) {
 
 	if a.mgr.IsCommandImmediate(pluginID, commandName) {
 
@@ -46,7 +46,7 @@ func (a *StateManagerAdapter) StartCommand(ctx context.Context, userID model.Glo
 	}, nil
 }
 
-func (a *StateManagerAdapter) ProcessInput(ctx context.Context, userID model.GlobalUserID, _ model.ChannelType, chatID string, input model.UserInput, locale string) (*StateResult, error) {
+func (a *StateManagerAdapter) ProcessInput(ctx context.Context, userID model.GlobalUserID, chatID string, input model.UserInput, locale string) (*StateResult, error) {
 	msg, cmdReq, err := a.mgr.ProcessInput(ctx, userID, chatID, input, locale)
 	if err != nil {
 		return nil, err
@@ -66,7 +66,7 @@ func (a *StateManagerAdapter) ProcessInput(ctx context.Context, userID model.Glo
 	return result, nil
 }
 
-func (a *StateManagerAdapter) CancelCommand(ctx context.Context, userID model.GlobalUserID, _ model.ChannelType) error {
+func (a *StateManagerAdapter) CancelCommand(ctx context.Context, userID model.GlobalUserID) error {
 	return a.mgr.CancelCommand(ctx, userID)
 }
 

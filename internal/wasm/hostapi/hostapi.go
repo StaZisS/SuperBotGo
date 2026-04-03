@@ -215,8 +215,6 @@ func (h *HostAPI) registerFunc(builder wazero.HostModuleBuilder, name string, fn
 			status := callStatus.status
 
 			if h.metrics != nil {
-				h.metrics.PluginHostCallTotal.WithLabelValues(pluginID, name, status).Inc()
-				h.metrics.PluginHostCallDuration.WithLabelValues(pluginID, name).Observe(dur.Seconds())
 				h.metrics.HostAPITotal.WithLabelValues(pluginID, name, status).Inc()
 				h.metrics.HostAPIDuration.WithLabelValues(pluginID, name).Observe(dur.Seconds())
 			}

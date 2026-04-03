@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"fmt"
+	"html"
 	"strings"
 
 	"SuperBotGo/internal/channel"
@@ -96,8 +97,5 @@ func buildOptionsKeyboard(b model.OptionsBlock) [][]InlineButton {
 }
 
 func escapeHTML(text string) string {
-	text = strings.ReplaceAll(text, "&", "&amp;")
-	text = strings.ReplaceAll(text, "<", "&lt;")
-	text = strings.ReplaceAll(text, ">", "&gt;")
-	return text
+	return html.EscapeString(text)
 }

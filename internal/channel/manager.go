@@ -21,9 +21,9 @@ type UserService interface {
 
 type StateManager interface {
 	Register(pluginID string, def *state.CommandDefinition)
-	StartCommand(ctx context.Context, userID model.GlobalUserID, channelType model.ChannelType, chatID string, pluginID string, commandName string, locale string) (*StateResult, error)
-	ProcessInput(ctx context.Context, userID model.GlobalUserID, channelType model.ChannelType, chatID string, input model.UserInput, locale string) (*StateResult, error)
-	CancelCommand(ctx context.Context, userID model.GlobalUserID, channelType model.ChannelType) error
+	StartCommand(ctx context.Context, userID model.GlobalUserID, chatID string, pluginID string, commandName string, locale string) (*StateResult, error)
+	ProcessInput(ctx context.Context, userID model.GlobalUserID, chatID string, input model.UserInput, locale string) (*StateResult, error)
+	CancelCommand(ctx context.Context, userID model.GlobalUserID) error
 	IsPreservesDialog(pluginID, commandName string) bool
 	GetCurrentStepMessage(ctx context.Context, userID model.GlobalUserID, locale string) (*model.Message, string, error)
 }
@@ -152,25 +152,20 @@ func (m *ChannelManager) handleCommand(
 
 	commandName := def.Name
 
-	var requirements *model.RoleRequirements
-	if def != nil {
-		requirements = def.Requirements
-	}
-
-	ok, err := m.authorizer.CheckCommand(ctx, userID, pluginID, commandName, requirements)
+	ok, err := m.authorizer.CheckCommand(ctx, userID, pluginID, commandName, def.Requirements)
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return m.adapters.SendToChat(ctx, channelType, chatID,
-			model.NewTextMessage("Access denied. You don't have permission for this command."))
+			model.NewTextMessage(i18n.Get("error.access_denied", loc)))
 	}
 
 	if !m.state.IsPreservesDialog(pluginID, commandName) {
-		_ = m.state.CancelCommand(ctx, userID, channelType)
+		_ = m.state.CancelCommand(ctx, userID)
 	}
 
-	result, err := m.state.StartCommand(ctx, userID, channelType, chatID, pluginID, commandName, loc)
+	result, err := m.state.StartCommand(ctx, userID, chatID, pluginID, commandName, loc)
 	if err != nil {
 		return err
 	}
@@ -201,7 +196,7 @@ func (m *ChannelManager) handleInput(
 	chatID string,
 	loc string,
 ) error {
-	result, err := m.state.ProcessInput(ctx, userID, channelType, chatID, input, loc)
+	result, err := m.state.ProcessInput(ctx, userID, chatID, input, loc)
 	if err != nil {
 		// Silently ignore files that arrive without an active dialog
 		// (e.g. extra photos from a Telegram media group after dialog completed).
@@ -323,7 +318,7 @@ func (m *ChannelManager) handleError(ctx context.Context, channelType model.Chan
 				slog.String("message", appErr.Message))
 			msg := appErr.Message
 			if msg == "" {
-				msg = "An error occurred."
+				msg = i18n.Get("error.generic", locale.Default())
 			}
 			m.sendErrorReply(ctx, channelType, chatID, userID, msg, err)
 
@@ -338,7 +333,7 @@ func (m *ChannelManager) handleError(ctx context.Context, channelType model.Chan
 				slog.String("code", string(appErr.Code)),
 				slog.Int64("user_id", int64(userID)),
 				slog.Any("error", err))
-			m.sendErrorReply(ctx, channelType, chatID, userID, "An error occurred. Please try again.", err)
+			m.sendErrorReply(ctx, channelType, chatID, userID, i18n.Get("error.internal", locale.Default()), err)
 		}
 		return
 	}

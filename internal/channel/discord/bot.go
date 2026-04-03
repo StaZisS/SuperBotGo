@@ -23,14 +23,15 @@ type BotConfig struct {
 }
 
 type Bot struct {
-	session     *discordgo.Session
-	handler     channel.UpdateHandlerFunc
-	joinHandler channel.ChatJoinHandler
-	fileStore   filestore.FileStore
-	httpClient  *http.Client
-	maxFileSize int64
-	logger      *slog.Logger
-	connected   atomic.Bool
+	session      *discordgo.Session
+	handler      channel.UpdateHandlerFunc
+	joinHandler  channel.ChatJoinHandler
+	fileStore    filestore.FileStore
+	httpClient   *http.Client
+	maxFileSize  int64
+	logger       *slog.Logger
+	connected    atomic.Bool
+	lifecycleCtx context.Context
 }
 
 func NewBot(cfg BotConfig, handler channel.UpdateHandlerFunc, joinHandler channel.ChatJoinHandler, fs filestore.FileStore, maxFileSize int64, logger *slog.Logger) (*Bot, error) {
@@ -77,6 +78,7 @@ func (b *Bot) Adapter() *Adapter {
 
 func (b *Bot) Start(ctx context.Context) error {
 	b.logger.Info("Discord bot opening gateway connection")
+	b.lifecycleCtx = ctx
 
 	if err := b.session.Open(); err != nil {
 		return fmt.Errorf("discord: open gateway: %w", err)
@@ -87,6 +89,14 @@ func (b *Bot) Start(ctx context.Context) error {
 	b.connected.Store(false)
 	b.logger.Info("Discord bot closing gateway connection")
 	return b.session.Close()
+}
+
+// deriveContext returns a context derived from the bot lifecycle context.
+func (b *Bot) deriveContext() context.Context {
+	if b.lifecycleCtx != nil {
+		return b.lifecycleCtx
+	}
+	return context.Background()
 }
 
 func (b *Bot) Stop() error {
@@ -104,7 +114,7 @@ func (b *Bot) registerHandlers() {
 			slog.String("guild_id", g.ID),
 			slog.String("guild_name", g.Name))
 
-		ctx := context.Background()
+		ctx := b.deriveContext()
 
 		for _, ch := range g.Channels {
 			if ch.Type != discordgo.ChannelTypeGuildText {
@@ -133,7 +143,7 @@ func (b *Bot) registerHandlers() {
 		b.logger.Info("discord: bot removed from guild",
 			slog.String("guild_id", g.ID))
 
-		ctx := context.Background()
+		ctx := b.deriveContext()
 
 		var channels []*discordgo.Channel
 		if g.BeforeDelete != nil {
@@ -195,7 +205,7 @@ func (b *Bot) registerHandlers() {
 					slog.String("channel", chatID),
 					slog.Int("count", len(refs)))
 
-				ctx := context.Background()
+				ctx := b.deriveContext()
 				if err := b.handler(ctx, channel.Update{
 					ChannelType:      model.ChannelDiscord,
 					PlatformUserID:   model.PlatformUserID(platformUserID),
@@ -221,7 +231,7 @@ func (b *Bot) registerHandlers() {
 			slog.String("channel", chatID),
 			slog.String("text", text))
 
-		ctx := context.Background()
+		ctx := b.deriveContext()
 		if err := b.handler(ctx, channel.Update{
 			ChannelType:      model.ChannelDiscord,
 			PlatformUserID:   model.PlatformUserID(platformUserID),
@@ -254,7 +264,7 @@ func (b *Bot) registerHandlers() {
 			Type: discordgo.InteractionResponseDeferredMessageUpdate,
 		})
 
-		ctx := context.Background()
+		ctx := b.deriveContext()
 		if err := b.handler(ctx, channel.Update{
 			ChannelType:      model.ChannelDiscord,
 			PlatformUserID:   model.PlatformUserID(platformUserID),
@@ -283,7 +293,7 @@ func (b *Bot) downloadAndStore(att *discordgo.MessageAttachment) (model.FileRef,
 
 	fileType := detectFileType(att.ContentType)
 
-	ctx := context.Background()
+	ctx := b.deriveContext()
 	return b.fileStore.Store(ctx, filestore.FileMeta{
 		Name:     att.Filename,
 		MIMEType: att.ContentType,

@@ -27,12 +27,41 @@ type AccountLinkerImpl struct {
 	mu          sync.Mutex
 	codes       map[string]*linkEntry
 	accountRepo AccountRepository
+	stopCleanup chan struct{}
 }
 
 func NewAccountLinker(accountRepo AccountRepository) *AccountLinkerImpl {
-	return &AccountLinkerImpl{
+	l := &AccountLinkerImpl{
 		codes:       make(map[string]*linkEntry),
 		accountRepo: accountRepo,
+		stopCleanup: make(chan struct{}),
+	}
+	go l.cleanupLoop()
+	return l
+}
+
+// Stop terminates the background cleanup goroutine.
+func (l *AccountLinkerImpl) Stop() {
+	close(l.stopCleanup)
+}
+
+func (l *AccountLinkerImpl) cleanupLoop() {
+	ticker := time.NewTicker(codeTTL)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			l.mu.Lock()
+			now := time.Now()
+			for code, entry := range l.codes {
+				if now.After(entry.ExpiresAt) {
+					delete(l.codes, code)
+				}
+			}
+			l.mu.Unlock()
+		case <-l.stopCleanup:
+			return
+		}
 	}
 }
 

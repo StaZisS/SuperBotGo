@@ -24,15 +24,16 @@ type BotConfig struct {
 }
 
 type Bot struct {
-	bot         *tele.Bot
-	handler     channel.UpdateHandlerFunc
-	joinHandler channel.ChatJoinHandler
-	fileStore   filestore.FileStore
-	maxFileSize int64
-	logger      *slog.Logger
-	connected   atomic.Bool
-	mode        string
-	albums      *albumBuffer
+	bot          *tele.Bot
+	handler      channel.UpdateHandlerFunc
+	joinHandler  channel.ChatJoinHandler
+	fileStore    filestore.FileStore
+	maxFileSize  int64
+	logger       *slog.Logger
+	connected    atomic.Bool
+	mode         string
+	albums       *albumBuffer
+	lifecycleCtx context.Context
 }
 
 func NewBot(cfg BotConfig, handler channel.UpdateHandlerFunc, joinHandler channel.ChatJoinHandler, fs filestore.FileStore, maxFileSize int64, logger *slog.Logger) (*Bot, error) {
@@ -95,6 +96,7 @@ func (b *Bot) Adapter() *Adapter {
 
 func (b *Bot) Start(ctx context.Context) error {
 	b.logger.Info("Telegram bot starting", slog.String("mode", b.mode))
+	b.lifecycleCtx = ctx
 	b.connected.Store(true)
 
 	go func() {
@@ -106,6 +108,14 @@ func (b *Bot) Start(ctx context.Context) error {
 
 	b.bot.Start()
 	return nil
+}
+
+// deriveContext returns a context derived from the bot lifecycle context.
+func (b *Bot) deriveContext() context.Context {
+	if b.lifecycleCtx != nil {
+		return b.lifecycleCtx
+	}
+	return context.Background()
 }
 
 func (b *Bot) Stop() {
@@ -132,7 +142,7 @@ func (b *Bot) handleTextMessage(c tele.Context) error {
 		slog.String("chat", chatID),
 		slog.String("text", text))
 
-	ctx := context.Background()
+	ctx := b.deriveContext()
 	if err := b.handler(ctx, channel.Update{
 		ChannelType:      model.ChannelTelegram,
 		PlatformUserID:   model.PlatformUserID(platformUserID),
@@ -227,7 +237,7 @@ func (b *Bot) handleFileMessage(c tele.Context, fileType model.FileType) error {
 	defer reader.Close()
 
 	// Store in FileStore
-	ctx := context.Background()
+	ctx := b.deriveContext()
 	ref, err := b.fileStore.Store(ctx, filestore.FileMeta{
 		Name:     filename,
 		MIMEType: mimeType,
@@ -309,7 +319,7 @@ func (b *Bot) flushAlbum(album *pendingAlbum) {
 		slog.String("chat", first.chatID),
 		slog.Int("files", len(refs)))
 
-	ctx := context.Background()
+	ctx := b.deriveContext()
 	if err := b.handler(ctx, channel.Update{
 		ChannelType:      model.ChannelTelegram,
 		PlatformUserID:   model.PlatformUserID(first.userID),
@@ -348,7 +358,7 @@ func (b *Bot) handleMyChatMember(c tele.Context) error {
 			slog.String("chat_type", string(chat.Type)),
 			slog.String("new_status", string(newStatus)))
 
-		ctx := context.Background()
+		ctx := b.deriveContext()
 		if err := b.joinHandler.OnChatLeave(ctx, model.ChannelTelegram, chatID); err != nil {
 			b.logger.Error("telegram: failed to unregister chat on leave",
 				slog.String("chat_id", chatID),
@@ -383,7 +393,7 @@ func (b *Bot) handleMyChatMember(c tele.Context) error {
 		slog.String("title", title),
 		slog.String("new_status", string(newStatus)))
 
-	ctx := context.Background()
+	ctx := b.deriveContext()
 	if err := b.joinHandler.OnChatJoin(ctx, model.ChannelTelegram, chatID, chatKind, title); err != nil {
 		b.logger.Error("telegram: failed to register chat on join",
 			slog.String("chat_id", chatID),
@@ -431,7 +441,7 @@ func (b *Bot) registerHandlers() {
 			slog.String("chat", chatID),
 			slog.String("data", data))
 
-		ctx := context.Background()
+		ctx := b.deriveContext()
 		if err := b.handler(ctx, channel.Update{
 			ChannelType:      model.ChannelTelegram,
 			PlatformUserID:   model.PlatformUserID(platformUserID),

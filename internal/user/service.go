@@ -2,6 +2,7 @@ package user
 
 import (
 	"context"
+	"log/slog"
 
 	"SuperBotGo/internal/locale"
 	"SuperBotGo/internal/model"
@@ -34,7 +35,11 @@ func (s *Service) FindOrCreateUser(ctx context.Context, channelType model.Channe
 		// Update username if changed
 		if uname != "" && account.Username != uname {
 			account.Username = uname
-			_, _ = s.accountRepo.Save(ctx, account)
+			if _, err := s.accountRepo.Save(ctx, account); err != nil {
+				slog.Warn("failed to update username",
+					slog.Int64("user_id", int64(account.GlobalUserID)),
+					slog.Any("error", err))
+			}
 		}
 
 		user, err := s.userRepo.FindByID(ctx, account.GlobalUserID)

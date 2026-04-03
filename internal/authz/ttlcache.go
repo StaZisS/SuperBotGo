@@ -28,7 +28,17 @@ func (c *TTLCache[K, V]) Get(key K) (V, bool) {
 	e, ok := c.entries[key]
 	c.mu.RUnlock()
 
-	if !ok || time.Now().After(e.expiresAt) {
+	if !ok {
+		var zero V
+		return zero, false
+	}
+	if time.Now().After(e.expiresAt) {
+		c.mu.Lock()
+		// Re-check under write lock to avoid deleting a fresh entry.
+		if e2, ok2 := c.entries[key]; ok2 && time.Now().After(e2.expiresAt) {
+			delete(c.entries, key)
+		}
+		c.mu.Unlock()
 		var zero V
 		return zero, false
 	}
