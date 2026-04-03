@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"SuperBotGo/internal/channel"
+	"SuperBotGo/internal/filestore"
 	"SuperBotGo/internal/model"
 
 	tele "gopkg.in/telebot.v3"
@@ -26,12 +27,14 @@ type Bot struct {
 	bot         *tele.Bot
 	handler     channel.UpdateHandlerFunc
 	joinHandler channel.ChatJoinHandler
+	fileStore   filestore.FileStore
+	maxFileSize int64
 	logger      *slog.Logger
 	connected   atomic.Bool
 	mode        string
 }
 
-func NewBot(cfg BotConfig, handler channel.UpdateHandlerFunc, joinHandler channel.ChatJoinHandler, logger *slog.Logger) (*Bot, error) {
+func NewBot(cfg BotConfig, handler channel.UpdateHandlerFunc, joinHandler channel.ChatJoinHandler, fs filestore.FileStore, maxFileSize int64, logger *slog.Logger) (*Bot, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -70,6 +73,8 @@ func NewBot(cfg BotConfig, handler channel.UpdateHandlerFunc, joinHandler channe
 		bot:         b,
 		handler:     handler,
 		joinHandler: joinHandler,
+		fileStore:   fs,
+		maxFileSize: maxFileSize,
 		logger:      logger,
 		mode:        mode,
 	}
@@ -80,7 +85,7 @@ func NewBot(cfg BotConfig, handler channel.UpdateHandlerFunc, joinHandler channe
 }
 
 func (b *Bot) Adapter() *Adapter {
-	return NewAdapter(b.bot, &b.connected)
+	return NewAdapter(b.bot, &b.connected, b.fileStore)
 }
 
 func (b *Bot) Start(ctx context.Context) error {
@@ -132,6 +137,124 @@ func (b *Bot) handleTextMessage(c tele.Context) error {
 		Username:         c.Sender().Username,
 	}); err != nil {
 		b.logger.Error("telegram: error handling message",
+			slog.String("user", platformUserID),
+			slog.Any("error", err))
+	}
+	return nil
+}
+
+func (b *Bot) handleFileMessage(c tele.Context, fileType model.FileType) error {
+	// Skip if no fileStore configured
+	if b.fileStore == nil {
+		return nil
+	}
+
+	chatID := strconv.FormatInt(c.Chat().ID, 10)
+	platformUserID := strconv.FormatInt(c.Sender().ID, 10)
+	updateID := strconv.Itoa(c.Update().ID)
+
+	// Extract the tele.File from the message based on type
+	var teleFile *tele.File
+	var filename string
+	var mimeType string
+
+	msg := c.Message()
+	switch fileType {
+	case model.FileTypePhoto:
+		if msg.Photo != nil {
+			teleFile = &msg.Photo.File
+			filename = "photo.jpg"
+			mimeType = "image/jpeg"
+		}
+	case model.FileTypeDocument:
+		if msg.Document != nil {
+			teleFile = &msg.Document.File
+			filename = msg.Document.FileName
+			mimeType = msg.Document.MIME
+		}
+	case model.FileTypeAudio:
+		if msg.Audio != nil {
+			teleFile = &msg.Audio.File
+			filename = msg.Audio.FileName
+			if filename == "" {
+				filename = "audio"
+			}
+			mimeType = msg.Audio.MIME
+		}
+	case model.FileTypeVideo:
+		if msg.Video != nil {
+			teleFile = &msg.Video.File
+			filename = msg.Video.FileName
+			if filename == "" {
+				filename = "video.mp4"
+			}
+			mimeType = msg.Video.MIME
+		}
+	case model.FileTypeVoice:
+		if msg.Voice != nil {
+			teleFile = &msg.Voice.File
+			filename = "voice.ogg"
+			mimeType = msg.Voice.MIME
+		}
+	}
+
+	if teleFile == nil {
+		return nil
+	}
+
+	// Check file size limit
+	if b.maxFileSize > 0 && int64(teleFile.FileSize) > b.maxFileSize {
+		b.logger.Warn("telegram: file too large, ignoring",
+			slog.String("user", platformUserID),
+			slog.Int64("file_size", teleFile.FileSize),
+			slog.Int64("max_size", b.maxFileSize))
+		return nil
+	}
+
+	// Download from Telegram
+	reader, err := b.bot.File(teleFile)
+	if err != nil {
+		b.logger.Error("telegram: failed to download file",
+			slog.String("user", platformUserID),
+			slog.Any("error", err))
+		return nil
+	}
+	defer reader.Close()
+
+	// Store in FileStore
+	ctx := context.Background()
+	ref, err := b.fileStore.Store(ctx, filestore.FileMeta{
+		Name:     filename,
+		MIMEType: mimeType,
+		FileType: fileType,
+	}, reader)
+	if err != nil {
+		b.logger.Error("telegram: failed to store file",
+			slog.String("user", platformUserID),
+			slog.Any("error", err))
+		return nil
+	}
+
+	b.logger.Info("telegram: received file",
+		slog.String("user", platformUserID),
+		slog.String("chat", chatID),
+		slog.String("file_id", ref.ID),
+		slog.String("file_type", string(fileType)))
+
+	caption := ""
+	if msg.Caption != "" {
+		caption = msg.Caption
+	}
+
+	if err := b.handler(ctx, channel.Update{
+		ChannelType:      model.ChannelTelegram,
+		PlatformUserID:   model.PlatformUserID(platformUserID),
+		PlatformUpdateID: "tg:" + updateID,
+		Input:            model.FileInput{Caption: caption, Files: []model.FileRef{ref}},
+		ChatID:           chatID,
+		Username:         c.Sender().Username,
+	}); err != nil {
+		b.logger.Error("telegram: error handling file message",
 			slog.String("user", platformUserID),
 			slog.Any("error", err))
 	}
@@ -210,6 +333,22 @@ func (b *Bot) registerHandlers() {
 
 	b.bot.Handle(tele.OnText, func(c tele.Context) error {
 		return b.handleTextMessage(c)
+	})
+
+	b.bot.Handle(tele.OnPhoto, func(c tele.Context) error {
+		return b.handleFileMessage(c, model.FileTypePhoto)
+	})
+	b.bot.Handle(tele.OnDocument, func(c tele.Context) error {
+		return b.handleFileMessage(c, model.FileTypeDocument)
+	})
+	b.bot.Handle(tele.OnAudio, func(c tele.Context) error {
+		return b.handleFileMessage(c, model.FileTypeAudio)
+	})
+	b.bot.Handle(tele.OnVideo, func(c tele.Context) error {
+		return b.handleFileMessage(c, model.FileTypeVideo)
+	})
+	b.bot.Handle(tele.OnVoice, func(c tele.Context) error {
+		return b.handleFileMessage(c, model.FileTypeVoice)
 	})
 
 	b.bot.Handle(tele.OnMyChatMember, func(c tele.Context) error {

@@ -22,7 +22,17 @@ type EventContext struct {
 	logs       []logEntry
 	reply      string
 	replyTexts map[string]string
+	replyFiles []FileRef
 	httpResp   *httpResponseData
+}
+
+// FileRef is a lightweight reference to a stored file.
+type FileRef struct {
+	ID       string `json:"id" msgpack:"id"`
+	Name     string `json:"name" msgpack:"name"`
+	MIMEType string `json:"mime_type" msgpack:"mime_type"`
+	Size     int64  `json:"size" msgpack:"size"`
+	FileType string `json:"file_type" msgpack:"file_type"`
 }
 
 // MessengerData contains messenger command data.
@@ -33,6 +43,7 @@ type MessengerData struct {
 	CommandName string
 	Params      map[string]string
 	Locale      string
+	Files       []FileRef // file references attached to this message
 }
 
 // HTTPEventData contains HTTP request details for HTTP triggers.
@@ -110,6 +121,25 @@ func (ctx *EventContext) Config(key string, fallback string) string {
 		return s
 	}
 	return fallback
+}
+
+// Files returns the file references attached to this messenger event.
+func (ctx *EventContext) Files() []FileRef {
+	if ctx.Messenger == nil {
+		return nil
+	}
+	return ctx.Messenger.Files
+}
+
+// HasFiles returns true if the event has attached files.
+func (ctx *EventContext) HasFiles() bool {
+	return ctx.Messenger != nil && len(ctx.Messenger.Files) > 0
+}
+
+// ReplyWithFile adds a file to the reply. The file must have been stored
+// via FileStore first.
+func (ctx *EventContext) ReplyWithFile(ref FileRef) {
+	ctx.replyFiles = append(ctx.replyFiles, ref)
 }
 
 // Param returns a command parameter by key (convenience for messenger events).

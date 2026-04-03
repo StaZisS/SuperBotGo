@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"SuperBotGo/internal/filestore"
 	"SuperBotGo/internal/metrics"
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 
@@ -55,6 +56,10 @@ func (h *HostAPI) ContextWithRateLimiter(ctx context.Context, pluginID string) c
 
 func (h *HostAPI) SetMetrics(m *metrics.Metrics) {
 	h.metrics = m
+}
+
+func (h *HostAPI) SetFileStore(fs filestore.FileStore) {
+	h.deps.FileStore = fs
 }
 
 func (h *HostAPI) SetEventBus(eb EventBus) {
@@ -131,6 +136,11 @@ func (h *HostAPI) RegisterHostModule(ctx context.Context, rt *wasmrt.Runtime) er
 	builder = h.registerFunc(builder, "sql_rows_close", h.sqlRowsCloseFunc(), i32i32, i64)
 	builder = h.registerFunc(builder, "sql_begin", h.sqlBeginFunc(), i32i32, i64)
 	builder = h.registerFunc(builder, "sql_end", h.sqlEndFunc(), i32i32, i64)
+
+	builder = h.registerFunc(builder, "file_meta", h.fileMetaFunc(), i32i32, i64)
+	builder = h.registerFunc(builder, "file_read", h.fileReadFunc(), i32i32, i64)
+	builder = h.registerFunc(builder, "file_url", h.fileURLFunc(), i32i32, i64)
+	builder = h.registerFunc(builder, "file_store", h.fileStoreFunc(), i32i32, i64)
 
 	_, err := builder.Instantiate(ctx)
 	return err

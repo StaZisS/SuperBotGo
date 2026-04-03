@@ -25,6 +25,7 @@ import (
 	"SuperBotGo/internal/chat"
 	"SuperBotGo/internal/config"
 	"SuperBotGo/internal/database"
+	"SuperBotGo/internal/filestore"
 	"SuperBotGo/internal/i18n"
 	"SuperBotGo/internal/locale"
 	"SuperBotGo/internal/metrics"
@@ -78,6 +79,21 @@ func main() {
 		logger.Warn("i18n initialization failed, continuing with fallback keys", slog.Any("error", err))
 	}
 
+	// Initialize FileStore (S3).
+	fileStore, err := filestore.NewS3Store(context.Background(), filestore.S3StoreConfig{
+		Bucket:    cfg.FileStore.S3.Bucket,
+		Region:    cfg.FileStore.S3.Region,
+		Endpoint:  cfg.FileStore.S3.Endpoint,
+		AccessKey: cfg.FileStore.S3.AccessKey,
+		SecretKey: cfg.FileStore.S3.SecretKey,
+		Prefix:    cfg.FileStore.S3.Prefix,
+	})
+	if err != nil {
+		logger.Error("failed to create S3 file store", slog.Any("error", err))
+		os.Exit(1)
+	}
+	logger.Info("using S3 file store", slog.String("bucket", cfg.FileStore.S3.Bucket))
+
 	var chatRegistry chat.Registry
 	adapterRegistry := channel.NewAdapterRegistry()
 	pluginManager := plugin.NewManager()
@@ -97,7 +113,9 @@ func main() {
 
 	rt.SetMetrics(m)
 
-	hostAPI := hostapi.NewHostAPI(hostapi.Dependencies{})
+	hostAPI := hostapi.NewHostAPI(hostapi.Dependencies{
+		FileStore: fileStore,
+	})
 	hostAPI.SetMetrics(m)
 
 	ebMetrics := eventbus.NewMetrics()
@@ -128,6 +146,12 @@ func main() {
 	wasmLoader := adapter.NewLoader(rt, hostAPI, wasmSendFunc)
 	wasmLoader.SetMetrics(m)
 	wasmLoader.SetRegistry(pluginRegistry)
+	wasmLoader.SetMessageSend(adapter.MessageSendFunc(func(ctx context.Context, channelType model.ChannelType, chatID string, msg model.Message) error {
+		if senderAPI == nil {
+			return fmt.Errorf("sender API not initialized")
+		}
+		return senderAPI.ReplyToChat(ctx, channelType, chatID, msg)
+	}))
 
 	var localizedUserService plugin.SenderUserService
 	var localizedChatRegistry chat.Registry
@@ -478,7 +502,7 @@ func main() {
 			WebhookURL:    cfg.Telegram.WebhookURL,
 			WebhookSecret: cfg.Telegram.WebhookSecret,
 			WebhookListen: cfg.Telegram.WebhookListen,
-		}, tgHandler, joinHandler, logger)
+		}, tgHandler, joinHandler, fileStore, cfg.FileStore.MaxFileSize, logger)
 		if err != nil {
 			logger.Error("failed to create Telegram bot", slog.Any("error", err))
 		} else {
@@ -503,7 +527,7 @@ func main() {
 			Token:      cfg.Discord.Token,
 			ShardID:    cfg.Discord.ShardID,
 			ShardCount: cfg.Discord.ShardCount,
-		}, dcHandler, joinHandler, logger)
+		}, dcHandler, joinHandler, fileStore, cfg.FileStore.MaxFileSize, logger)
 		if err != nil {
 			logger.Error("failed to create Discord bot", slog.Any("error", err))
 		} else {
@@ -517,6 +541,25 @@ func main() {
 	} else {
 		logger.Warn("Discord token not configured, Discord bot will not start")
 	}
+
+	// Start file store cleanup goroutine.
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				n, err := fileStore.Cleanup(ctx)
+				if err != nil {
+					logger.Error("file store cleanup error", slog.Any("error", err))
+				} else if n > 0 {
+					logger.Info("file store cleanup", slog.Int("removed", n))
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 
 	logger.Info("SuperBotGo started, waiting for shutdown signal")
 

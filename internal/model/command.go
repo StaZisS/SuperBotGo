@@ -17,6 +17,7 @@ type CommandRequest struct {
 	CommandName string       `json:"command_name"`
 	Params      OptionMap    `json:"params,omitempty"`
 	Locale      string       `json:"locale"`
+	Files       []FileRef    `json:"files,omitempty"`
 }
 
 // CommandCandidate describes one plugin's claim on a command alias.

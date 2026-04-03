@@ -19,6 +19,7 @@ type Config struct {
 	Admin          AdminConfig          `koanf:"admin"`
 	SpiceDB        SpiceDBConfig        `koanf:"spicedb"`
 	UniversitySync UniversitySyncConfig `koanf:"university_sync"`
+	FileStore      FileStoreConfig      `koanf:"filestore"`
 }
 
 type UniversitySyncConfig struct {
@@ -80,6 +81,12 @@ type DiscordConfig struct {
 	ShardCount int    `koanf:"shard_count"`
 }
 
+type FileStoreConfig struct {
+	S3          S3Config `koanf:"s3"`
+	DefaultTTL  string   `koanf:"default_ttl"`   // e.g. "24h", "0" for no expiry
+	MaxFileSize int64    `koanf:"max_file_size"` // max file size in bytes (default 50MB)
+}
+
 func Load() (*Config, error) {
 	k := koanf.New(".")
 
@@ -130,6 +137,12 @@ func Load() (*Config, error) {
 	}
 	if cfg.Discord.ShardCount <= 0 {
 		cfg.Discord.ShardCount = 1
+	}
+	if cfg.FileStore.DefaultTTL == "" {
+		cfg.FileStore.DefaultTTL = "24h"
+	}
+	if cfg.FileStore.MaxFileSize <= 0 {
+		cfg.FileStore.MaxFileSize = 50 * 1024 * 1024 // 50MB
 	}
 
 	// Defaults for SpiceDB

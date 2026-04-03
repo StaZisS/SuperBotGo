@@ -30,6 +30,7 @@ classDiagram
         +Events EventBus
         +PluginRegistry PluginRegistry
         +Notifier Notifier
+        +FileStore FileStore
     }
 
     class HTTPClient {
@@ -149,6 +150,13 @@ graph LR
             call_plugin["call_plugin"]
             publish_event["publish_event"]
         end
+
+        subgraph Files["Files"]
+            file_meta["file_meta"]
+            file_read["file_read"]
+            file_url["file_url"]
+            file_store["file_store"]
+        end
     end
 
     subgraph Infra["Infrastructure"]
@@ -158,6 +166,7 @@ graph LR
         MsgCh["Channel Adapters"]
         Plugins["Other Plugins"]
         EB["EventBus"]
+        FSt[("FileStore")]
     end
 
     Plugin --> kv_get & kv_set & kv_delete & kv_list
@@ -165,8 +174,10 @@ graph LR
     Plugin --> http_request
     Plugin --> notify_user & notify_chat & notify_project
     Plugin --> call_plugin & publish_event
+    Plugin --> file_meta & file_read & file_url & file_store
 
     kv_get & kv_set --> Redis
+    file_meta & file_read & file_url & file_store --> FSt
     sql_open & sql_exec & sql_query --> PG
     http_request --> ExtHTTP
     notify_user & notify_chat --> MsgCh
@@ -177,8 +188,8 @@ graph LR
     classDef host fill:#fff3e0,stroke:#ef6c00
     classDef infra fill:#e1f5fe,stroke:#0288d1
     class Plugin wasm
-    class kv_get,kv_set,kv_delete,kv_list,sql_open,sql_close,sql_exec,sql_query,sql_next,sql_rows_close,sql_begin,sql_end,http_request,notify_user,notify_chat,notify_project,call_plugin,publish_event host
-    class PG,Redis,ExtHTTP,MsgCh,Plugins,EB infra
+    class kv_get,kv_set,kv_delete,kv_list,sql_open,sql_close,sql_exec,sql_query,sql_next,sql_rows_close,sql_begin,sql_end,http_request,notify_user,notify_chat,notify_project,call_plugin,publish_event,file_meta,file_read,file_url,file_store host
+    class PG,Redis,ExtHTTP,MsgCh,Plugins,EB,FSt infra
 ```
 
 ## Конвейер вызова
@@ -216,6 +227,7 @@ flowchart TD
 | `kv` | `kv` | Доступ к `kv_*` функциям |
 | `notify` | `notify` | Доступ к `notify_*` функциям |
 | `events` | `events` | Доступ к `publish_event` |
+| `file` | `file` | Доступ к `file_*` функциям |
 | `plugin:X` | `plugins:call:X` | Вызов конкретного плагина X |
 
 Проверка — **перед каждым вызовом**. Без разрешения вызов возвращает ошибку,

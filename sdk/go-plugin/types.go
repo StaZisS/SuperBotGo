@@ -139,8 +139,17 @@ type eventResponseJSON struct {
 	Error      string            `json:"error,omitempty"`
 	Reply      string            `json:"reply,omitempty"`
 	ReplyTexts map[string]string `json:"reply_texts,omitempty"`
+	ReplyFiles []fileRefDef      `json:"reply_files,omitempty"`
 	Data       json.RawMessage   `json:"data,omitempty"`
 	Logs       []logEntry        `json:"logs,omitempty"`
+}
+
+type fileRefDef struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	MIMEType string `json:"mime_type"`
+	Size     int64  `json:"size"`
+	FileType string `json:"file_type"`
 }
 
 type messengerTriggerData struct {
@@ -150,6 +159,7 @@ type messengerTriggerData struct {
 	CommandName string            `json:"command_name"`
 	Params      map[string]string `json:"params"`
 	Locale      string            `json:"locale"`
+	Files       []fileRefDef      `json:"files,omitempty"`
 }
 
 type httpTriggerData struct {

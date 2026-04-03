@@ -193,6 +193,16 @@ func handleEvent(p Plugin) {
 				Params:      m.Params,
 				Locale:      m.Locale,
 			}
+			// Parse file refs
+			for _, f := range m.Files {
+				ctx.Messenger.Files = append(ctx.Messenger.Files, FileRef{
+					ID:       f.ID,
+					Name:     f.Name,
+					MIMEType: f.MIMEType,
+					Size:     f.Size,
+					FileType: f.FileType,
+				})
+			}
 		}
 
 	case TriggerHTTP:
@@ -253,6 +263,16 @@ func handleEvent(p Plugin) {
 		Reply:      ctx.reply,
 		ReplyTexts: ctx.replyTexts,
 		Logs:       ctx.logs,
+	}
+	// Add reply files
+	for _, f := range ctx.replyFiles {
+		resp.ReplyFiles = append(resp.ReplyFiles, fileRefDef{
+			ID:       f.ID,
+			Name:     f.Name,
+			MIMEType: f.MIMEType,
+			Size:     f.Size,
+			FileType: f.FileType,
+		})
 	}
 	if ctx.httpResp != nil {
 		respData, _ := json.Marshal(ctx.httpResp)

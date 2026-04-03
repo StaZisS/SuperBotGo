@@ -40,3 +40,15 @@ func (c CallbackInput) TextValue() string   { return c.Data }
 func (c CallbackInput) IsCommand() bool     { return strings.HasPrefix(c.Data, "/") }
 func (c CallbackInput) CommandName() string { return parseCommandName(c.Data) }
 func (CallbackInput) userInput()            {}
+
+// FileInput represents a message with one or more file attachments.
+// If Caption starts with "/" it routes as a command with files attached.
+type FileInput struct {
+	Caption string
+	Files   []FileRef
+}
+
+func (f FileInput) TextValue() string   { return f.Caption }
+func (f FileInput) IsCommand() bool     { return strings.HasPrefix(f.Caption, "/") }
+func (f FileInput) CommandName() string { return parseCommandName(f.Caption) }
+func (FileInput) userInput()            {}

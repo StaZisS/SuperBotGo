@@ -23,12 +23,16 @@ type SendFunc func(ctx context.Context, channelType model.ChannelType, chatID st
 // and sends the appropriate text.
 type LocalizedSendFunc func(ctx context.Context, msg model.MessageEntry, fallbackChannelType model.ChannelType) error
 
+// MessageSendFunc sends a full Message (with file blocks, etc.) to a chat.
+type MessageSendFunc func(ctx context.Context, channelType model.ChannelType, chatID string, msg model.Message) error
+
 type WasmPlugin struct {
 	compiled      *wasmrt.CompiledModule
 	meta          wasmrt.PluginMeta
 	config        json.RawMessage
 	send          SendFunc
 	localizedSend LocalizedSendFunc
+	messageSend   MessageSendFunc
 }
 
 func (wp *WasmPlugin) ID() string {
@@ -467,6 +471,22 @@ func (wp *WasmPlugin) HandleEvent(ctx context.Context, event model.Event) (*mode
 							"chat_id", m.ChatID,
 							"error", sendErr)
 						return &resp, fmt.Errorf("wasm plugin %q reply send: %w", wp.meta.ID, sendErr)
+					}
+				}
+			}
+
+			// Send file replies.
+			if len(resp.ReplyFiles) > 0 && wp.messageSend != nil && event.TriggerType == model.TriggerMessenger {
+				if m, mErr := event.Messenger(); mErr == nil {
+					for _, ref := range resp.ReplyFiles {
+						fileMsg := model.NewFileMessage(ref, "")
+						if sendErr := wp.messageSend(ctx, m.ChannelType, m.ChatID, fileMsg); sendErr != nil {
+							slog.Error("wasm plugin file reply failed",
+								"plugin", wp.meta.ID,
+								"chat_id", m.ChatID,
+								"file_id", ref.ID,
+								"error", sendErr)
+						}
 					}
 				}
 			}

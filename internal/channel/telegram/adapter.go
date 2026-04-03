@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	"SuperBotGo/internal/channel"
+	"SuperBotGo/internal/filestore"
 	"SuperBotGo/internal/model"
 
 	tele "gopkg.in/telebot.v3"
@@ -21,13 +22,15 @@ type Adapter struct {
 	bot       *tele.Bot
 	renderer  *Renderer
 	connected *atomic.Bool
+	fileStore filestore.FileStore
 }
 
-func NewAdapter(bot *tele.Bot, connected *atomic.Bool) *Adapter {
+func NewAdapter(bot *tele.Bot, connected *atomic.Bool, fs filestore.FileStore) *Adapter {
 	return &Adapter{
 		bot:       bot,
 		renderer:  NewRenderer(),
 		connected: connected,
+		fileStore: fs,
 	}
 }
 
@@ -62,7 +65,7 @@ func (a *Adapter) sendMessage(_ context.Context, chatID string, msg model.Messag
 
 	rendered := a.renderer.Render(msg)
 
-	if rendered.Text == "" && len(rendered.PhotoURLs) == 0 {
+	if rendered.Text == "" && len(rendered.PhotoURLs) == 0 && len(rendered.FileRefs) == 0 {
 		return nil // nothing to send after rendering
 	}
 
@@ -102,6 +105,25 @@ func (a *Adapter) sendMessage(_ context.Context, chatID string, msg model.Messag
 		photo := &tele.Photo{File: tele.FromURL(photoURL)}
 		if _, err := a.bot.Send(recipient, photo); err != nil {
 			return fmt.Errorf("telegram: send photo: %w", err)
+		}
+	}
+
+	if a.fileStore != nil {
+		for _, ref := range rendered.FileRefs {
+			reader, _, fErr := a.fileStore.Get(context.Background(), ref.ID)
+			if fErr != nil {
+				return fmt.Errorf("telegram: get file %q: %w", ref.ID, fErr)
+			}
+			doc := &tele.Document{
+				File:     tele.FromReader(reader),
+				FileName: ref.Name,
+				MIME:     ref.MIMEType,
+			}
+			if _, fErr = a.bot.Send(recipient, doc); fErr != nil {
+				_ = reader.Close()
+				return fmt.Errorf("telegram: send file: %w", fErr)
+			}
+			_ = reader.Close()
 		}
 	}
 

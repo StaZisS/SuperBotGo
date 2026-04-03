@@ -36,6 +36,7 @@ func NewMessengerEvent(req CommandRequest, pluginID string) (Event, error) {
 		CommandName: req.CommandName,
 		Params:      req.Params,
 		Locale:      req.Locale,
+		Files:       req.Files,
 	})
 	if err != nil {
 		return Event{}, err
@@ -79,6 +80,7 @@ type EventResponse struct {
 	ReplyTexts map[string]string `json:"reply_texts,omitempty"`
 	Data       json.RawMessage   `json:"data,omitempty"`
 	Logs       []LogEntry        `json:"logs,omitempty"`
+	ReplyFiles []FileRef         `json:"reply_files,omitempty"`
 }
 
 type LogEntry struct {
@@ -101,6 +103,7 @@ type MessengerTriggerData struct {
 	CommandName string       `json:"command_name"`
 	Params      OptionMap    `json:"params,omitempty"`
 	Locale      string       `json:"locale"`
+	Files       []FileRef    `json:"files,omitempty"`
 }
 
 type HTTPTriggerData struct {

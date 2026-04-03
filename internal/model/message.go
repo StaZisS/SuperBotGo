@@ -54,6 +54,14 @@ type MentionBlock struct {
 
 func (MentionBlock) blockType() string { return "mention" }
 
+// FileBlock represents an outgoing file attachment.
+type FileBlock struct {
+	FileRef FileRef
+	Caption string
+}
+
+func (FileBlock) blockType() string { return "file" }
+
 type Message struct {
 	Blocks []ContentBlock
 }
@@ -99,6 +107,14 @@ func NewImageMessage(url string) Message {
 	return Message{
 		Blocks: []ContentBlock{
 			ImageBlock{URL: url},
+		},
+	}
+}
+
+func NewFileMessage(ref FileRef, caption string) Message {
+	return Message{
+		Blocks: []ContentBlock{
+			FileBlock{FileRef: ref, Caption: caption},
 		},
 	}
 }

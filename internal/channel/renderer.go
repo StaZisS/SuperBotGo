@@ -16,6 +16,7 @@ type RenderParts struct {
 	TextParts []string
 	ImageURLs []string
 	Options   *model.OptionsBlock
+	FileRefs  []model.FileRef
 }
 
 // RenderBlocks iterates over message blocks and formats them using the
@@ -39,6 +40,11 @@ func RenderBlocks(msg model.Message, f BlockFormatter) RenderParts {
 			}
 			opts := b
 			parts.Options = &opts
+		case model.FileBlock:
+			parts.FileRefs = append(parts.FileRefs, b.FileRef)
+			if b.Caption != "" {
+				parts.TextParts = append(parts.TextParts, f.FormatText(model.TextBlock{Text: b.Caption}))
+			}
 		}
 	}
 	return parts

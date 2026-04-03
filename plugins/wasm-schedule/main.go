@@ -20,6 +20,8 @@ func main() {
 		),
 		Requirements: []wasmplugin.Requirement{
 			wasmplugin.Database("Store and query schedule entries").Build(),
+			wasmplugin.File("Save and retrieve user photos").Build(),
+			wasmplugin.KV("Store photo gallery references").Build(),
 		},
 		Migrations: wasmplugin.MigrationsFromFS(migrationsFS, "migrations"),
 		OnConfigure: func(config []byte) error {
@@ -34,6 +36,8 @@ func main() {
 			scheduleCommand(),
 			findCommand(),
 			settingsCommand(),
+			photoCommand(),
+			galleryCommand(),
 			{
 				Name:        "api",
 				Type:        wasmplugin.TriggerHTTP,

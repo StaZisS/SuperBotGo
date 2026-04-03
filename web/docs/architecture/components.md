@@ -40,7 +40,7 @@ graph LR
         subgraph Layer4[" "]
             direction TB
             wasm["<b>wasm</b><br/>Runtime (wazero)<br/>Loader<br/>EventBus · Registry"]
-            hostapi["<b>hostapi</b><br/>KV · SQL · HTTP<br/>Notify · RPC"]
+            hostapi["<b>hostapi</b><br/>KV · SQL · HTTP<br/>Notify · RPC · Files"]
         end
     end
 
@@ -49,6 +49,7 @@ graph LR
         PG[("PostgreSQL")]
         RD[("Redis")]
         BS["BlobStore<br/>Local FS / S3"]
+        FST["FileStore<br/>Файлы пользователей"]
     end
 
     %% Внешние → приложение
@@ -86,10 +87,12 @@ graph LR
     %% → Хранилища
     authz & notification --> PG
     channel --> RD
+    channel --> FST
     state --> RD
     trigger --> RD
     admin --> BS
     wasm --> BS
+    hostapi --> FST
 
     %% Стили
     classDef external fill:#e1f5fe,stroke:#0288d1,color:#01579b
@@ -107,7 +110,7 @@ graph LR
     class plugin,notification,trigger pkg_plugin
     class wasm,hostapi pkg_infra
     class admin pkg_admin
-    class PG,RD,BS db
+    class PG,RD,BS,FST db
     class Layer1,Layer2,Layer3,Layer4 invisible
 ```
 
@@ -186,6 +189,7 @@ graph LR
 | **PostgreSQL** | Основная БД: пользователи, чаты, роли, плагины, уведомления, авторизация |
 | **Redis** | Состояние диалогов, распределённые блокировки, TTL-кеш |
 | **BlobStore** | Хранение `.wasm` файлов (Local FS или S3/MinIO). Используется Admin API и Loader |
+| **FileStore** | Хранение файлов пользователей (фото, документы). Local FS или S3, с метаданными и TTL. Используется адаптерами каналов и Host API |
 
 ## Потоки данных
 

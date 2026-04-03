@@ -18,6 +18,7 @@ type RenderedMessage struct {
 	ImageURLs  []string
 	HasOptions bool
 	Buttons    [][]Button
+	FileRefs   []model.FileRef
 }
 
 type Renderer struct{}
@@ -76,6 +77,7 @@ func (r *Renderer) Render(msg model.Message) RenderedMessage {
 		ImageURLs:  parts.ImageURLs,
 		HasOptions: len(buttons) > 0,
 		Buttons:    buttons,
+		FileRefs:   parts.FileRefs,
 	}
 }
 

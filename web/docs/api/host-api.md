@@ -8,4 +8,5 @@
 | [HTTP-клиент](/api/http) | Исходящие HTTP-запросы | `HTTP(desc)` |
 | [KV Store](/api/kv-store) | Key-value хранилище с TTL | `KV(desc)` |
 | [Уведомления](/api/notifications) | Отправка уведомлений пользователям и в чаты | `NotifyReq(desc)` |
+| [Файлы](/api/files) | Приём, хранение и отправка файлов | `File(desc)` |
 | [Межплагинное взаимодействие](/api/plugins) | Вызов методов других плагинов и публикация событий | `PluginDep` / `EventsReq` |

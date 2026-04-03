@@ -3,6 +3,8 @@ package hostapi
 import (
 	"context"
 	"net/http"
+
+	"SuperBotGo/internal/filestore"
 )
 
 type HTTPClient interface {
@@ -28,4 +30,5 @@ type Dependencies struct {
 	Events         EventBus
 	PluginRegistry PluginRegistry
 	Notifier       Notifier
+	FileStore      filestore.FileStore
 }

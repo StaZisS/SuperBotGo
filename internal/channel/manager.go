@@ -177,7 +177,7 @@ func (m *ChannelManager) handleCommand(
 
 	if result.IsComplete {
 		m.recordFocus(userID, pluginID)
-		return m.routeCommand(ctx, pluginID, model.CommandRequest{
+		req := model.CommandRequest{
 			UserID:      userID,
 			ChannelType: channelType,
 			ChatID:      chatID,
@@ -185,7 +185,9 @@ func (m *ChannelManager) handleCommand(
 			CommandName: commandName,
 			Params:      result.Params,
 			Locale:      loc,
-		})
+			Files:       extractFiles(input),
+		}
+		return m.routeCommand(ctx, pluginID, req)
 	}
 
 	return m.adapters.SendToChat(ctx, channelType, chatID, result.Message)
@@ -217,7 +219,7 @@ func (m *ChannelManager) handleInput(
 			pluginID = m.plugins.GetPluginIDByCommand(result.CommandName)
 		}
 		m.recordFocus(userID, pluginID)
-		return m.routeCommand(ctx, pluginID, model.CommandRequest{
+		req := model.CommandRequest{
 			UserID:      userID,
 			PluginID:    pluginID,
 			CommandName: result.CommandName,
@@ -225,7 +227,9 @@ func (m *ChannelManager) handleInput(
 			ChannelType: channelType,
 			ChatID:      chatID,
 			Locale:      loc,
-		})
+			Files:       extractFiles(input),
+		}
+		return m.routeCommand(ctx, pluginID, req)
 	}
 
 	return nil
@@ -346,4 +350,12 @@ func (m *ChannelManager) sendErrorReply(ctx context.Context, channelType model.C
 			slog.Any("send_error", sendErr),
 			slog.Any("original_error", originalErr))
 	}
+}
+
+// extractFiles returns file references from a FileInput, or nil for other input types.
+func extractFiles(input model.UserInput) []model.FileRef {
+	if fi, ok := input.(model.FileInput); ok {
+		return fi.Files
+	}
+	return nil
 }

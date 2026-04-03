@@ -25,6 +25,7 @@ type Loader struct {
 	hostAPI         *hostapi.HostAPI
 	send            SendFunc
 	localizedSend   LocalizedSendFunc
+	messageSend     MessageSendFunc
 	plugins         map[string]*loadedPlugin
 	triggerRegistry *trigger.Registry
 	metrics         *metrics.Metrics
@@ -50,6 +51,7 @@ func NewLoader(rt *wasmrt.Runtime, hostAPI *hostapi.HostAPI, send SendFunc) *Loa
 }
 
 func (l *Loader) SetLocalizedSend(fn LocalizedSendFunc)    { l.localizedSend = fn }
+func (l *Loader) SetMessageSend(fn MessageSendFunc)        { l.messageSend = fn }
 func (l *Loader) SetMetrics(m *metrics.Metrics)            { l.metrics = m }
 func (l *Loader) SetTriggerRegistry(tr *trigger.Registry)  { l.triggerRegistry = tr }
 func (l *Loader) SetRegistry(reg *registry.PluginRegistry) { l.registry = reg }
@@ -164,6 +166,7 @@ func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, conf
 		config:        config,
 		send:          l.send,
 		localizedSend: l.localizedSend,
+		messageSend:   l.messageSend,
 	}
 
 	l.mu.Lock()

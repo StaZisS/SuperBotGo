@@ -18,6 +18,7 @@ type RenderedMessage struct {
 	ParseMode string
 	Keyboard  [][]InlineButton
 	PhotoURLs []string
+	FileRefs  []model.FileRef
 }
 
 type Renderer struct{}
@@ -79,6 +80,7 @@ func (r *Renderer) Render(msg model.Message) RenderedMessage {
 		ParseMode: "HTML",
 		Keyboard:  keyboard,
 		PhotoURLs: parts.ImageURLs,
+		FileRefs:  parts.FileRefs,
 	}
 }
 

@@ -55,3 +55,10 @@ setting_saved = "Setting saved!"
 morning = "Morning (07:00)"
 evening = "Evening (20:00)"
 off = "Off"
+
+# Photo command
+photo_send_prompt = "Send a photo with the /photo command to save it."
+photo_saved = "Photo saved!"
+photo_error = "Could not process the photo. Try again."
+gallery_empty = "You have no saved photos yet. Use /photo to save one."
+gallery_total = "Photos in gallery"

@@ -32,6 +32,7 @@
 | `CommandName` | `string` | Имя вызванной команды |
 | `Params` | `map[string]string` | Собранные параметры |
 | `Locale` | `string` | Локаль пользователя |
+| `Files` | `[]FileRef` | Прикреплённые файлы (пусто, если сообщение без файлов) |
 
 ### HTTPEventData
 
@@ -88,6 +89,20 @@ ctx.ReplyLocalized(map[string]string{
 ctx.ReplyLocalized(catalog.L("task_done"))
 ```
 :::
+
+### Файлы {#files}
+
+| Метод | Описание |
+|---|---|
+| `ctx.HasFiles()` | Есть ли прикреплённые файлы |
+| `ctx.Files()` | Список `[]FileRef` |
+| `ctx.FileMeta(fileID)` | Метаданные файла |
+| `ctx.FileReadAll(fileID)` | Прочитать файл целиком |
+| `ctx.FileRead(fileID, offset, maxBytes)` | Чтение чанками |
+| `ctx.FileStore(name, mime, type, data)` | Сохранить файл |
+| `ctx.ReplyWithFile(ref)` | Отправить файл в чат |
+
+Подробнее: [Файлы](/api/files)
 
 ### Уведомления {#notifications}
 

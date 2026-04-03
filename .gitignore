@@ -21,6 +21,9 @@ config.yaml
 # Wasm modules (runtime artifacts)
 wasm_modules/
 
+# File store (user uploads)
+file_store/
+
 # Wasm plugin build output
 plugins/**/*.wasm
 

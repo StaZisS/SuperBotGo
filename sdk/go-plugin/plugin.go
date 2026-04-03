@@ -188,6 +188,11 @@ func PluginDep(target, desc string) *RequirementBuilder {
 	return &RequirementBuilder{r: Requirement{Type: "plugin", Description: desc, Target: target}}
 }
 
+// File declares a requirement for file store access (read, write, metadata).
+func File(desc string) *RequirementBuilder {
+	return &RequirementBuilder{r: Requirement{Type: "file", Description: desc}}
+}
+
 // configStore holds the parsed plugin configuration (set during configure action,
 // passed to handlers via PLUGIN_CONFIG env var).
 var configStore map[string]interface{}

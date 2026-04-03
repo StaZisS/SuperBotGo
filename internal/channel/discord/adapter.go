@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"SuperBotGo/internal/channel"
+	"SuperBotGo/internal/filestore"
 	"SuperBotGo/internal/model"
 
 	"github.com/bwmarrin/discordgo"
@@ -20,13 +21,15 @@ type Adapter struct {
 	session   *discordgo.Session
 	renderer  *Renderer
 	connected *atomic.Bool
+	fileStore filestore.FileStore
 }
 
-func NewAdapter(session *discordgo.Session, connected *atomic.Bool) *Adapter {
+func NewAdapter(session *discordgo.Session, connected *atomic.Bool, fs filestore.FileStore) *Adapter {
 	return &Adapter{
 		session:   session,
 		renderer:  NewRenderer(),
 		connected: connected,
+		fileStore: fs,
 	}
 }
 
@@ -99,6 +102,20 @@ func (a *Adapter) sendMessage(_ context.Context, channelID string, msg model.Mes
 				URL: imageURL,
 			},
 		})
+	}
+
+	if a.fileStore != nil {
+		for _, ref := range rendered.FileRefs {
+			reader, _, fErr := a.fileStore.Get(context.Background(), ref.ID)
+			if fErr != nil {
+				return fmt.Errorf("discord: get file %q: %w", ref.ID, fErr)
+			}
+			msgSend.Files = append(msgSend.Files, &discordgo.File{
+				Name:   ref.Name,
+				Reader: reader,
+			})
+			// Note: reader is closed by discordgo after sending.
+		}
 	}
 
 	_, err := a.session.ChannelMessageSendComplex(channelID, msgSend)
