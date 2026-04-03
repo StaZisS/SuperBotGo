@@ -145,67 +145,6 @@ sequenceDiagram
     TG-->>Bot: ok
 ```
 
-## Host-функции
-
-4 host-функции в `internal/wasm/hostapi/host_file.go`, зарегистрированные в `hostapi.go`:
-
-| Функция | Описание | Лимит |
-|---|---|---|
-| `file_meta` | Метаданные файла по ID | — |
-| `file_read` | Чтение содержимого (чанками до 1 МБ) | — |
-| `file_url` | Временный URL для скачивания | — |
-| `file_store` | Сохранение нового файла | — |
-
-Все функции требуют permission `"file"`, который назначается из requirement `File(desc)`.
-
-### Конвейер вызова
-
-Каждая file host-функция проходит стандартный конвейер:
-
-1. `CheckPermission(pluginID, "file")` — проверка разрешений
-2. `readPayload` + `msgpack.Unmarshal` — десериализация запроса
-3. Проверка `deps.FileStore != nil` — доступность зависимости
-4. Выполнение операции с FileStore
-5. `writeResult` — сериализация ответа обратно в WASM memory
-
-### Wire-формат (msgpack)
-
-**file_store request:**
-```
-name: string, mime_type: string, file_type: string,
-data: bytes, ttl_seconds: int
-```
-
-**file_store response:**
-```
-id: string, name: string, mime_type: string,
-size: int64, file_type: string
-```
-
-**file_read request:**
-```
-file_id: string, offset: int64, length: int64
-```
-
-**file_read response:**
-```
-data: bytes, bytes_read: int64, eof: bool
-```
-
-## Renderer
-
-`FileBlock` обрабатывается в `internal/channel/renderer.go`:
-
-```go
-case model.FileBlock:
-    parts.FileRefs = append(parts.FileRefs, b.FileRef)
-```
-
-Каждый платформенный renderer (`telegram/renderer.go`, `discord/renderer.go`) пробрасывает `FileRefs` в `RenderedMessage`. Адаптер затем:
-
-- **Telegram**: читает из FileStore, отправляет как `tele.Document{FromReader}`
-- **Discord**: читает из FileStore, добавляет как `discordgo.File` в `MessageSend.Files`
-
 ## Конфигурация
 
 ```yaml
