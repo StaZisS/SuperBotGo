@@ -129,67 +129,17 @@ func main() {
 	}
 
 	var senderAPI *plugin.SenderAPI
-	wasmSendFunc := adapter.SendFunc(func(ctx context.Context, channelType model.ChannelType, chatID string, text string) error {
-		if senderAPI == nil {
-			return fmt.Errorf("sender API not initialized")
-		}
-		msg := model.Message{
-			Blocks: []model.ContentBlock{
-				model.TextBlock{Text: text, Style: model.StylePlain},
-			},
-		}
-		return senderAPI.ReplyToChat(ctx, channelType, chatID, msg)
-	})
 
 	pluginRegistry := registry.NewPluginRegistry()
 
-	wasmLoader := adapter.NewLoader(rt, hostAPI, wasmSendFunc)
-	wasmLoader.SetMetrics(m)
-	wasmLoader.SetRegistry(pluginRegistry)
-	wasmLoader.SetMessageSend(adapter.MessageSendFunc(func(ctx context.Context, channelType model.ChannelType, chatID string, msg model.Message) error {
+	wasmLoader := adapter.NewLoader(rt, hostAPI, adapter.MessageSendFunc(func(ctx context.Context, channelType model.ChannelType, chatID string, msg model.Message) error {
 		if senderAPI == nil {
 			return fmt.Errorf("sender API not initialized")
 		}
 		return senderAPI.ReplyToChat(ctx, channelType, chatID, msg)
 	}))
-
-	var localizedUserService plugin.SenderUserService
-	var localizedChatRegistry chat.Registry
-	wasmLoader.SetLocalizedSend(adapter.LocalizedSendFunc(func(ctx context.Context, msg model.MessageEntry, fallbackChannelType model.ChannelType) error {
-		if senderAPI == nil {
-			return fmt.Errorf("sender API not initialized")
-		}
-
-		if msg.UserID != 0 {
-			u, err := localizedUserService.GetUser(ctx, model.GlobalUserID(msg.UserID))
-			if err != nil {
-				return fmt.Errorf("localized send: get user %d: %w", msg.UserID, err)
-			}
-			if u == nil {
-				return fmt.Errorf("localized send: user %d not found", msg.UserID)
-			}
-			text := adapter.ResolveLocalizedText(msg.Texts, u.Locale)
-			return senderAPI.SendToUser(ctx, model.GlobalUserID(msg.UserID), model.NewTextMessage(text))
-		}
-
-		chType := msg.ChannelType
-		if chType == "" {
-			chType = fallbackChannelType
-		}
-		if chType == "" {
-			return fmt.Errorf("localized send: no channel type for chat %s", msg.ChatID)
-		}
-
-		localeStr := ""
-		if localizedChatRegistry != nil {
-			if chatRef, err := localizedChatRegistry.FindChat(ctx, chType, msg.ChatID); err == nil && chatRef != nil {
-				localeStr = chatRef.Locale
-			}
-		}
-
-		text := adapter.ResolveLocalizedText(msg.Texts, localeStr)
-		return senderAPI.ReplyToChat(ctx, chType, msg.ChatID, model.NewTextMessage(text))
-	}))
+	wasmLoader.SetMetrics(m)
+	wasmLoader.SetRegistry(pluginRegistry)
 
 	triggerRegistry := trigger.NewRegistry()
 	wasmLoader.SetTriggerRegistry(triggerRegistry)
@@ -270,10 +220,8 @@ func main() {
 
 	userService := user.NewService(userRepo, accountRepo)
 
-	localizedUserService = userService
-	localizedChatRegistry = chatRegistry
-
-	notifyAPI := notification.NewNotifyAPI(adapterRegistry, userService, notifPrefsRepo, chatRegistry)
+	studentResolver := university.NewPgStudentResolver(pool)
+	notifyAPI := notification.NewNotifyAPI(adapterRegistry, userService, notifPrefsRepo, studentResolver)
 	hostAPI.SetNotifier(notification.NewWasmNotifier(notifyAPI))
 
 	var spiceClient *authzed.Client
@@ -418,7 +366,7 @@ func main() {
 		}
 	}()
 
-	senderAPI = plugin.NewSenderAPI(adapterRegistry, userService, chatRegistry)
+	senderAPI = plugin.NewSenderAPI(adapterRegistry, userService)
 	accountLinker := user.NewAccountLinker(accountRepo)
 
 	allPlugins := []plugin.Plugin{

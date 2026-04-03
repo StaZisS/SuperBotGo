@@ -52,7 +52,7 @@ classDiagram
         <<interface>>
         +NotifyUser(ctx, userID, text, priority)
         +NotifyChat(ctx, channelType, chatID, text, priority)
-        +NotifyProject(ctx, projectID, text, priority)
+        +NotifyStudents(ctx, scope, targetID, text, priority)
     }
 
     class permissionStore {
@@ -143,7 +143,7 @@ graph LR
         subgraph Notify["Notifications"]
             notify_user["notify_user"]
             notify_chat["notify_chat"]
-            notify_project["notify_project"]
+            notify_students["notify_students"]
         end
 
         subgraph RPC["Inter-plugin"]
@@ -172,7 +172,7 @@ graph LR
     Plugin --> kv_get & kv_set & kv_delete & kv_list
     Plugin --> sql_open & sql_exec & sql_query
     Plugin --> http_request
-    Plugin --> notify_user & notify_chat & notify_project
+    Plugin --> notify_user & notify_chat & notify_students
     Plugin --> call_plugin & publish_event
     Plugin --> file_meta & file_read & file_url & file_store
 
@@ -188,7 +188,7 @@ graph LR
     classDef host fill:#fff3e0,stroke:#ef6c00
     classDef infra fill:#e1f5fe,stroke:#0288d1
     class Plugin wasm
-    class kv_get,kv_set,kv_delete,kv_list,sql_open,sql_close,sql_exec,sql_query,sql_next,sql_rows_close,sql_begin,sql_end,http_request,notify_user,notify_chat,notify_project,call_plugin,publish_event,file_meta,file_read,file_url,file_store host
+    class kv_get,kv_set,kv_delete,kv_list,sql_open,sql_close,sql_exec,sql_query,sql_next,sql_rows_close,sql_begin,sql_end,http_request,notify_user,notify_chat,notify_students,call_plugin,publish_event,file_meta,file_read,file_url,file_store host
     class PG,Redis,ExtHTTP,MsgCh,Plugins,EB,FSt infra
 ```
 

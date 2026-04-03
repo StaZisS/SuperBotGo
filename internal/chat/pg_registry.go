@@ -59,31 +59,6 @@ func (r *PgRegistry) FindChat(ctx context.Context, channelType model.ChannelType
 	return &c, nil
 }
 
-func (r *PgRegistry) FindChatsByProject(ctx context.Context, projectID int64) ([]model.ChatReference, error) {
-	rows, err := r.pool.Query(ctx,
-		`SELECT cr.id, cr.channel_type, cr.platform_chat_id, cr.chat_kind, COALESCE(cr.title, ''), COALESCE(cr.locale, '')
-		 FROM chat_references cr
-		 JOIN chat_bindings cb ON cb.chat_ref_id = cr.id
-		 WHERE cb.project_id = $1
-		 ORDER BY cr.id`,
-		projectID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("find chats by project: %w", err)
-	}
-	defer rows.Close()
-
-	var chats []model.ChatReference
-	for rows.Next() {
-		var c model.ChatReference
-		if err := rows.Scan(&c.ID, &c.ChannelType, &c.PlatformChatID, &c.ChatKind, &c.Title, &c.Locale); err != nil {
-			return nil, fmt.Errorf("scan chat row: %w", err)
-		}
-		chats = append(chats, c)
-	}
-	return chats, rows.Err()
-}
-
 func (r *PgRegistry) RegisterChat(ctx context.Context, ref model.ChatReference) (*model.ChatReference, error) {
 	err := r.pool.QueryRow(ctx,
 		`INSERT INTO chat_references (channel_type, platform_chat_id, chat_kind, title)

@@ -18,12 +18,10 @@ type EventContext struct {
 	// Event is non-nil for event bus trigger events.
 	Event *EventBusData
 
-	config     map[string]interface{}
-	logs       []logEntry
-	reply      string
-	replyTexts map[string]string
-	replyFiles []FileRef
-	httpResp   *httpResponseData
+	config      map[string]interface{}
+	logs        []logEntry
+	replyBlocks []msgBlock
+	httpResp    *httpResponseData
 }
 
 // FileRef is a lightweight reference to a stored file.
@@ -69,18 +67,19 @@ type EventBusData struct {
 	Source  string
 }
 
-// Reply sets the text reply for messenger commands.
-func (ctx *EventContext) Reply(text string) {
-	ctx.reply = text
-}
-
-// ReplyLocalized sets a localized reply for messenger commands. The texts map
-// is keyed by locale code (e.g. "en", "ru"). The host resolves the target
-// locale from the user's or chat's settings. Use with [Catalog.L]:
+// Reply sets the reply message for messenger commands. Supports rich content
+// and built-in localization via [Message].
 //
-//	ctx.ReplyLocalized(cat.L("schedule_header", "Building", building))
-func (ctx *EventContext) ReplyLocalized(texts map[string]string) {
-	ctx.replyTexts = texts
+//	// Simple text
+//	ctx.Reply(wasmplugin.NewMessage("Готово!"))
+//
+//	// Localized
+//	ctx.Reply(wasmplugin.NewLocalizedMessage(catalog.L("done")))
+//
+//	// Rich content with file
+//	ctx.Reply(wasmplugin.NewMessage("Вот расписание").File(ref, "schedule.pdf"))
+func (ctx *EventContext) Reply(msg Message) {
+	ctx.replyBlocks = msg.blocks
 }
 
 // SetHTTPResponse sets the HTTP response for an HTTP trigger.
@@ -134,12 +133,6 @@ func (ctx *EventContext) Files() []FileRef {
 // HasFiles returns true if the event has attached files.
 func (ctx *EventContext) HasFiles() bool {
 	return ctx.Messenger != nil && len(ctx.Messenger.Files) > 0
-}
-
-// ReplyWithFile adds a file to the reply. The file must have been stored
-// via FileStore first.
-func (ctx *EventContext) ReplyWithFile(ref FileRef) {
-	ctx.replyFiles = append(ctx.replyFiles, ref)
 }
 
 // Param returns a command parameter by key (convenience for messenger events).

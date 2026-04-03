@@ -219,7 +219,7 @@ func handleScheduleCmd(ctx *wasmplugin.EventContext) error {
 	db, err := openDB()
 	if err != nil {
 		ctx.LogError("db open: " + err.Error())
-		ctx.ReplyLocalized(cat.L("error"))
+		ctx.Reply(wasmplugin.NewLocalizedMessage(cat.L("error")))
 		return nil
 	}
 	defer db.Close()
@@ -227,7 +227,7 @@ func handleScheduleCmd(ctx *wasmplugin.EventContext) error {
 	entries, err := dbScheduleByBuilding(db, building)
 	if err != nil {
 		ctx.LogError("db query: " + err.Error())
-		ctx.ReplyLocalized(cat.L("error"))
+		ctx.Reply(wasmplugin.NewLocalizedMessage(cat.L("error")))
 		return nil
 	}
 
@@ -243,7 +243,7 @@ func handleScheduleCmd(ctx *wasmplugin.EventContext) error {
 	}
 	text += generateScheduleForBuilding(entries, building, room, date, ctx.Locale())
 
-	ctx.Reply(text)
+	ctx.Reply(wasmplugin.NewMessage(text))
 	return nil
 }
 
@@ -365,7 +365,7 @@ func findCommand() wasmplugin.Trigger {
 
 		Handler: func(ctx *wasmplugin.EventContext) error {
 			ctx.Log("find: " + ctx.Param("what"))
-			ctx.Reply(handleFind(ctx.Locale(), ctx.Messenger.Params))
+			ctx.Reply(wasmplugin.NewMessage(handleFind(ctx.Locale(), ctx.Messenger.Params)))
 			return nil
 		},
 	}
@@ -418,10 +418,10 @@ func handleSettingsCmd(ctx *wasmplugin.EventContext) error {
 	switch setting {
 	case "building":
 		building := ctx.Param("building")
-		ctx.Reply(tr("setting_saved") + "\n" + tr("default_building") + ": " + building)
+		ctx.Reply(wasmplugin.NewMessage(tr("setting_saved") + "\n" + tr("default_building") + ": " + building))
 	case "reminder":
 		reminder := ctx.Param("reminder")
-		ctx.Reply(tr("setting_saved") + "\n" + tr("reminder_time") + ": " + tr(reminder))
+		ctx.Reply(wasmplugin.NewMessage(tr("setting_saved") + "\n" + tr("reminder_time") + ": " + tr(reminder)))
 	}
 	return nil
 }
@@ -451,7 +451,7 @@ func handleDailyReminder(ctx *wasmplugin.EventContext) error {
 	buildings, err := dbAllBuildings(db)
 	if err != nil {
 		ctx.LogError("db query: " + err.Error())
-		ctx.Reply(text + "Failed to load schedule.")
+		ctx.Reply(wasmplugin.NewMessage(text + "Failed to load schedule."))
 		return nil
 	}
 
@@ -467,6 +467,6 @@ func handleDailyReminder(ctx *wasmplugin.EventContext) error {
 		text += "\n"
 	}
 
-	ctx.Reply(text)
+	ctx.Reply(wasmplugin.NewMessage(text))
 	return nil
 }

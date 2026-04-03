@@ -92,7 +92,7 @@ func handleAdd(ctx *wasmplugin.EventContext) error {
 	db, err := openDB()
 	if err != nil {
 		ctx.LogError("add: db open: " + err.Error())
-		ctx.Reply(tr("error"))
+		ctx.Reply(wasmplugin.NewMessage(tr("error")))
 		return nil
 	}
 	defer db.Close()
@@ -106,11 +106,11 @@ func handleAdd(ctx *wasmplugin.EventContext) error {
 	})
 	if err != nil {
 		ctx.LogError("add: db insert: " + err.Error())
-		ctx.Reply(tr("error"))
+		ctx.Reply(wasmplugin.NewMessage(tr("error")))
 		return nil
 	}
 
-	ctx.Reply(fmt.Sprintf(tr("item_saved_detail"), title, id))
+	ctx.Reply(wasmplugin.NewMessage(fmt.Sprintf(tr("item_saved_detail"), title, id)))
 	ctx.Log(fmt.Sprintf("add: item #%d created by user %d", id, ctx.Messenger.UserID))
 	return nil
 }
@@ -131,7 +131,7 @@ func handleList(ctx *wasmplugin.EventContext) error {
 	db, err := openDB()
 	if err != nil {
 		ctx.LogError("list: db: " + err.Error())
-		ctx.Reply(tr("error"))
+		ctx.Reply(wasmplugin.NewMessage(tr("error")))
 		return nil
 	}
 	defer db.Close()
@@ -139,12 +139,12 @@ func handleList(ctx *wasmplugin.EventContext) error {
 	items, err := dbActiveItems(db)
 	if err != nil {
 		ctx.LogError("list: query: " + err.Error())
-		ctx.Reply(tr("error"))
+		ctx.Reply(wasmplugin.NewMessage(tr("error")))
 		return nil
 	}
 
 	if len(items) == 0 {
-		ctx.Reply(tr("no_items"))
+		ctx.Reply(wasmplugin.NewMessage(tr("no_items")))
 		return nil
 	}
 
@@ -158,7 +158,7 @@ func handleList(ctx *wasmplugin.EventContext) error {
 	}
 	text += "\n/detail — " + tr("item_detail_header")
 
-	ctx.Reply(text)
+	ctx.Reply(wasmplugin.NewMessage(text))
 	return nil
 }
 
@@ -186,7 +186,7 @@ func handleDetail(ctx *wasmplugin.EventContext) error {
 	db, err := openDB()
 	if err != nil {
 		ctx.LogError("detail: db: " + err.Error())
-		ctx.Reply(tr("error"))
+		ctx.Reply(wasmplugin.NewMessage(tr("error")))
 		return nil
 	}
 	defer db.Close()
@@ -194,11 +194,11 @@ func handleDetail(ctx *wasmplugin.EventContext) error {
 	item, err := dbItemByID(db, id)
 	if err != nil {
 		ctx.LogError("detail: query: " + err.Error())
-		ctx.Reply(tr("error"))
+		ctx.Reply(wasmplugin.NewMessage(tr("error")))
 		return nil
 	}
 	if item == nil {
-		ctx.Reply(fmt.Sprintf(tr("item_not_found"), rawID))
+		ctx.Reply(wasmplugin.NewMessage(fmt.Sprintf(tr("item_not_found"), rawID)))
 		return nil
 	}
 
@@ -209,9 +209,8 @@ func handleDetail(ctx *wasmplugin.EventContext) error {
 
 	header := fmt.Sprintf(tr("item_detail_header"), item.ID)
 	body := fmt.Sprintf(tr("item_detail"), item.Title, item.Description, loc)
-	ctx.Reply(header + "\n\n" + body)
+	msg := wasmplugin.NewMessage(header + "\n\n" + body)
 
-	// Отправляем все фото.
 	if item.PhotoID != "" {
 		for _, pid := range strings.Split(item.PhotoID, ",") {
 			if pid == "" {
@@ -222,10 +221,11 @@ func handleDetail(ctx *wasmplugin.EventContext) error {
 				ctx.LogError("detail: file meta " + pid + ": " + err.Error())
 				continue
 			}
-			ctx.ReplyWithFile(*meta)
+			msg = msg.File(*meta, "")
 		}
 	}
 
+	ctx.Reply(msg)
 	return nil
 }
 
@@ -245,7 +245,7 @@ func handleMyItems(ctx *wasmplugin.EventContext) error {
 	db, err := openDB()
 	if err != nil {
 		ctx.LogError("myitems: db: " + err.Error())
-		ctx.Reply(tr("error"))
+		ctx.Reply(wasmplugin.NewMessage(tr("error")))
 		return nil
 	}
 	defer db.Close()
@@ -253,12 +253,12 @@ func handleMyItems(ctx *wasmplugin.EventContext) error {
 	items, err := dbItemsByUser(db, ctx.Messenger.UserID)
 	if err != nil {
 		ctx.LogError("myitems: query: " + err.Error())
-		ctx.Reply(tr("error"))
+		ctx.Reply(wasmplugin.NewMessage(tr("error")))
 		return nil
 	}
 
 	if len(items) == 0 {
-		ctx.Reply(tr("no_my_items"))
+		ctx.Reply(wasmplugin.NewMessage(tr("no_my_items")))
 		return nil
 	}
 
@@ -271,6 +271,6 @@ func handleMyItems(ctx *wasmplugin.EventContext) error {
 		text += fmt.Sprintf("#%d  %s — %s%s\n", item.ID, item.Title, item.Location, status)
 	}
 
-	ctx.Reply(text)
+	ctx.Reply(wasmplugin.NewMessage(text))
 	return nil
 }

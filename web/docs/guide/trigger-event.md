@@ -68,8 +68,10 @@ wasmplugin.Trigger{
     Type:  wasmplugin.TriggerEvent,
     Topic: "orders.created",
     Handler: func(ctx *wasmplugin.EventContext) error {
-        ctx.NotifyProject(1, "Новый заказ!", wasmplugin.PriorityNormal)
-        return nil
+        return ctx.NotifyStudents().
+            Stream(streamID).
+            Message(wasmplugin.NewMessage("Новый заказ!")).
+            Send()
     },
 }
 ```

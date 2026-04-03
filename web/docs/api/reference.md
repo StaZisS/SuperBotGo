@@ -25,8 +25,7 @@
 
 | Метод | Сигнатура |
 |---|---|
-| `Reply` | `(text string)` |
-| `ReplyLocalized` | `(texts map[string]string)` |
+| `Reply` | `(msg Message)` |
 
 ### HTTP-ответы
 
@@ -56,7 +55,21 @@
 |---|---|---|
 | `NotifyUser` | `(userID int64, text string, priority int) error` | `notify` |
 | `NotifyChat` | `(channelType, chatID, text string, priority int) error` | `notify` |
-| `NotifyProject` | `(projectID int64, text string, priority int) error` | `notify` |
+| `NotifyStudents` | `() *StudentNotifyBuilder` | `notify` |
+
+#### StudentNotifyBuilder
+
+| Метод | Описание |
+|---|---|
+| `.Faculty(id int64)` | Scope: факультет |
+| `.Department(id int64)` | Scope: кафедра |
+| `.Program(id int64)` | Scope: направление |
+| `.Stream(id int64)` | Scope: поток |
+| `.Group(id int64)` | Scope: учебная группа |
+| `.Subgroup(id int64)` | Scope: подгруппа |
+| `.Message(msg Message)` | Сообщение (rich content) |
+| `.Priority(p int)` | Приоритет (по умолчанию `PriorityNormal`) |
+| `.Send() error` | Отправить |
 
 ### KV Store
 
@@ -169,6 +182,18 @@
 | `.T` | `(locale, key string, args ...any) string` | Перевод для одной локали |
 | `.Tr` | `(locale string) func(key string, args ...any) string` | Функция-переводчик |
 | `.Opt` | `(key, value string, args ...any) Option` | Локализованная опция |
+
+## Message (rich content)
+
+| Конструктор / метод | Сигнатура | Описание |
+|---|---|---|
+| `NewMessage` | `(text string) Message` | Создать сообщение с текстовым блоком |
+| `.Text` | `(text string) Message` | Добавить текстовый блок |
+| `.StyledText` | `(text string, style TextStyle) Message` | Текст со стилем |
+| `.Mention` | `(userID string) Message` | Упоминание пользователя |
+| `.File` | `(ref FileRef, caption string) Message` | Файл-вложение |
+| `.Link` | `(url, label string) Message` | Ссылка |
+| `.Image` | `(url string) Message` | Изображение |
 
 ## Миграции
 

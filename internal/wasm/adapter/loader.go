@@ -23,8 +23,6 @@ type Loader struct {
 	mu              sync.RWMutex
 	rt              *wasmrt.Runtime
 	hostAPI         *hostapi.HostAPI
-	send            SendFunc
-	localizedSend   LocalizedSendFunc
 	messageSend     MessageSendFunc
 	plugins         map[string]*loadedPlugin
 	triggerRegistry *trigger.Registry
@@ -41,17 +39,14 @@ type loadedPlugin struct {
 	drained        chan struct{}
 }
 
-func NewLoader(rt *wasmrt.Runtime, hostAPI *hostapi.HostAPI, send SendFunc) *Loader {
+func NewLoader(rt *wasmrt.Runtime, hostAPI *hostapi.HostAPI, messageSend MessageSendFunc) *Loader {
 	return &Loader{
-		rt:      rt,
-		hostAPI: hostAPI,
-		send:    send,
-		plugins: make(map[string]*loadedPlugin),
+		rt:          rt,
+		hostAPI:     hostAPI,
+		messageSend: messageSend,
+		plugins:     make(map[string]*loadedPlugin),
 	}
 }
-
-func (l *Loader) SetLocalizedSend(fn LocalizedSendFunc)    { l.localizedSend = fn }
-func (l *Loader) SetMessageSend(fn MessageSendFunc)        { l.messageSend = fn }
 func (l *Loader) SetMetrics(m *metrics.Metrics)            { l.metrics = m }
 func (l *Loader) SetTriggerRegistry(tr *trigger.Registry)  { l.triggerRegistry = tr }
 func (l *Loader) SetRegistry(reg *registry.PluginRegistry) { l.registry = reg }
@@ -161,12 +156,10 @@ func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, conf
 		"max_concurrency", compiled.Pool().Stats().PoolSize)
 
 	wp := &WasmPlugin{
-		compiled:      compiled,
-		meta:          meta,
-		config:        config,
-		send:          l.send,
-		localizedSend: l.localizedSend,
-		messageSend:   l.messageSend,
+		compiled:    compiled,
+		meta:        meta,
+		config:      config,
+		messageSend: l.messageSend,
 	}
 
 	l.mu.Lock()

@@ -67,7 +67,7 @@ func main() {
                 Type:        wasmplugin.TriggerMessenger,
                 Description: "Приветствие",
                 Handler: func(ctx *wasmplugin.EventContext) error {
-                    ctx.Reply("Привет, мир!")
+                    ctx.Reply(wasmplugin.NewMessage("Привет, мир!"))
                     return nil
                 },
             },

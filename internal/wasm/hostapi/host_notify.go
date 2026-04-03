@@ -2,8 +2,10 @@ package hostapi
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	"SuperBotGo/internal/model"
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 
 	"github.com/tetratelabs/wazero/api"
@@ -116,13 +118,25 @@ func (h *HostAPI) notifyChatFunc() api.GoModuleFunc {
 	}
 }
 
-type notifyProjectRequest struct {
-	ProjectID int64  `msgpack:"project_id"`
-	Text      string `msgpack:"text"`
-	Priority  int    `msgpack:"priority"`
+type wireBlock struct {
+	Type    string `msgpack:"type"`
+	Text    string `msgpack:"text,omitempty"`
+	Style   string `msgpack:"style,omitempty"`
+	UserID  string `msgpack:"user_id,omitempty"`
+	FileID  string `msgpack:"file_id,omitempty"`
+	Caption string `msgpack:"caption,omitempty"`
+	URL     string `msgpack:"url,omitempty"`
+	Label   string `msgpack:"label,omitempty"`
 }
 
-func (h *HostAPI) notifyProjectFunc() api.GoModuleFunc {
+type notifyStudentsRequest struct {
+	Scope    string      `msgpack:"scope"`
+	TargetID int64       `msgpack:"target_id"`
+	Blocks   []wireBlock `msgpack:"blocks"`
+	Priority int         `msgpack:"priority"`
+}
+
+func (h *HostAPI) notifyStudentsFunc() api.GoModuleFunc {
 	return func(ctx context.Context, mod api.Module, stack []uint64) {
 		pluginID := pluginIDFromContext(ctx)
 		offset := uint32(stack[0])
@@ -134,7 +148,7 @@ func (h *HostAPI) notifyProjectFunc() api.GoModuleFunc {
 			return
 		}
 
-		var req notifyProjectRequest
+		var req notifyStudentsRequest
 		if err := msgpack.Unmarshal(data, &req); err != nil {
 			returnError(ctx, mod, stack, err)
 			return
@@ -155,7 +169,13 @@ func (h *HostAPI) notifyProjectFunc() api.GoModuleFunc {
 
 		priority := clampPriority(req.Priority)
 
-		if err := h.deps.Notifier.NotifyProject(reqCtx, req.ProjectID, req.Text, priority); err != nil {
+		msg, err := wireBlocksToMessage(req.Blocks)
+		if err != nil {
+			returnError(ctx, mod, stack, err)
+			return
+		}
+
+		if err := h.deps.Notifier.NotifyStudents(reqCtx, req.Scope, req.TargetID, msg, priority); err != nil {
 			SetHostCallStatus(ctx, "error")
 			writeResult(ctx, mod, stack, notifyResponse{OK: false, Error: err.Error()})
 			return
@@ -163,6 +183,43 @@ func (h *HostAPI) notifyProjectFunc() api.GoModuleFunc {
 
 		writeResult(ctx, mod, stack, notifyResponse{OK: true})
 	}
+}
+
+var wireStyleToModel = map[string]model.TextStyle{
+	"plain":     model.StylePlain,
+	"header":    model.StyleHeader,
+	"subheader": model.StyleSubheader,
+	"code":      model.StyleCode,
+	"quote":     model.StyleQuote,
+}
+
+func wireBlocksToMessage(blocks []wireBlock) (model.Message, error) {
+	if len(blocks) == 0 {
+		return model.Message{}, fmt.Errorf("empty message blocks")
+	}
+
+	content := make([]model.ContentBlock, 0, len(blocks))
+	for _, b := range blocks {
+		switch b.Type {
+		case "text":
+			style := wireStyleToModel[b.Style]
+			content = append(content, model.TextBlock{Text: b.Text, Style: style})
+		case "mention":
+			content = append(content, model.MentionBlock{UserID: b.UserID})
+		case "file":
+			content = append(content, model.FileBlock{
+				FileRef: model.FileRef{ID: b.FileID},
+				Caption: b.Caption,
+			})
+		case "link":
+			content = append(content, model.LinkBlock{URL: b.URL, Label: b.Label})
+		case "image":
+			content = append(content, model.ImageBlock{URL: b.URL})
+		default:
+			return model.Message{}, fmt.Errorf("unknown block type: %q", b.Type)
+		}
+	}
+	return model.Message{Blocks: content}, nil
 }
 
 func clampPriority(p int) int {

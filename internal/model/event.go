@@ -73,14 +73,25 @@ func (e Event) EventTrigger() (*EventTriggerData, error) {
 	return &data, nil
 }
 
+// ReplyBlock is a single content block in a plugin reply message.
+type ReplyBlock struct {
+	Type    string            `json:"type"`
+	Text    string            `json:"text,omitempty"`
+	Texts   map[string]string `json:"texts,omitempty"`
+	Style   string            `json:"style,omitempty"`
+	UserID  string            `json:"user_id,omitempty"`
+	FileID  string            `json:"file_id,omitempty"`
+	Caption string            `json:"caption,omitempty"`
+	URL     string            `json:"url,omitempty"`
+	Label   string            `json:"label,omitempty"`
+}
+
 type EventResponse struct {
-	Status     string            `json:"status,omitempty"`
-	Error      string            `json:"error,omitempty"`
-	Reply      string            `json:"reply,omitempty"`
-	ReplyTexts map[string]string `json:"reply_texts,omitempty"`
-	Data       json.RawMessage   `json:"data,omitempty"`
-	Logs       []LogEntry        `json:"logs,omitempty"`
-	ReplyFiles []FileRef         `json:"reply_files,omitempty"`
+	Status      string          `json:"status,omitempty"`
+	Error       string          `json:"error,omitempty"`
+	ReplyBlocks []ReplyBlock    `json:"reply_blocks,omitempty"`
+	Data        json.RawMessage `json:"data,omitempty"`
+	Logs        []LogEntry      `json:"logs,omitempty"`
 }
 
 type LogEntry struct {

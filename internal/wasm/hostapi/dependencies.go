@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"SuperBotGo/internal/filestore"
+	"SuperBotGo/internal/model"
 )
 
 type HTTPClient interface {
@@ -22,7 +23,7 @@ type PluginRegistry interface {
 type Notifier interface {
 	NotifyUser(ctx context.Context, userID int64, text string, priority int) error
 	NotifyChat(ctx context.Context, channelType string, chatID string, text string, priority int) error
-	NotifyProject(ctx context.Context, projectID int64, text string, priority int) error
+	NotifyStudents(ctx context.Context, scope string, targetID int64, msg model.Message, priority int) error
 }
 
 type Dependencies struct {

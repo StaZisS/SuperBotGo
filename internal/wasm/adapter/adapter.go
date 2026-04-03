@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"regexp"
 
-	"SuperBotGo/internal/locale"
 	"SuperBotGo/internal/model"
 	"SuperBotGo/internal/plugin"
 	"SuperBotGo/internal/state"
@@ -16,23 +15,14 @@ import (
 
 var _ plugin.Plugin = (*WasmPlugin)(nil)
 
-type SendFunc func(ctx context.Context, channelType model.ChannelType, chatID string, text string) error
-
-// LocalizedSendFunc handles delivery of messages that carry a locale→text map.
-// The implementation resolves the target locale (from user or chat settings)
-// and sends the appropriate text.
-type LocalizedSendFunc func(ctx context.Context, msg model.MessageEntry, fallbackChannelType model.ChannelType) error
-
-// MessageSendFunc sends a full Message (with file blocks, etc.) to a chat.
+// MessageSendFunc sends a full Message to a chat.
 type MessageSendFunc func(ctx context.Context, channelType model.ChannelType, chatID string, msg model.Message) error
 
 type WasmPlugin struct {
-	compiled      *wasmrt.CompiledModule
-	meta          wasmrt.PluginMeta
-	config        json.RawMessage
-	send          SendFunc
-	localizedSend LocalizedSendFunc
-	messageSend   MessageSendFunc
+	compiled    *wasmrt.CompiledModule
+	meta        wasmrt.PluginMeta
+	config      json.RawMessage
+	messageSend MessageSendFunc
 }
 
 func (wp *WasmPlugin) ID() string {
@@ -394,6 +384,31 @@ func resolveLocalized(fallback string, texts map[string]string, locale string) s
 	return fallback
 }
 
+// replyBlocksToMessage converts reply blocks from the plugin response
+// into a model.Message, resolving localized text per the given locale.
+func replyBlocksToMessage(blocks []model.ReplyBlock, loc string) model.Message {
+	content := make([]model.ContentBlock, 0, len(blocks))
+	for _, b := range blocks {
+		switch b.Type {
+		case "text":
+			text := resolveLocalized(b.Text, b.Texts, loc)
+			content = append(content, model.TextBlock{Text: text, Style: parseTextStyle(b.Style)})
+		case "mention":
+			content = append(content, model.MentionBlock{UserID: b.UserID})
+		case "file":
+			content = append(content, model.FileBlock{
+				FileRef: model.FileRef{ID: b.FileID},
+				Caption: b.Caption,
+			})
+		case "link":
+			content = append(content, model.LinkBlock{URL: b.URL, Label: b.Label})
+		case "image":
+			content = append(content, model.ImageBlock{URL: b.URL})
+		}
+	}
+	return model.Message{Blocks: content}
+}
+
 func parseTextStyle(s string) model.TextStyle {
 	switch s {
 	case "header":
@@ -434,63 +449,18 @@ func (wp *WasmPlugin) HandleEvent(ctx context.Context, event model.Event) (*mode
 			}
 		}
 
-		if wp.send != nil {
-			// Localized reply — resolve locale from chat/user and send.
-			if len(resp.ReplyTexts) > 0 && event.TriggerType == model.TriggerMessenger {
-				if m, mErr := event.Messenger(); mErr == nil {
-					if wp.localizedSend != nil {
-						entry := model.MessageEntry{
-							ChatID: m.ChatID,
-							Texts:  resp.ReplyTexts,
-						}
-						if sendErr := wp.localizedSend(ctx, entry, m.ChannelType); sendErr != nil {
-							slog.Error("wasm plugin localized reply failed",
-								"plugin", wp.meta.ID,
-								"chat_id", m.ChatID,
-								"error", sendErr)
-							return &resp, fmt.Errorf("wasm plugin %q localized reply send: %w", wp.meta.ID, sendErr)
-						}
-					} else {
-						// Fallback: resolve to default locale.
-						text := ResolveLocalizedText(resp.ReplyTexts, locale.Default())
-						if sendErr := wp.send(ctx, m.ChannelType, m.ChatID, text); sendErr != nil {
-							slog.Error("wasm plugin reply failed",
-								"plugin", wp.meta.ID,
-								"chat_id", m.ChatID,
-								"error", sendErr)
-							return &resp, fmt.Errorf("wasm plugin %q reply send: %w", wp.meta.ID, sendErr)
-						}
-					}
-				}
-			} else if resp.Reply != "" && event.TriggerType == model.TriggerMessenger {
-				if m, mErr := event.Messenger(); mErr == nil {
-					if sendErr := wp.send(ctx, m.ChannelType, m.ChatID, resp.Reply); sendErr != nil {
-						slog.Error("wasm plugin reply failed",
-							"plugin", wp.meta.ID,
-							"channel_type", m.ChannelType,
-							"chat_id", m.ChatID,
-							"error", sendErr)
-						return &resp, fmt.Errorf("wasm plugin %q reply send: %w", wp.meta.ID, sendErr)
-					}
+		if len(resp.ReplyBlocks) > 0 && wp.messageSend != nil && event.TriggerType == model.TriggerMessenger {
+			if m, mErr := event.Messenger(); mErr == nil {
+				msg := replyBlocksToMessage(resp.ReplyBlocks, string(m.Locale))
+				if sendErr := wp.messageSend(ctx, m.ChannelType, m.ChatID, msg); sendErr != nil {
+					slog.Error("wasm plugin reply failed",
+						"plugin", wp.meta.ID,
+						"channel_type", m.ChannelType,
+						"chat_id", m.ChatID,
+						"error", sendErr)
+					return &resp, fmt.Errorf("wasm plugin %q reply send: %w", wp.meta.ID, sendErr)
 				}
 			}
-
-			// Send file replies.
-			if len(resp.ReplyFiles) > 0 && wp.messageSend != nil && event.TriggerType == model.TriggerMessenger {
-				if m, mErr := event.Messenger(); mErr == nil {
-					for _, ref := range resp.ReplyFiles {
-						fileMsg := model.NewFileMessage(ref, "")
-						if sendErr := wp.messageSend(ctx, m.ChannelType, m.ChatID, fileMsg); sendErr != nil {
-							slog.Error("wasm plugin file reply failed",
-								"plugin", wp.meta.ID,
-								"chat_id", m.ChatID,
-								"file_id", ref.ID,
-								"error", sendErr)
-						}
-					}
-				}
-			}
-
 		}
 	}
 

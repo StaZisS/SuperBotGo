@@ -135,7 +135,7 @@ sequenceDiagram
     HA->>FS: Store(FileMeta, bytes.Reader)
     FS-->>HA: FileRef{ID: "xyz789"}
     HA-->>P: FileRef
-    P->>P: ctx.ReplyWithFile(ref)
+    P->>P: ctx.Reply(wasmplugin.NewMessage("").File(ref, ""))
     Note over P: response.ReplyFiles = [ref]
     P-->>WP: EventResponse{ReplyFiles: [ref]}
     WP->>Bot: SendToChat(FileBlock{ref})

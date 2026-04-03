@@ -11,7 +11,7 @@
 ```go
 Handler: func(ctx *wasmplugin.EventContext) error {
     if !ctx.HasFiles() {
-        ctx.Reply("Отправьте файл вместе с командой")
+        ctx.Reply(wasmplugin.NewMessage("Отправьте файл вместе с командой"))
         return nil
     }
 
@@ -118,28 +118,26 @@ ref, err := ctx.FileStoreWithTTL("temp.png", "image/png", "photo", imgData, 1*ti
 
 ## Отправка файлов
 
-### `ctx.ReplyWithFile(ref FileRef)`
-
-Отправляет файл в текущий чат:
+Файлы отправляются через тип `Message` с методом `.File(ref, caption)`:
 
 ```go
 ref, _ := ctx.FileStore("export.csv", "text/csv", "document", csvData)
-ctx.ReplyWithFile(*ref)
+ctx.Reply(wasmplugin.NewMessage("").File(*ref, ""))
 ```
 
-Можно отправлять несколько файлов и комбинировать с текстом:
+Можно отправлять несколько файлов и комбинировать с текстом в одном вызове:
 
 ```go
-ctx.Reply("Вот ваш отчёт:")
-ctx.ReplyWithFile(*pdfRef)
-ctx.ReplyWithFile(*csvRef)
+ctx.Reply(wasmplugin.NewMessage("Вот ваш отчёт:").File(*pdfRef, "").File(*csvRef, ""))
 ```
+
+Метод `.File(ref, caption)` принимает `FileRef` и необязательный caption (подпись к файлу). Можно вызывать цепочкой для отправки нескольких файлов.
 
 ### Отправка входящего файла обратно
 
 ```go
 for _, f := range ctx.Files() {
-    ctx.ReplyWithFile(f)  // эхо — отправить обратно
+    ctx.Reply(wasmplugin.NewMessage("").File(f, ""))  // эхо — отправить обратно
 }
 ```
 
@@ -152,7 +150,7 @@ for _, f := range ctx.Files() {
 ```go
 url, err := ctx.FileURL(file.ID)
 if url != "" {
-    ctx.Reply("Скачать: " + url)
+    ctx.Reply(wasmplugin.NewMessage("Скачать: " + url))
 }
 ```
 
@@ -172,7 +170,7 @@ if url != "" {
 | `FileURL` | `(fileID string) (string, error)` | Временный URL |
 | `FileStore` | `(name, mimeType, fileType string, data []byte) (*FileRef, error)` | Сохранение |
 | `FileStoreWithTTL` | `(name, mimeType, fileType string, data []byte, ttl time.Duration) (*FileRef, error)` | Сохранение с TTL |
-| `ReplyWithFile` | `(ref FileRef)` | Отправка файла в чат |
+| `Reply` (с файлом) | `(msg Message)` | Отправка файла через `wasmplugin.NewMessage("").File(ref, caption)` |
 
 **Необходимое требование:**
 
@@ -197,7 +195,7 @@ wasmplugin.Plugin{
             Type:    wasmplugin.TriggerMessenger,
             Handler: func(ctx *wasmplugin.EventContext) error {
                 if !ctx.HasFiles() {
-                    ctx.Reply("Отправьте фото вместе с командой /save")
+                    ctx.Reply(wasmplugin.NewMessage("Отправьте фото вместе с командой /save"))
                     return nil
                 }
 
@@ -225,7 +223,7 @@ wasmplugin.Plugin{
                     ctx.KVSet(key, existing+stored.ID)
                 }
 
-                ctx.Reply("Фото сохранены!")
+                ctx.Reply(wasmplugin.NewMessage("Фото сохранены!"))
                 return nil
             },
         },
@@ -236,19 +234,20 @@ wasmplugin.Plugin{
                 key := fmt.Sprintf("user:%d:photos", ctx.Messenger.UserID)
                 val, found, _ := ctx.KVGet(key)
                 if !found || val == "" {
-                    ctx.Reply("Нет сохранённых фото")
+                    ctx.Reply(wasmplugin.NewMessage("Нет сохранённых фото"))
                     return nil
                 }
 
                 ids := strings.Split(val, ",")
-                ctx.Reply(fmt.Sprintf("Ваши фото (%d):", len(ids)))
+                msg := wasmplugin.NewMessage(fmt.Sprintf("Ваши фото (%d):", len(ids)))
                 for _, id := range ids {
                     meta, err := ctx.FileMeta(id)
                     if err != nil {
                         continue
                     }
-                    ctx.ReplyWithFile(*meta)
+                    msg = msg.File(*meta, "")
                 }
+                ctx.Reply(msg)
                 return nil
             },
         },

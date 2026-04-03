@@ -1,6 +1,6 @@
 # Уведомления
 
-Система уведомлений позволяет плагинам отправлять сообщения пользователям, чатам и проектам. В отличие от `ctx.Reply()`, уведомления учитывают предпочтения пользователя: рабочие часы, приоритетный канал доставки и настройки упоминаний.
+Система уведомлений позволяет плагинам отправлять сообщения пользователям, чатам и студентам по университетской иерархии. В отличие от `ctx.Reply()`, уведомления учитывают предпочтения пользователя: рабочие часы, приоритетный канал доставки и настройки упоминаний.
 
 ## Приоритеты
 
@@ -29,10 +29,10 @@
 Отправляет уведомление конкретному пользователю. Хост автоматически выбирает канал доставки по предпочтениям пользователя.
 
 ```go
-// Информационное уведомление -без звука вне рабочих часов
+// Информационное уведомление — без звука вне рабочих часов
 ctx.NotifyUser(userID, "Сборка завершена", wasmplugin.PriorityLow)
 
-// Срочное -отправится во все каналы пользователя
+// Срочное — отправится во все каналы пользователя
 ctx.NotifyUser(userID, "Сервер недоступен!", wasmplugin.PriorityCritical)
 ```
 
@@ -57,37 +57,101 @@ ctx.NotifyChat("telegram", "123456789", "Новый заказ!", wasmplugin.Pri
 | `text` | `string` | Текст уведомления |
 | `priority` | `int` | Уровень приоритета (0--3) |
 
-### `ctx.NotifyProject(projectID, text, priority)` {#notify-project}
+### `ctx.NotifyStudents()` {#notify-students}
 
-Отправляет уведомление во **все чаты**, привязанные к проекту.
+Возвращает builder для отправки уведомления **всем студентам** в указанном уровне университетской иерархии. Каждый студент получает персональное уведомление через `NotifyUser` с учётом приоритетов и предпочтений.
+
+#### Scope-методы (уровень иерархии)
+
+| Метод | Описание |
+|---|---|
+| `.Faculty(id)` | Все студенты факультета |
+| `.Department(id)` | Все студенты кафедры |
+| `.Program(id)` | Все студенты направления подготовки |
+| `.Stream(id)` | Все студенты потока |
+| `.Group(id)` | Все студенты учебной группы |
+| `.Subgroup(id)` | Все студенты подгруппы |
+
+#### Остальные методы
+
+| Метод | Описание |
+|---|---|
+| `.Message(msg)` | Сообщение ([Message](#message-type), обязательно) |
+| `.Priority(p)` | Приоритет (по умолчанию `PriorityNormal`) |
+| `.Send()` | Отправить уведомление |
+
+### Тип `Message` {#message-type}
+
+`Message` — rich-сообщение из блоков контента. Создаётся через `NewMessage(text)` и расширяется builder-методами.
+
+| Конструктор / метод | Описание |
+|---|---|
+| `NewMessage(text)` | Создать сообщение с текстовым блоком |
+| `.Text(text)` | Добавить текстовый блок (plain) |
+| `.StyledText(text, style)` | Добавить текст со стилем (`StyleHeader`, `StyleCode`, ...) |
+| `.Mention(userID)` | Добавить упоминание пользователя |
+| `.File(ref, caption)` | Добавить файл-вложение |
+| `.Link(url, label)` | Добавить ссылку |
+| `.Image(url)` | Добавить изображение |
+
+#### Примеры
 
 ```go
-ctx.NotifyProject(42, "Релиз v2.0 опубликован", wasmplugin.PriorityHigh)
+// Простое текстовое уведомление
+ctx.NotifyStudents().
+    Stream(streamID).
+    Message(wasmplugin.NewMessage("Пары завтра отменены")).
+    Priority(wasmplugin.PriorityHigh).
+    Send()
+
+// Уведомить группу — стандартный приоритет (по умолчанию)
+ctx.NotifyStudents().
+    Group(groupID).
+    Message(wasmplugin.NewMessage("Сдача лабы перенесена на пятницу")).
+    Send()
+
+// Rich-сообщение с упоминанием и ссылкой
+ctx.NotifyStudents().
+    Subgroup(subgroupID).
+    Message(
+        wasmplugin.NewMessage("Замена преподавателя по английскому").
+            Mention(newTeacherID).
+            Link("https://schedule.university.ru/changes", "Подробности"),
+    ).
+    Send()
+
+// Сообщение с файлом
+ctx.NotifyStudents().
+    Faculty(facultyID).
+    Message(
+        wasmplugin.NewMessage("Новое расписание на семестр").
+            File(scheduleFile, "расписание.pdf"),
+    ).
+    Priority(wasmplugin.PriorityCritical).
+    Send()
 ```
 
-| Параметр | Тип | Описание |
-|---|---|---|
-| `projectID` | `int64` | ID проекта |
-| `text` | `string` | Текст уведомления |
-| `priority` | `int` | Уровень приоритета (0--3) |
+::: warning Валидация на стороне SDK
+`Send()` вернёт ошибку, если не задан scope (не вызван ни один из методов `Faculty`, `Stream`, `Group` и т.д.) или не задан текст. Host-вызов не произойдёт.
+:::
 
 **Необходимое разрешение:** `notify`
 
 **Необходимое требование:**
 
 ```go
-wasmplugin.NotifyReq("уведомления мониторинга")
+wasmplugin.NotifyReq("рассылка студентам по расписанию").Build()
 ```
 
 ::: info Одно разрешение на все методы
-Все три метода (`NotifyUser`, `NotifyChat`, `NotifyProject`) используют единое разрешение `notify`. Одного вызова `NotifyReq(desc)` в `Requirements` достаточно.
+Все методы (`NotifyUser`, `NotifyChat`, `NotifyStudents`) используют единое разрешение `notify`. Одного `NotifyReq(desc)` достаточно.
 :::
 
 ## Reply vs Notify
 
 | | `ctx.Reply` | `ctx.Notify*` |
 |---|---|---|
-| **Назначение** | Прямой ответ в чат триггера | Отправка в произвольные чаты/пользователям |
+| **Назначение** | Прямой ответ в чат триггера | Отправка в произвольные чаты/пользователям/студентам |
 | **Канал доставки** | Текущий чат | Определяется хостом по предпочтениям |
 | **Рабочие часы** | Не учитываются | Учитываются (PriorityLow) |
 | **Упоминания** | Нет | Автоматически (PriorityHigh+) |
@@ -106,46 +170,47 @@ import wasmplugin "github.com/StaZisS/SuperBotGo/sdk/go-plugin"
 
 func main() {
     wasmplugin.Run(wasmplugin.Plugin{
-        ID:          "monitor",
-        Name:        "Мониторинг",
-        Description: "Мониторинг и оповещения",
+        ID:          "schedule-alerts",
+        Name:        "Оповещения по расписанию",
+        Description: "Уведомления студентов об изменениях в расписании",
         Version:     "1.0.0",
-        Requirements: wasmplugin.NotifyReq("уведомления мониторинга").
-            HTTP("проверка здоровья API").
-            Build(),
+        Requirements: []wasmplugin.Requirement{
+            wasmplugin.NotifyReq("рассылка студентам об изменениях расписания").Build(),
+            wasmplugin.Database("Чтение расписания").Build(),
+        },
 
         Triggers: []wasmplugin.Trigger{
             {
-                Name:     "health_check",
+                Name:     "check_changes",
                 Type:     wasmplugin.TriggerCron,
-                Schedule: "*/5 * * * *",
+                Schedule: "*/30 * * * *",
                 Handler: func(ctx *wasmplugin.EventContext) error {
-                    resp, err := wasmplugin.HTTPGet("https://api.example.com/health")
-                    if err != nil {
-                        return err
-                    }
+                    // Проверяем изменения в расписании
+                    // ...
 
-                    if resp.StatusCode != 200 {
-                        // Срочное уведомление -все каналы
-                        ctx.NotifyProject(1, "API недоступен!", wasmplugin.PriorityCritical)
-                        return nil
-                    }
+                    // Уведомить поток об отмене пар
+                    ctx.NotifyStudents().
+                        Stream(streamID).
+                        Message(wasmplugin.NewMessage("Лекция по математике завтра отменена")).
+                        Priority(wasmplugin.PriorityHigh).
+                        Send()
 
-                    // Тихое информационное уведомление
-                    ctx.NotifyUser(100, "Health check OK", wasmplugin.PriorityLow)
                     return nil
                 },
             },
             {
-                Name:        "notify",
+                Name:        "notify_group",
                 Type:        wasmplugin.TriggerMessenger,
-                Description: "Отправить уведомление в проект",
+                Description: "Отправить уведомление группе",
                 Handler: func(ctx *wasmplugin.EventContext) error {
                     text := ctx.Param("text")
                     if text == "" {
                         text = "Тестовое уведомление"
                     }
-                    return ctx.NotifyProject(1, text, wasmplugin.PriorityNormal)
+                    return ctx.NotifyStudents().
+                        Group(groupID).
+                        Message(wasmplugin.NewMessage(text)).
+                        Send()
                 },
             },
         },

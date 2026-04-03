@@ -14,21 +14,15 @@ type SenderUserService interface {
 	GetUser(ctx context.Context, id model.GlobalUserID) (*model.GlobalUser, error)
 }
 
-type SenderChatRegistry interface {
-	FindChatsByProject(ctx context.Context, projectID int64) ([]model.ChatReference, error)
-}
-
 type SenderAPI struct {
 	adapters    *channel.AdapterRegistry
 	userService SenderUserService
-	chatReg     SenderChatRegistry
 }
 
-func NewSenderAPI(adapters *channel.AdapterRegistry, userService SenderUserService, chatReg SenderChatRegistry) *SenderAPI {
+func NewSenderAPI(adapters *channel.AdapterRegistry, userService SenderUserService) *SenderAPI {
 	return &SenderAPI{
 		adapters:    adapters,
 		userService: userService,
-		chatReg:     chatReg,
 	}
 }
 
@@ -80,30 +74,6 @@ func (s *SenderAPI) SendToAllChannels(ctx context.Context, userID model.GlobalUs
 	if len(errs) > 0 {
 		return fmt.Errorf("sender: send to user %d failed on %d/%d channels: %w",
 			userID, len(errs), len(user.Accounts), errors.Join(errs...))
-	}
-	return nil
-}
-
-func (s *SenderAPI) SendToProject(ctx context.Context, projectID int64, msg model.Message) error {
-	chats, err := s.chatReg.FindChatsByProject(ctx, projectID)
-	if err != nil {
-		return fmt.Errorf("sender: find chats for project %d: %w", projectID, err)
-	}
-
-	var errs []error
-	for _, chat := range chats {
-		if err := s.adapters.SendToChat(ctx, chat.ChannelType, chat.PlatformChatID, msg); err != nil {
-			slog.Error("sender: partial failure sending to project chat",
-				slog.Int64("project_id", projectID),
-				slog.String("chat_id", chat.PlatformChatID),
-				slog.String("channel_type", string(chat.ChannelType)),
-				slog.Any("error", err))
-			errs = append(errs, fmt.Errorf("chat %s (%s): %w", chat.PlatformChatID, chat.ChannelType, err))
-		}
-	}
-	if len(errs) > 0 {
-		return fmt.Errorf("sender: project %d broadcast failed on %d/%d chats: %w",
-			projectID, len(errs), len(chats), errors.Join(errs...))
 	}
 	return nil
 }

@@ -121,7 +121,7 @@ func (h *HostAPI) RegisterHostModule(ctx context.Context, rt *wasmrt.Runtime) er
 		[]api.ValueType{api.ValueTypeI32, api.ValueTypeI32},
 		[]api.ValueType{api.ValueTypeI64})
 
-	builder = h.registerFunc(builder, "notify_project", h.notifyProjectFunc(),
+	builder = h.registerFunc(builder, "notify_students", h.notifyStudentsFunc(),
 		[]api.ValueType{api.ValueTypeI32, api.ValueTypeI32},
 		[]api.ValueType{api.ValueTypeI64})
 

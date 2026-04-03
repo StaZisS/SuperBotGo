@@ -135,13 +135,11 @@ type eventRequest struct {
 }
 
 type eventResponseJSON struct {
-	Status     string            `json:"status,omitempty"`
-	Error      string            `json:"error,omitempty"`
-	Reply      string            `json:"reply,omitempty"`
-	ReplyTexts map[string]string `json:"reply_texts,omitempty"`
-	ReplyFiles []fileRefDef      `json:"reply_files,omitempty"`
-	Data       json.RawMessage   `json:"data,omitempty"`
-	Logs       []logEntry        `json:"logs,omitempty"`
+	Status      string          `json:"status,omitempty"`
+	Error       string          `json:"error,omitempty"`
+	ReplyBlocks []msgBlock      `json:"reply_blocks,omitempty"`
+	Data        json.RawMessage `json:"data,omitempty"`
+	Logs        []logEntry      `json:"logs,omitempty"`
 }
 
 type fileRefDef struct {

@@ -259,20 +259,9 @@ func handleEvent(p Plugin) {
 	}
 
 	resp := eventResponseJSON{
-		Status:     "ok",
-		Reply:      ctx.reply,
-		ReplyTexts: ctx.replyTexts,
-		Logs:       ctx.logs,
-	}
-	// Add reply files
-	for _, f := range ctx.replyFiles {
-		resp.ReplyFiles = append(resp.ReplyFiles, fileRefDef{
-			ID:       f.ID,
-			Name:     f.Name,
-			MIMEType: f.MIMEType,
-			Size:     f.Size,
-			FileType: f.FileType,
-		})
+		Status:      "ok",
+		ReplyBlocks: ctx.replyBlocks,
+		Logs:        ctx.logs,
 	}
 	if ctx.httpResp != nil {
 		respData, _ := json.Marshal(ctx.httpResp)

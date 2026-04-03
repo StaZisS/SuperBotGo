@@ -27,7 +27,7 @@ func handlePhoto(ctx *wasmplugin.EventContext) error {
 	tr := cat.Tr(ctx.Locale())
 
 	if !ctx.HasFiles() {
-		ctx.Reply(tr("photo_send_prompt"))
+		ctx.Reply(wasmplugin.NewMessage(tr("photo_send_prompt")))
 		return nil
 	}
 
@@ -68,10 +68,10 @@ func handlePhoto(ctx *wasmplugin.EventContext) error {
 		if err := ctx.KVSet(key, strings.Join(ids, ",")); err != nil {
 			ctx.LogError("photo: kv set: " + err.Error())
 		}
-		ctx.Reply(fmt.Sprintf("%s (%d). %s: %d",
-			tr("photo_saved"), saved, tr("gallery_total"), len(ids)))
+		ctx.Reply(wasmplugin.NewMessage(fmt.Sprintf("%s (%d). %s: %d",
+			tr("photo_saved"), saved, tr("gallery_total"), len(ids))))
 	} else {
-		ctx.Reply(tr("photo_error"))
+		ctx.Reply(wasmplugin.NewMessage(tr("photo_error")))
 	}
 
 	return nil
@@ -94,17 +94,17 @@ func handleGallery(ctx *wasmplugin.EventContext) error {
 	val, found, err := ctx.KVGet(photosKey(userID))
 	if err != nil {
 		ctx.LogError("gallery: kv get: " + err.Error())
-		ctx.Reply(tr("error"))
+		ctx.Reply(wasmplugin.NewMessage(tr("error")))
 		return nil
 	}
 
 	if !found || val == "" {
-		ctx.Reply(tr("gallery_empty"))
+		ctx.Reply(wasmplugin.NewMessage(tr("gallery_empty")))
 		return nil
 	}
 
 	ids := strings.Split(val, ",")
-	ctx.Reply(fmt.Sprintf("%s: %d", tr("gallery_total"), len(ids)))
+	msg := wasmplugin.NewMessage(fmt.Sprintf("%s: %d", tr("gallery_total"), len(ids)))
 
 	for _, id := range ids {
 		meta, err := ctx.FileMeta(id)
@@ -112,8 +112,9 @@ func handleGallery(ctx *wasmplugin.EventContext) error {
 			ctx.LogError("gallery: file meta " + id + ": " + err.Error())
 			continue
 		}
-		ctx.ReplyWithFile(*meta)
+		msg = msg.File(*meta, "")
 	}
 
+	ctx.Reply(msg)
 	return nil
 }

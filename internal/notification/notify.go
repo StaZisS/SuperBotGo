@@ -16,9 +16,9 @@ type UserService interface {
 	GetUser(ctx context.Context, id model.GlobalUserID) (*model.GlobalUser, error)
 }
 
-// ChatRegistry finds chats bound to a project.
-type ChatRegistry interface {
-	FindChatsByProject(ctx context.Context, projectID int64) ([]model.ChatReference, error)
+// StudentResolver resolves a university hierarchy scope to a list of global user IDs.
+type StudentResolver interface {
+	ResolveStudentUsers(ctx context.Context, scope string, targetID int64) ([]model.GlobalUserID, error)
 }
 
 // NotifyAPI is the high-level notification service that respects user preferences
@@ -27,20 +27,20 @@ type NotifyAPI struct {
 	adapters *channel.AdapterRegistry
 	users    UserService
 	prefs    PrefsRepository
-	chats    ChatRegistry
+	students StudentResolver
 }
 
 func NewNotifyAPI(
 	adapters *channel.AdapterRegistry,
 	users UserService,
 	prefs PrefsRepository,
-	chats ChatRegistry,
+	students StudentResolver,
 ) *NotifyAPI {
 	return &NotifyAPI{
 		adapters: adapters,
 		users:    users,
 		prefs:    prefs,
-		chats:    chats,
+		students: students,
 	}
 }
 
@@ -97,32 +97,29 @@ func (n *NotifyAPI) NotifyChat(ctx context.Context, channelType model.ChannelTyp
 	return n.adapters.SendToChatWithOpts(ctx, channelType, chatID, msg, opts)
 }
 
-// NotifyProject sends a notification to all chats bound to a project.
-// It continues sending to remaining chats even if some fail.
-func (n *NotifyAPI) NotifyProject(ctx context.Context, projectID int64, msg model.Message, priority model.NotifyPriority) error {
-	chats, err := n.chats.FindChatsByProject(ctx, projectID)
+// NotifyStudents sends a priority-aware notification to all students within
+// the given university hierarchy scope.
+// It continues sending to remaining users even if some fail.
+func (n *NotifyAPI) NotifyStudents(ctx context.Context, scope string, targetID int64, msg model.Message, priority model.NotifyPriority) error {
+	userIDs, err := n.students.ResolveStudentUsers(ctx, scope, targetID)
 	if err != nil {
-		return fmt.Errorf("notify: find chats for project %d: %w", projectID, err)
-	}
-
-	opts := model.SendOptions{
-		Silent: priority == model.PriorityLow,
+		return fmt.Errorf("notify: resolve students for %s/%d: %w", scope, targetID, err)
 	}
 
 	var sendErrs []error
-	for _, chat := range chats {
-		if err := n.adapters.SendToChatWithOpts(ctx, chat.ChannelType, chat.PlatformChatID, msg, opts); err != nil {
-			slog.Error("notify: partial failure sending to project chat",
-				slog.Int64("project_id", projectID),
-				slog.String("chat_id", chat.PlatformChatID),
-				slog.String("channel_type", string(chat.ChannelType)),
+	for _, uid := range userIDs {
+		if err := n.NotifyUser(ctx, uid, msg, priority); err != nil {
+			slog.Error("notify: partial failure sending to student",
+				slog.String("scope", scope),
+				slog.Int64("target_id", targetID),
+				slog.Int64("user_id", int64(uid)),
 				slog.Any("error", err))
-			sendErrs = append(sendErrs, fmt.Errorf("chat %s (%s): %w", chat.PlatformChatID, chat.ChannelType, err))
+			sendErrs = append(sendErrs, fmt.Errorf("user %d: %w", uid, err))
 		}
 	}
 	if len(sendErrs) > 0 {
-		return fmt.Errorf("notify: project %d broadcast failed on %d/%d chats: %w",
-			projectID, len(sendErrs), len(chats), errors.Join(sendErrs...))
+		return fmt.Errorf("notify: students %s/%d broadcast failed on %d/%d users: %w",
+			scope, targetID, len(sendErrs), len(userIDs), errors.Join(sendErrs...))
 	}
 	return nil
 }

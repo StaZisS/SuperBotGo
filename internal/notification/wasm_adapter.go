@@ -24,6 +24,6 @@ func (w *WasmNotifier) NotifyChat(ctx context.Context, channelType string, chatI
 	return w.api.NotifyChat(ctx, model.ChannelType(channelType), chatID, model.NewTextMessage(text), model.NotifyPriority(priority))
 }
 
-func (w *WasmNotifier) NotifyProject(ctx context.Context, projectID int64, text string, priority int) error {
-	return w.api.NotifyProject(ctx, projectID, model.NewTextMessage(text), model.NotifyPriority(priority))
+func (w *WasmNotifier) NotifyStudents(ctx context.Context, scope string, targetID int64, msg model.Message, priority int) error {
+	return w.api.NotifyStudents(ctx, scope, targetID, msg, model.NotifyPriority(priority))
 }

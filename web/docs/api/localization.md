@@ -86,7 +86,7 @@ combined := base.Merge(extra)
 
 ### Все локали: `.L(key, args...)`
 
-Возвращает `map[string]string` со значениями для всех локалей. Используется с `ReplyLocalized`.
+Возвращает `map[string]string` со значениями для всех локалей. Используется с `wasmplugin.NewLocalizedMessage`.
 
 ```go
 texts := catalog.L("greeting", "name", "Алиса")
@@ -139,7 +139,7 @@ catalog.T("ru", "item_count", "42")
 
 ```go
 Handler: func(ctx *wasmplugin.EventContext) error {
-    ctx.ReplyLocalized(catalog.L("task_done"))
+    ctx.Reply(wasmplugin.NewLocalizedMessage(catalog.L("task_done")))
     return nil
 }
 ```
@@ -218,7 +218,7 @@ func main() {
                 },
                 Handler: func(ctx *wasmplugin.EventContext) error {
                     name := ctx.Param("name")
-                    ctx.ReplyLocalized(catalog.L("greeting", "name", name))
+                    ctx.Reply(wasmplugin.NewLocalizedMessage(catalog.L("greeting", "name", name)))
                     return nil
                 },
             },

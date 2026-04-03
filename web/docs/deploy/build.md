@@ -56,7 +56,7 @@ curl -X POST http://host/api/admin/plugins/{id}/install \
 | `sql` | Доступ к базе данных | `sql.Open("superbot", name)` | `Database(desc)` |
 | `kv` | Чтение/запись KV Store | `KVGet`, `KVSet`, `KVDelete`, `KVList` | `KV(desc)` |
 | `network` | Исходящие HTTP-запросы | `HTTPRequest`, `HTTPGet`, `HTTPPost` | `HTTP(desc)` |
-| `notify` | Отправка уведомлений | `NotifyUser`, `NotifyChat`, `NotifyProject` | `NotifyReq(desc)` |
+| `notify` | Отправка уведомлений | `NotifyUser`, `NotifyChat`, `NotifyStudents` | `NotifyReq(desc)` |
 | `events` | Публикация событий | `PublishEvent` | `EventsReq(desc)` |
 | `plugin:<target>` | Вызов другого плагина | `CallPlugin` | `PluginDep(target, desc)` |
 

@@ -24,7 +24,7 @@ wasmplugin.Trigger{
     Type:        wasmplugin.TriggerMessenger,
     Description: "Проверить, жив ли бот",
     Handler: func(ctx *wasmplugin.EventContext) error {
-        ctx.Reply("pong!")
+        ctx.Reply(wasmplugin.NewMessage("pong!"))
         return nil
     },
 }
@@ -53,9 +53,9 @@ wasmplugin.Trigger{
     Handler: func(ctx *wasmplugin.EventContext) error {
         name := ctx.Param("name")
         if ctx.Param("style") == "formal" {
-            ctx.Reply("Добрый день, " + name + ".")
+            ctx.Reply(wasmplugin.NewMessage("Добрый день, " + name + "."))
         } else {
-            ctx.Reply("Привет, " + name + "!")
+            ctx.Reply(wasmplugin.NewMessage("Привет, " + name + "!"))
         }
         return nil
     },
@@ -435,9 +435,9 @@ func searchCommand() wasmplugin.Trigger {
             what := ctx.Param("what")
             switch what {
             case "teacher":
-                ctx.Reply("Результаты для преподавателя: " + ctx.Param("teacher"))
+                ctx.Reply(wasmplugin.NewMessage("Результаты для преподавателя: " + ctx.Param("teacher")))
             case "subject":
-                ctx.Reply("Результаты для предмета: " + ctx.Param("subject"))
+                ctx.Reply(wasmplugin.NewMessage("Результаты для предмета: " + ctx.Param("subject")))
             }
             return nil
         },

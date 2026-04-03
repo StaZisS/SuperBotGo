@@ -64,31 +64,20 @@
 
 ### Ответы в чат {#reply}
 
-#### `ctx.Reply(text string)`
+#### `ctx.Reply(msg Message)`
 
-Устанавливает текстовый ответ для текущего чата. Работает **только** при `TriggerType == "messenger"` - для cron, HTTP и event-триггеров вызов будет проигнорирован.
-
-```go
-ctx.Reply("Готово!")
-```
-
-#### `ctx.ReplyLocalized(texts map[string]string)`
-
-Отвечает локализованным сообщением. Хост выбирает текст по локали пользователя. Ключи карты - коды локалей (`"ru"`, `"en"`, ...).
+Устанавливает ответ для текущего чата. Поддерживает rich content и встроенную локализацию. Работает **только** при `TriggerType == "messenger"`.
 
 ```go
-ctx.ReplyLocalized(map[string]string{
-    "ru": "Задача выполнена!",
-    "en": "Task completed!",
-})
-```
+// Простой текст
+ctx.Reply(wasmplugin.NewMessage("Готово!"))
 
-::: tip Catalog
-Для работы с переводами удобнее использовать [Catalog](/api/localization):
-```go
-ctx.ReplyLocalized(catalog.L("task_done"))
+// Локализованное сообщение
+ctx.Reply(wasmplugin.NewLocalizedMessage(catalog.L("task_done")))
+
+// Rich content: текст + файл
+ctx.Reply(wasmplugin.NewMessage("Вот расписание").File(ref, "schedule.pdf"))
 ```
-:::
 
 ### Файлы {#files}
 
@@ -100,7 +89,6 @@ ctx.ReplyLocalized(catalog.L("task_done"))
 | `ctx.FileReadAll(fileID)` | Прочитать файл целиком |
 | `ctx.FileRead(fileID, offset, maxBytes)` | Чтение чанками |
 | `ctx.FileStore(name, mime, type, data)` | Сохранить файл |
-| `ctx.ReplyWithFile(ref)` | Отправить файл в чат |
 
 Подробнее: [Файлы](/api/files)
 
@@ -110,7 +98,7 @@ ctx.ReplyLocalized(catalog.L("task_done"))
 |---|---|
 | `ctx.NotifyUser(userID, text, priority)` | Уведомление пользователю с учётом предпочтений |
 | `ctx.NotifyChat(channelType, chatID, text, priority)` | Уведомление в конкретный чат |
-| `ctx.NotifyProject(projectID, text, priority)` | Уведомление во все чаты проекта |
+| `ctx.NotifyStudents().Scope(id).Message(t).Send()` | Уведомление студентам по университетской иерархии (builder) |
 
 Подробнее: [Уведомления](/api/notifications)
 
@@ -179,7 +167,7 @@ Handler: func(ctx *wasmplugin.EventContext) error {
     switch ctx.TriggerType {
     case wasmplugin.TriggerMessenger:
         // ctx.Messenger != nil
-        ctx.Reply("Привет, " + ctx.Param("name"))
+        ctx.Reply(wasmplugin.NewMessage("Привет, " + ctx.Param("name")))
 
     case wasmplugin.TriggerHTTP:
         // ctx.HTTP != nil
