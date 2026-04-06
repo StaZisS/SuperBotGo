@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"sort"
 	"sync"
 
 	"SuperBotGo/internal/state"
@@ -85,5 +86,39 @@ func (m *Manager) All() map[string]Plugin {
 	for k, v := range m.plugins {
 		result[k] = v
 	}
+	return result
+}
+
+// ListUserPlugins returns plugin info for all plugins except those whose IDs
+// are in excludeIDs. The result is sorted by plugin name.
+func (m *Manager) ListUserPlugins(excludeIDs ...string) []PluginInfo {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	exclude := make(map[string]struct{}, len(excludeIDs))
+	for _, id := range excludeIDs {
+		exclude[id] = struct{}{}
+	}
+
+	var result []PluginInfo
+	for _, p := range m.plugins {
+		if _, skip := exclude[p.ID()]; skip {
+			continue
+		}
+		cmds := p.Commands()
+		commands := make([]PluginCommand, len(cmds))
+		for i, c := range cmds {
+			commands[i] = PluginCommand{Name: c.Name, Description: c.Description, Requirements: c.Requirements}
+		}
+		result = append(result, PluginInfo{
+			ID:       p.ID(),
+			Name:     p.Name(),
+			Commands: commands,
+		})
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Name < result[j].Name
+	})
 	return result
 }

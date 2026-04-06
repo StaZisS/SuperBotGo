@@ -11,12 +11,14 @@ import (
 )
 
 type Plugin struct {
-	api         *plugin.SenderAPI
-	linker      AccountLinker
-	dialog      DialogReader
-	userService UserLocaleUpdater
-	prefsRepo   notification.PrefsRepository
-	cmdDefs     []*state.CommandDefinition
+	api          *plugin.SenderAPI
+	linker       AccountLinker
+	dialog       DialogReader
+	userService  UserLocaleUpdater
+	prefsRepo    notification.PrefsRepository
+	pluginLister PluginLister
+	authChecker  CommandAuthChecker
+	cmdDefs      []*state.CommandDefinition
 }
 
 func New(
@@ -25,18 +27,23 @@ func New(
 	dialog DialogReader,
 	userService UserLocaleUpdater,
 	prefsRepo notification.PrefsRepository,
+	pluginLister PluginLister,
+	authChecker CommandAuthChecker,
 ) *Plugin {
 	return &Plugin{
-		api:         api,
-		linker:      linker,
-		dialog:      dialog,
-		userService: userService,
-		prefsRepo:   prefsRepo,
+		api:          api,
+		linker:       linker,
+		dialog:       dialog,
+		userService:  userService,
+		prefsRepo:    prefsRepo,
+		pluginLister: pluginLister,
+		authChecker:  authChecker,
 		cmdDefs: []*state.CommandDefinition{
 			StartCommand(),
 			LinkCommand(),
 			ResumeCommand(),
 			SettingsCommand(),
+			PluginsCommand(pluginLister),
 		},
 	}
 }
@@ -61,6 +68,8 @@ func (p *Plugin) HandleEvent(ctx context.Context, event model.Event) (*model.Eve
 		return nil, p.handleResume(ctx, m)
 	case "settings":
 		return nil, p.handleSettings(ctx, m)
+	case "plugins":
+		return nil, p.handlePlugins(ctx, m)
 	default:
 		return nil, fmt.Errorf("core: unknown command %q", m.CommandName)
 	}

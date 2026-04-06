@@ -370,7 +370,7 @@ func main() {
 	accountLinker := user.NewAccountLinker(accountRepo)
 
 	allPlugins := []plugin.Plugin{
-		core.New(senderAPI, accountLinker, stateMgr, userService, notifPrefsRepo),
+		core.New(senderAPI, accountLinker, stateMgr, userService, notifPrefsRepo, pluginManager, authorizer),
 	}
 
 	for _, p := range allPlugins {

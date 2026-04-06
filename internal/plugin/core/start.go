@@ -25,6 +25,11 @@ func (p *Plugin) handleStart(ctx context.Context, m *model.MessengerTriggerData)
 				Text:  i18n.Get("start.description", m.Locale),
 				Style: model.StylePlain,
 			},
+			model.OptionsBlock{
+				Options: []model.Option{
+					{Label: i18n.Get("start.browse_plugins", m.Locale), Value: "/plugins"},
+				},
+			},
 		},
 	})
 }
