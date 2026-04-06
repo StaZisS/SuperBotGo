@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import {
-  api, PersonInfo, AllPositions,
+  api, PersonInfo, AllPositions, RefItem,
   StudentPositionInfo, TeacherPositionInfo, AdminAppointmentInfo,
 } from '@/api/client'
 import { toast } from 'sonner'
@@ -277,11 +277,31 @@ function StudentTab({ userId, items, onReload }: { userId: number; items: Studen
   const [nationality, setNationality] = useState('domestic')
   const [funding, setFunding] = useState('budget')
   const [education, setEducation] = useState('full_time')
+  const [availableSubgroups, setAvailableSubgroups] = useState<RefItem[]>([])
+  const [selectedSubgroupIDs, setSelectedSubgroupIDs] = useState<number[]>([])
+
+  const groupId = cascade.group
+
+  useEffect(() => {
+    if (!groupId) {
+      setAvailableSubgroups([])
+      setSelectedSubgroupIDs([])
+      return
+    }
+    api.listSubgroups(groupId).then(setAvailableSubgroups).catch(() => setAvailableSubgroups([]))
+  }, [groupId])
+
+  const toggleSubgroup = (id: number) => {
+    setSelectedSubgroupIDs(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    )
+  }
 
   const openAdd = () => {
     setEditing(null)
     setCascade({})
     setStatus('active'); setNationality('domestic'); setFunding('budget'); setEducation('full_time')
+    setSelectedSubgroupIDs([])
     setOpen(true)
   }
 
@@ -292,6 +312,7 @@ function StudentTab({ userId, items, onReload }: { userId: number; items: Studen
       program: item.program_id ?? undefined, stream: item.stream_id ?? undefined, group: item.study_group_id ?? undefined,
     })
     setStatus(item.status); setNationality(item.nationality_type); setFunding(item.funding_type); setEducation(item.education_form)
+    setSelectedSubgroupIDs(item.subgroups?.map(s => s.id) || [])
     setOpen(true)
   }
 
@@ -299,6 +320,7 @@ function StudentTab({ userId, items, onReload }: { userId: number; items: Studen
     const data = {
       program_id: cascade.program, stream_id: cascade.stream, study_group_id: cascade.group,
       status, nationality_type: nationality, funding_type: funding, education_form: education,
+      subgroup_ids: selectedSubgroupIDs,
     }
     try {
       if (editing) {
@@ -331,6 +353,24 @@ function StudentTab({ userId, items, onReload }: { userId: number; items: Studen
           <DialogContent className="max-w-lg">
             <DialogHeader><DialogTitle>{editing ? 'Редактировать' : 'Добавить'} студенческую позицию</DialogTitle></DialogHeader>
             <CascadingSelect levels={FULL_CASCADE} values={cascade} onChange={setCascade} />
+            {availableSubgroups.length > 0 && (
+              <div className="mt-3 space-y-1.5">
+                <Label className="text-xs">Подгруппы</Label>
+                <div className="border rounded-md p-2 max-h-32 overflow-y-auto space-y-1">
+                  {availableSubgroups.map(sg => (
+                    <label key={sg.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-primary"
+                        checked={selectedSubgroupIDs.includes(sg.id)}
+                        onChange={() => toggleSubgroup(sg.id)}
+                      />
+                      {sg.name || sg.code}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3 mt-3">
               <EnumSelect label="Статус" value={status} onChange={setStatus} options={STATUS_LABELS} />
               <EnumSelect label="Гражданство" value={nationality} onChange={setNationality} options={NATIONALITY_LABELS} />
@@ -351,6 +391,7 @@ function StudentTab({ userId, items, onReload }: { userId: number; items: Studen
               <TableHead>Направление</TableHead>
               <TableHead>Поток</TableHead>
               <TableHead>Группа</TableHead>
+              <TableHead>Подгруппы</TableHead>
               <TableHead>Статус</TableHead>
               <TableHead>Гражд.</TableHead>
               <TableHead>Финанс.</TableHead>
@@ -364,6 +405,7 @@ function StudentTab({ userId, items, onReload }: { userId: number; items: Studen
                 <TableCell>{item.program_name || '-'}</TableCell>
                 <TableCell>{item.stream_name || '-'}</TableCell>
                 <TableCell>{item.study_group_name || '-'}</TableCell>
+                <TableCell>{item.subgroups?.length ? item.subgroups.map(s => s.name).join(', ') : '-'}</TableCell>
                 <TableCell><Badge variant={statusVariant(item.status)}>{STATUS_LABELS[item.status] || item.status}</Badge></TableCell>
                 <TableCell>{NATIONALITY_LABELS[item.nationality_type] || item.nationality_type}</TableCell>
                 <TableCell>{FUNDING_LABELS[item.funding_type] || item.funding_type}</TableCell>

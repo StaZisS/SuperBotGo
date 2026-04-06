@@ -30,31 +30,38 @@ type CreatePersonRequest struct {
 	Phone      string `json:"phone"`
 }
 
+type SubgroupBrief struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
 type StudentPositionInfo struct {
-	ID              int64  `json:"id"`
-	ProgramID       *int64 `json:"program_id,omitempty"`
-	ProgramName     string `json:"program_name,omitempty"`
-	StreamID        *int64 `json:"stream_id,omitempty"`
-	StreamName      string `json:"stream_name,omitempty"`
-	StudyGroupID    *int64 `json:"study_group_id,omitempty"`
-	StudyGroupName  string `json:"study_group_name,omitempty"`
-	Status          string `json:"status"`
-	NationalityType string `json:"nationality_type"`
-	FundingType     string `json:"funding_type"`
-	EducationForm   string `json:"education_form"`
+	ID              int64           `json:"id"`
+	ProgramID       *int64          `json:"program_id,omitempty"`
+	ProgramName     string          `json:"program_name,omitempty"`
+	StreamID        *int64          `json:"stream_id,omitempty"`
+	StreamName      string          `json:"stream_name,omitempty"`
+	StudyGroupID    *int64          `json:"study_group_id,omitempty"`
+	StudyGroupName  string          `json:"study_group_name,omitempty"`
+	Status          string          `json:"status"`
+	NationalityType string          `json:"nationality_type"`
+	FundingType     string          `json:"funding_type"`
+	EducationForm   string          `json:"education_form"`
+	Subgroups       []SubgroupBrief `json:"subgroups"`
 	// Auxiliary for cascading select init
 	DepartmentID *int64 `json:"department_id,omitempty"`
 	FacultyID    *int64 `json:"faculty_id,omitempty"`
 }
 
 type StudentPositionRequest struct {
-	ProgramID       *int64 `json:"program_id"`
-	StreamID        *int64 `json:"stream_id"`
-	StudyGroupID    *int64 `json:"study_group_id"`
-	Status          string `json:"status"`
-	NationalityType string `json:"nationality_type"`
-	FundingType     string `json:"funding_type"`
-	EducationForm   string `json:"education_form"`
+	ProgramID       *int64  `json:"program_id"`
+	StreamID        *int64  `json:"stream_id"`
+	StudyGroupID    *int64  `json:"study_group_id"`
+	Status          string  `json:"status"`
+	NationalityType string  `json:"nationality_type"`
+	FundingType     string  `json:"funding_type"`
+	EducationForm   string  `json:"education_form"`
+	SubgroupIDs     []int64 `json:"subgroup_ids"`
 }
 
 type TeacherPositionInfo struct {
@@ -222,7 +229,38 @@ func (s *PgPositionStore) GetAllPositions(ctx context.Context, personID int64) (
 			&sp.DepartmentID, &sp.FacultyID); err != nil {
 			return nil, fmt.Errorf("scan student position: %w", err)
 		}
+		sp.Subgroups = make([]SubgroupBrief, 0)
 		result.Student = append(result.Student, sp)
+	}
+
+	// Load subgroups for all student positions
+	if len(result.Student) > 0 {
+		posIDs := make([]int64, len(result.Student))
+		posIdx := make(map[int64]int, len(result.Student))
+		for i, sp := range result.Student {
+			posIDs[i] = sp.ID
+			posIdx[sp.ID] = i
+		}
+		sgRows, err := s.pool.Query(ctx, `
+			SELECT ss.student_position_id, sub.id, COALESCE(sub.name, sub.code)
+			FROM student_subgroups ss
+			JOIN subgroups sub ON sub.id = ss.subgroup_id
+			WHERE ss.student_position_id = ANY($1)
+			ORDER BY sub.id`, posIDs)
+		if err != nil {
+			return nil, fmt.Errorf("query student subgroups: %w", err)
+		}
+		defer sgRows.Close()
+		for sgRows.Next() {
+			var posID, subID int64
+			var subName string
+			if err := sgRows.Scan(&posID, &subID, &subName); err != nil {
+				return nil, fmt.Errorf("scan student subgroup: %w", err)
+			}
+			if idx, ok := posIdx[posID]; ok {
+				result.Student[idx].Subgroups = append(result.Student[idx].Subgroups, SubgroupBrief{ID: subID, Name: subName})
+			}
+		}
 	}
 
 	// Teacher positions
@@ -305,6 +343,23 @@ func (s *PgPositionStore) syncStudentMemberTuple(ctx context.Context, tx pgx.Tx,
 	return nil
 }
 
+func (s *PgPositionStore) saveSubgroups(ctx context.Context, tx pgx.Tx, positionID int64, subgroupIDs []int64) error {
+	_, err := tx.Exec(ctx, `DELETE FROM student_subgroups WHERE student_position_id = $1`, positionID)
+	if err != nil {
+		return fmt.Errorf("clear student subgroups: %w", err)
+	}
+	for _, sgID := range subgroupIDs {
+		_, err := tx.Exec(ctx,
+			`INSERT INTO student_subgroups (student_position_id, subgroup_id) VALUES ($1, $2)
+			 ON CONFLICT (student_position_id, subgroup_id) DO NOTHING`,
+			positionID, sgID)
+		if err != nil {
+			return fmt.Errorf("insert student subgroup: %w", err)
+		}
+	}
+	return nil
+}
+
 func (s *PgPositionStore) CreateStudentPosition(ctx context.Context, personID int64, req StudentPositionRequest) (*StudentPositionInfo, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -320,6 +375,10 @@ func (s *PgPositionStore) CreateStudentPosition(ctx context.Context, personID in
 	).Scan(&id)
 	if err != nil {
 		return nil, fmt.Errorf("create student position: %w", err)
+	}
+
+	if err := s.saveSubgroups(ctx, tx, id, req.SubgroupIDs); err != nil {
+		return nil, err
 	}
 
 	if err := s.syncStudentMemberTuple(ctx, tx, personID); err != nil {
@@ -352,6 +411,10 @@ func (s *PgPositionStore) UpdateStudentPosition(ctx context.Context, posID int64
 		posID, req.ProgramID, req.StreamID, req.StudyGroupID, req.Status, req.NationalityType, req.FundingType, req.EducationForm)
 	if err != nil {
 		return fmt.Errorf("update student position: %w", err)
+	}
+
+	if err := s.saveSubgroups(ctx, tx, posID, req.SubgroupIDs); err != nil {
+		return err
 	}
 
 	if err := s.syncStudentMemberTuple(ctx, tx, personID); err != nil {

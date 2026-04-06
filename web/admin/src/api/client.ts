@@ -239,6 +239,11 @@ export interface PersonInfo {
   phone?: string
 }
 
+export interface SubgroupBrief {
+  id: number
+  name: string
+}
+
 export interface StudentPositionInfo {
   id: number
   program_id?: number
@@ -251,6 +256,7 @@ export interface StudentPositionInfo {
   nationality_type: string
   funding_type: string
   education_form: string
+  subgroups?: SubgroupBrief[]
   department_id?: number
   faculty_id?: number
 }
