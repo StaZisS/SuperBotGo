@@ -290,11 +290,15 @@ func main() {
 		stateMgr,
 		cmdPermStore,
 		versionStore,
-		cfg.Admin.APIKey,
 		adminBus,
 	)
 
 	adminMux := http.NewServeMux()
+	adminCredStore := adminapi.NewPgAdminCredStore(pool)
+	authHandler := adminapi.NewAuthHandler(cfg.Admin.APIKey, adminCredStore)
+	authHandler.RegisterRoutes(adminMux)
+	adminCredHandler := adminapi.NewAdminCredHandler(adminCredStore)
+	adminCredHandler.RegisterRoutes(adminMux)
 	adminHandler.RegisterRoutes(adminMux)
 	cmdPermHandler := adminapi.NewCommandPermHandler(cmdPermStore, authorizer)
 	cmdPermHandler.RegisterRoutes(adminMux)
@@ -323,7 +327,7 @@ func main() {
 	positionHandler.RegisterRoutes(adminMux)
 
 	syncService := university.NewSyncService(pool)
-	universitySyncHandler := adminapi.NewUniversitySyncHandler(syncService, cfg.Admin.APIKey)
+	universitySyncHandler := adminapi.NewUniversitySyncHandler(syncService)
 	universitySyncHandler.RegisterRoutes(adminMux)
 
 	if cfg.UniversitySync.Enabled {
@@ -351,9 +355,10 @@ func main() {
 
 	admin.RegisterStaticRoutes(adminMux)
 
+	authMiddleware := adminapi.NewAdminAuthMiddleware(authHandler)
 	adminServer := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Admin.Port),
-		Handler:      adminMux,
+		Handler:      authMiddleware.Wrap(adminMux),
 		ReadTimeout:  httpReadTimeout,
 		WriteTimeout: httpWriteTimeout,
 		IdleTimeout:  httpIdleTimeout,

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"crypto/subtle"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -42,27 +41,6 @@ func validateBlobKey(key string) bool {
 		return false
 	}
 	return true
-}
-
-func requireBearerAuth(apiKey string, next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if apiKey == "" {
-			next(w, r)
-			return
-		}
-		auth := r.Header.Get("Authorization")
-		const prefix = "Bearer "
-		if !strings.HasPrefix(auth, prefix) {
-			writeError(w, http.StatusUnauthorized, "missing or invalid Authorization header")
-			return
-		}
-		token := auth[len(prefix):]
-		if subtle.ConstantTimeCompare([]byte(token), []byte(apiKey)) != 1 {
-			writeError(w, http.StatusForbidden, "invalid API key")
-			return
-		}
-		next(w, r)
-	}
 }
 
 // readWasmFromForm parses a multipart form, reads the "wasm" file field,

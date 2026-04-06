@@ -286,6 +286,14 @@ export interface AllPositions {
   admin: AdminAppointmentInfo[]
 }
 
+export interface AdminCredentialInfo {
+  id: number
+  global_user_id: number
+  email: string
+  created_at: string
+  updated_at: string
+}
+
 // Helpers for university reference CRUD — reduce per-entity boilerplate.
 const refList = (res: string, param?: string) => (parentId?: number) => {
   const qs = param && parentId != null ? `?${param}=${parentId}` : ''
@@ -500,4 +508,34 @@ export const api = {
       request<{ status: string }>(`/users/${userId}/positions/admin-appointment/${posId}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteAdminAppointment: (userId: number, posId: number) =>
       request<{ status: string }>(`/users/${userId}/positions/admin-appointment/${posId}`, { method: 'DELETE' }),
+
+  // === ADMIN CREDENTIALS ===
+
+  listAdminCredentials: () => request<AdminCredentialInfo[]>('/admins'),
+
+  getAdminCredential: (userId: number) =>
+      request<{ has_access: boolean; credential?: AdminCredentialInfo }>(`/admins/${userId}`),
+
+  createAdminCredential: (data: { global_user_id: number; email: string; password: string }) =>
+      request<AdminCredentialInfo>('/admins', { method: 'POST', body: JSON.stringify(data) }),
+
+  updateAdminPassword: (userId: number, password: string) =>
+      request<{ status: string }>(`/admins/${userId}/password`, { method: 'PUT', body: JSON.stringify({ password }) }),
+
+  updateAdminEmail: (userId: number, email: string) =>
+      request<{ status: string }>(`/admins/${userId}/email`, { method: 'PUT', body: JSON.stringify({ email }) }),
+
+  deleteAdminCredential: (userId: number) =>
+      request<{ status: string }>(`/admins/${userId}`, { method: 'DELETE' }),
+
+  changeOwnPassword: (currentPassword: string, newPassword: string) =>
+      fetch('/api/admin/auth/password', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+      }).then(async (res) => {
+        const data = await res.json()
+        if (!res.ok) throw new ApiError(data.error ?? `HTTP ${res.status}`, res.status)
+        return data as { status: string }
+      }),
 }

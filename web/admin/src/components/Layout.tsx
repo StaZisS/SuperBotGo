@@ -1,8 +1,10 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
-import { Bot, Package, Upload, Users, Building2 } from 'lucide-react'
+import { Bot, Package, Upload, Users, Building2, LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Toaster } from '@/components/ui/sonner'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/hooks/useAuth'
+import ChangePasswordDialog from '@/components/ChangePasswordDialog'
 
 const navItems = [
     { to: '/admin/plugins', label: 'Плагины', icon: Package, exact: true },
@@ -14,6 +16,7 @@ const navItems = [
 // ... остальной код компонента
 export default function Layout() {
   const { pathname } = useLocation()
+  const { logout } = useAuth()
 
   const isActive = (to: string, exact: boolean) =>
     exact ? pathname === to : pathname.startsWith(to)
@@ -32,6 +35,7 @@ export default function Layout() {
           </Link>
           <nav className="flex items-center gap-1">
             {navItems.map((item) => {
+
               const active = isActive(item.to, item.exact)
               const Icon = item.icon
               return (
@@ -54,6 +58,16 @@ export default function Layout() {
                 </Button>
               )
             })}
+            <ChangePasswordDialog />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={logout}
+              className="text-muted-foreground hover:text-foreground rounded-none py-5"
+            >
+              <LogOut className="h-4 w-4 sm:mr-1.5" />
+              <span className="hidden sm:inline">Выйти</span>
+            </Button>
           </nav>
         </div>
       </header>

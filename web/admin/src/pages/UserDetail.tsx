@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { api, UserDetail as UserDetailType, UserRole } from '@/api/client'
+import { api, UserDetail as UserDetailType } from '@/api/client'
 import { toast } from 'sonner'
 import { ArrowLeft, Trash2, Unlink, Save, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -16,12 +16,12 @@ import {
 } from '@/components/ui/alert-dialog'
 import { formatDate, getErrorMessage } from '@/lib/utils'
 import UserPositions from '@/components/UserPositions'
+import AdminAccessCard from '@/components/AdminAccessCard'
 
 export default function UserDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [user, setUser] = useState<UserDetailType | null>(null)
-  const [roles, setRoles] = useState<UserRole[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [locale, setLocale] = useState('')
@@ -31,12 +31,11 @@ export default function UserDetail() {
     if (!id) return
     const uid = Number(id)
     setLoading(true)
-    Promise.all([api.getUser(uid), api.getUserRoles(uid)])
-      .then(([u, r]) => {
+    api.getUser(uid)
+      .then((u) => {
         setUser(u)
         setLocale(u.locale || '')
         setRole(u.role || '')
-        setRoles(r || [])
       })
       .catch((e: Error) => toast.error(e.message))
       .finally(() => setLoading(false))
@@ -47,6 +46,7 @@ export default function UserDetail() {
     setSaving(true)
     try {
       await api.updateUser(Number(id), { locale, role })
+      setUser(prev => prev ? { ...prev, locale, role } : prev)
       toast.success('Пользователь обновлён')
     } catch (e: unknown) {
       toast.error(getErrorMessage(e))
@@ -61,17 +61,6 @@ export default function UserDetail() {
       await api.deleteUser(Number(id))
       toast.success('Пользователь удалён')
       navigate('/admin/users')
-    } catch (e: unknown) {
-      toast.error(getErrorMessage(e))
-    }
-  }
-
-  const handleRemoveRole = async (roleName: string, roleType: string) => {
-    if (!id) return
-    try {
-      await api.removeUserRole(Number(id), roleName, roleType)
-      setRoles(prev => prev.filter(r => !(r.role_name === roleName && r.role_type === roleType)))
-      toast.success('Роль удалена')
     } catch (e: unknown) {
       toast.error(getErrorMessage(e))
     }
@@ -151,7 +140,9 @@ export default function UserDetail() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Основные данные</CardTitle>
-          <CardDescription>Канал: <Badge variant="outline">{user.primary_channel}</Badge></CardDescription>
+          {user.accounts?.length > 0 && (
+            <CardDescription>Канал: <Badge variant="outline">{user.primary_channel}</Badge></CardDescription>
+          )}
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -185,6 +176,9 @@ export default function UserDetail() {
           </Button>
         </CardContent>
       </Card>
+
+      {/* Admin access — only for users with ADMIN role */}
+      {user.role === 'ADMIN' && <AdminAccessCard userId={Number(id)} />}
 
       {/* Positions */}
       <UserPositions userId={Number(id)} />
@@ -228,44 +222,6 @@ export default function UserDetail() {
         </CardContent>
       </Card>
 
-      {/* Roles */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Роли ({roles.length})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {roles.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Нет назначенных ролей</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Имя</TableHead>
-                  <TableHead>Тип</TableHead>
-                  <TableHead>Scope</TableHead>
-                  <TableHead>Назначена</TableHead>
-                  <TableHead className="text-right">Действия</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {roles.map(r => (
-                  <TableRow key={r.id}>
-                    <TableCell className="font-medium">{r.role_name}</TableCell>
-                    <TableCell><Badge variant="secondary">{r.role_type}</Badge></TableCell>
-                    <TableCell>{r.scope || '-'}</TableCell>
-                    <TableCell>{formatDate(r.granted_at)}</TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => handleRemoveRole(r.role_name, r.role_type)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
     </div>
   )
 }

@@ -9,40 +9,33 @@ import (
 // UniversitySyncHandler exposes SyncService methods as HTTP endpoints
 // for receiving data from an external university system.
 type UniversitySyncHandler struct {
-	sync   *university.SyncService
-	apiKey string
+	sync *university.SyncService
 }
 
-func NewUniversitySyncHandler(sync *university.SyncService, apiKey string) *UniversitySyncHandler {
-	return &UniversitySyncHandler{sync: sync, apiKey: apiKey}
+func NewUniversitySyncHandler(sync *university.SyncService) *UniversitySyncHandler {
+	return &UniversitySyncHandler{sync: sync}
 }
 
 func (h *UniversitySyncHandler) RegisterRoutes(mux *http.ServeMux) {
-	auth := h.requireAuth
-
 	// Справочные сущности
-	mux.HandleFunc("POST /api/admin/university/persons", auth(h.handleSyncPersons))
-	mux.HandleFunc("POST /api/admin/university/courses", auth(h.handleSyncCourses))
-	mux.HandleFunc("POST /api/admin/university/semesters", auth(h.handleSyncSemesters))
+	mux.HandleFunc("POST /api/admin/university/persons", h.handleSyncPersons)
+	mux.HandleFunc("POST /api/admin/university/courses", h.handleSyncCourses)
+	mux.HandleFunc("POST /api/admin/university/semesters", h.handleSyncSemesters)
 
 	// Организационная иерархия
-	mux.HandleFunc("POST /api/admin/university/faculties", auth(h.handleSyncFaculties))
-	mux.HandleFunc("POST /api/admin/university/departments", auth(h.handleSyncDepartments))
-	mux.HandleFunc("POST /api/admin/university/programs", auth(h.handleSyncPrograms))
-	mux.HandleFunc("POST /api/admin/university/streams", auth(h.handleSyncStreams))
-	mux.HandleFunc("POST /api/admin/university/groups", auth(h.handleSyncGroups))
-	mux.HandleFunc("POST /api/admin/university/subgroups", auth(h.handleSyncSubgroups))
+	mux.HandleFunc("POST /api/admin/university/faculties", h.handleSyncFaculties)
+	mux.HandleFunc("POST /api/admin/university/departments", h.handleSyncDepartments)
+	mux.HandleFunc("POST /api/admin/university/programs", h.handleSyncPrograms)
+	mux.HandleFunc("POST /api/admin/university/streams", h.handleSyncStreams)
+	mux.HandleFunc("POST /api/admin/university/groups", h.handleSyncGroups)
+	mux.HandleFunc("POST /api/admin/university/subgroups", h.handleSyncSubgroups)
 
 	// Позиции и назначения
-	mux.HandleFunc("POST /api/admin/university/teacher-positions", auth(h.handleSyncTeacherPositions))
-	mux.HandleFunc("POST /api/admin/university/student-positions", auth(h.handleSyncStudentPositions))
-	mux.HandleFunc("POST /api/admin/university/student-subgroups", auth(h.handleSyncStudentSubgroups))
-	mux.HandleFunc("POST /api/admin/university/teaching-assignments", auth(h.handleSyncTeachingAssignments))
-	mux.HandleFunc("POST /api/admin/university/admin-appointments", auth(h.handleSyncAdminAppointments))
-}
-
-func (h *UniversitySyncHandler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
-	return requireBearerAuth(h.apiKey, next)
+	mux.HandleFunc("POST /api/admin/university/teacher-positions", h.handleSyncTeacherPositions)
+	mux.HandleFunc("POST /api/admin/university/student-positions", h.handleSyncStudentPositions)
+	mux.HandleFunc("POST /api/admin/university/student-subgroups", h.handleSyncStudentSubgroups)
+	mux.HandleFunc("POST /api/admin/university/teaching-assignments", h.handleSyncTeachingAssignments)
+	mux.HandleFunc("POST /api/admin/university/admin-appointments", h.handleSyncAdminAppointments)
 }
 
 type batchResult struct {

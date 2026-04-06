@@ -2,11 +2,9 @@ package api
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"SuperBotGo/internal/plugin"
 	"SuperBotGo/internal/pubsub"
@@ -59,7 +57,6 @@ type AdminHandler struct {
 	stateMgr StateManagerRegistrar
 	cmdStore CommandPermStore
 	versions VersionStore
-	apiKey   string
 	bus      *pubsub.Bus
 }
 
@@ -73,12 +70,8 @@ func NewAdminHandler(
 	stateMgr StateManagerRegistrar,
 	cmdStore CommandPermStore,
 	versions VersionStore,
-	apiKey string,
 	bus *pubsub.Bus,
 ) *AdminHandler {
-	if apiKey == "" {
-		slog.Warn("admin: API key is not set — admin endpoints are unprotected!")
-	}
 	return &AdminHandler{
 		store:    store,
 		blobs:    blobs,
@@ -89,7 +82,6 @@ func NewAdminHandler(
 		stateMgr: stateMgr,
 		cmdStore: cmdStore,
 		versions: versions,
-		apiKey:   apiKey,
 		bus:      bus,
 	}
 }
@@ -103,27 +95,6 @@ func (h *AdminHandler) publish(ctx context.Context, eventType, pluginID string) 
 		PluginID: pluginID,
 	}); err != nil {
 		slog.Error("admin: failed to publish event", "type", eventType, "plugin", pluginID, "error", err)
-	}
-}
-
-func (h *AdminHandler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if h.apiKey == "" {
-			next(w, r)
-			return
-		}
-		auth := r.Header.Get("Authorization")
-		const prefix = "Bearer "
-		if !strings.HasPrefix(auth, prefix) {
-			writeError(w, http.StatusUnauthorized, "missing or invalid Authorization header")
-			return
-		}
-		token := auth[len(prefix):]
-		if subtle.ConstantTimeCompare([]byte(token), []byte(h.apiKey)) != 1 {
-			writeError(w, http.StatusForbidden, "invalid API key")
-			return
-		}
-		next(w, r)
 	}
 }
 
@@ -152,6 +123,6 @@ func (h *AdminHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/plugins/{id}/versions/{versionId}/rollback", h.handleRollback)
 	mux.HandleFunc("DELETE /api/admin/plugins/{id}/versions/{versionId}", h.handleDeleteVersion)
 
-	mux.HandleFunc("GET /api/admin/registry", h.requireAuth(h.handleRegistryList))
-	mux.HandleFunc("GET /api/admin/registry/{id}/versions", h.requireAuth(h.handleRegistryVersions))
+	mux.HandleFunc("GET /api/admin/registry", h.handleRegistryList)
+	mux.HandleFunc("GET /api/admin/registry/{id}/versions", h.handleRegistryVersions)
 }
