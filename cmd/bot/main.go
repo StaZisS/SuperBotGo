@@ -9,11 +9,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"SuperBotGo/internal/admin"
 	adminapi "SuperBotGo/internal/admin/api"
+	tsuauth "SuperBotGo/internal/auth/tsu"
 	"SuperBotGo/internal/authz"
 	"SuperBotGo/internal/authz/outbox"
 	"SuperBotGo/internal/authz/providers"
@@ -372,10 +374,37 @@ func main() {
 	}()
 
 	senderAPI = plugin.NewSenderAPI(adapterRegistry, userService)
-	accountLinker := user.NewAccountLinker(accountRepo)
+
+	var tsuStateStore *tsuauth.StateStore
+	var tsuAuthLinker core.TsuAuthLinker
+
+	if cfg.TsuAccounts.ApplicationID != "" && cfg.TsuAccounts.SecretKey != "" {
+		tsuClient := tsuauth.NewClient(
+			&http.Client{Timeout: 10 * time.Second},
+			cfg.TsuAccounts.ApplicationID,
+			cfg.TsuAccounts.SecretKey,
+			cfg.TsuAccounts.BaseURL,
+		)
+
+		loginURL := fmt.Sprintf("http://localhost:%d/oauth/authorize", cfg.Admin.Port)
+		if cfg.TsuAccounts.CallbackURL != "" {
+			loginURL = strings.TrimSuffix(cfg.TsuAccounts.CallbackURL, "/login") + "/authorize"
+		}
+		tsuStateStore = tsuauth.NewStateStore(loginURL)
+
+		personLinker := user.NewPersonAutoLinker(pool)
+		tsuLinker := tsuauth.NewLinker(userRepo, accountRepo, personLinker, logger)
+		tsuHandler := tsuauth.NewHandler(tsuClient, tsuStateStore, tsuLinker, cfg.TsuAccounts.CallbackURL, logger)
+		tsuHandler.RegisterRoutes(adminMux)
+
+		tsuAuthLinker = tsuStateStore
+		logger.Info("TSU.Accounts authentication enabled")
+	} else {
+		logger.Info("TSU.Accounts not configured, skipping")
+	}
 
 	allPlugins := []plugin.Plugin{
-		core.New(senderAPI, accountLinker, stateMgr, userService, notifPrefsRepo, pluginManager, authorizer),
+		core.New(senderAPI, tsuAuthLinker, stateMgr, userService, notifPrefsRepo, pluginManager, authorizer),
 	}
 
 	for _, p := range allPlugins {
@@ -529,6 +558,10 @@ func main() {
 	}
 
 	cronScheduler.Stop()
+
+	if tsuStateStore != nil {
+		tsuStateStore.Stop()
+	}
 
 	if err := wasmLoader.Close(shutdownCtx); err != nil {
 		logger.Error("wasm loader close error", slog.Any("error", err))

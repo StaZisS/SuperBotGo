@@ -29,8 +29,9 @@ func (m *AdminAuthMiddleware) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 
-		// Always allow auth endpoints, static files, metrics, and trigger webhooks.
+		// Always allow auth endpoints, TSU OAuth, static files, metrics, and trigger webhooks.
 		if strings.HasPrefix(path, "/api/admin/auth/") ||
+			strings.HasPrefix(path, "/oauth/") ||
 			!strings.HasPrefix(path, "/api/") {
 			next.ServeHTTP(w, r)
 			return

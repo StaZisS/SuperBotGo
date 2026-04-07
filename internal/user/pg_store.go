@@ -38,6 +38,7 @@ func (r *PgUserRepo) FindByID(ctx context.Context, id model.GlobalUserID) (*mode
 		return nil, fmt.Errorf("find user %d: %w", id, err)
 	}
 
+	u.TsuAccountsID = tsuID
 	if locale != nil {
 		u.Locale = *locale
 	}
@@ -109,6 +110,39 @@ func (r *PgUserRepo) Save(ctx context.Context, user *model.GlobalUser) (*model.G
 	}
 
 	return user, nil
+}
+
+func (r *PgUserRepo) FindByTsuAccountsID(ctx context.Context, tsuAccountsID string) (*model.GlobalUser, error) {
+	var id model.GlobalUserID
+	err := r.pool.QueryRow(ctx, `
+		SELECT id FROM global_users WHERE tsu_accounts_id = $1
+	`, tsuAccountsID).Scan(&id)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find user by tsu_accounts_id %s: %w", tsuAccountsID, err)
+	}
+	return r.FindByID(ctx, id)
+}
+
+func (r *PgUserRepo) Delete(ctx context.Context, id model.GlobalUserID) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM global_users WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete user %d: %w", id, err)
+	}
+	return nil
+}
+
+func (r *PgUserRepo) SetTsuAccountsID(ctx context.Context, userID model.GlobalUserID, tsuAccountsID string) error {
+	tag, err := r.pool.Exec(ctx, `UPDATE global_users SET tsu_accounts_id = $2 WHERE id = $1`, userID, tsuAccountsID)
+	if err != nil {
+		return fmt.Errorf("set tsu_accounts_id for user %d: %w", userID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("user %d not found", userID)
+	}
+	return nil
 }
 
 func (r *PgUserRepo) UpdateLocale(ctx context.Context, userID model.GlobalUserID, locale string) error {

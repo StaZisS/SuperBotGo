@@ -50,6 +50,20 @@ func (s *SyncService) SyncPerson(ctx context.Context, in PersonInput) error {
 				last_name = $2, first_name = $3, middle_name = nullif($4, ''),
 				email = nullif($5, ''), phone = nullif($6, ''), updated_at = now()
 		`, in.ExternalID, in.LastName, in.FirstName, in.MiddleName, in.Email, in.Phone)
+		if err != nil {
+			return err
+		}
+
+		// Auto-link: if a global_user with matching tsu_accounts_id exists,
+		// set persons.global_user_id automatically.
+		_, err = tx.Exec(ctx, `
+			UPDATE persons
+			SET global_user_id = (SELECT id FROM global_users WHERE tsu_accounts_id = $1),
+			    updated_at = now()
+			WHERE external_id = $1
+			  AND global_user_id IS NULL
+			  AND EXISTS (SELECT 1 FROM global_users WHERE tsu_accounts_id = $1)
+		`, in.ExternalID)
 		return err
 	})
 }

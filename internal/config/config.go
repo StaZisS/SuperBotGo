@@ -20,6 +20,14 @@ type Config struct {
 	SpiceDB        SpiceDBConfig        `koanf:"spicedb"`
 	UniversitySync UniversitySyncConfig `koanf:"university_sync"`
 	FileStore      FileStoreConfig      `koanf:"filestore"`
+	TsuAccounts    TsuAccountsConfig    `koanf:"tsu_accounts"`
+}
+
+type TsuAccountsConfig struct {
+	ApplicationID string `koanf:"application_id"` // BOT_TSU__ACCOUNTS_APPLICATION__ID
+	SecretKey     string `koanf:"secret_key"`     // BOT_TSU__ACCOUNTS_SECRET__KEY
+	CallbackURL   string `koanf:"callback_url"`   // public URL for TSU redirect
+	BaseURL       string `koanf:"base_url"`       // https://accounts.tsu.ru
 }
 
 type UniversitySyncConfig struct {
@@ -155,6 +163,10 @@ func Load() (*Config, error) {
 	}
 	if cfg.SpiceDB.Token == "" {
 		cfg.SpiceDB.Token = "my-secret-token" // Дефолтный токен для Docker
+	}
+
+	if cfg.TsuAccounts.BaseURL == "" {
+		cfg.TsuAccounts.BaseURL = "https://accounts.tsu.ru"
 	}
 
 	if err := cfg.Validate(); err != nil {

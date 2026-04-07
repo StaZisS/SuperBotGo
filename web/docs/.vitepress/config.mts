@@ -91,6 +91,7 @@ export default withMermaid(defineConfig({
             { text: 'Host API (WASM)', link: '/architecture/hostapi' },
             { text: 'Файловая подсистема', link: '/architecture/files' },
             { text: 'Авторизация', link: '/architecture/authorization' },
+            { text: 'ТГУ.Аккаунты', link: '/architecture/tsu-accounts' },
           ],
         },
       ],

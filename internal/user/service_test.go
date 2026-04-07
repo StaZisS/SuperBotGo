@@ -11,17 +11,41 @@ import (
 // --- Mock UserRepository ---
 
 type mockUserRepo struct {
-	findByIDFn    func(ctx context.Context, id model.GlobalUserID) (*model.GlobalUser, error)
-	saveFn        func(ctx context.Context, user *model.GlobalUser) (*model.GlobalUser, error)
-	updateLocalFn func(ctx context.Context, userID model.GlobalUserID, locale string) error
+	findByIDFn            func(ctx context.Context, id model.GlobalUserID) (*model.GlobalUser, error)
+	findByTsuAccountsIDFn func(ctx context.Context, tsuAccountsID string) (*model.GlobalUser, error)
+	saveFn                func(ctx context.Context, user *model.GlobalUser) (*model.GlobalUser, error)
+	deleteFn              func(ctx context.Context, id model.GlobalUserID) error
+	setTsuAccountsIDFn    func(ctx context.Context, userID model.GlobalUserID, tsuAccountsID string) error
+	updateLocalFn         func(ctx context.Context, userID model.GlobalUserID, locale string) error
 }
 
 func (m *mockUserRepo) FindByID(ctx context.Context, id model.GlobalUserID) (*model.GlobalUser, error) {
 	return m.findByIDFn(ctx, id)
 }
 
+func (m *mockUserRepo) FindByTsuAccountsID(ctx context.Context, tsuAccountsID string) (*model.GlobalUser, error) {
+	if m.findByTsuAccountsIDFn != nil {
+		return m.findByTsuAccountsIDFn(ctx, tsuAccountsID)
+	}
+	return nil, nil
+}
+
 func (m *mockUserRepo) Save(ctx context.Context, user *model.GlobalUser) (*model.GlobalUser, error) {
 	return m.saveFn(ctx, user)
+}
+
+func (m *mockUserRepo) Delete(ctx context.Context, id model.GlobalUserID) error {
+	if m.deleteFn != nil {
+		return m.deleteFn(ctx, id)
+	}
+	return nil
+}
+
+func (m *mockUserRepo) SetTsuAccountsID(ctx context.Context, userID model.GlobalUserID, tsuAccountsID string) error {
+	if m.setTsuAccountsIDFn != nil {
+		return m.setTsuAccountsIDFn(ctx, userID, tsuAccountsID)
+	}
+	return nil
 }
 
 func (m *mockUserRepo) UpdateLocale(ctx context.Context, userID model.GlobalUserID, locale string) error {

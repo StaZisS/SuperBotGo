@@ -14,17 +14,12 @@
 "plugins.no_commands" = "No commands available for you in this plugin."
 
 # Link
-"link.title" = "Link accounts"
-"link.description" = "Choose an action to link your accounts across platforms:"
-"link.action_prompt" = "Action"
-"link.generate" = "Generate link code"
-"link.enter" = "Enter link code"
-"link.enter_code_title" = "Enter link code"
-"link.enter_code_hint" = "Enter the 6-character code from your other platform:"
-"link.action_required" = "Action is required."
-"link.code_required" = "Link code is required."
-"link.your_code" = "Your link code:"
-"link.code_expires" = "Send /link on your other platform and enter this code. It expires in 5 minutes."
+"link.tsu_title" = "TSU Account Authentication"
+"link.tsu_hint" = "Tap the button below to link your TSU account."
+"link.tsu_login_button" = "Sign in with TSU"
+"link.tsu_expires" = "The link is valid for 10 minutes."
+"link.tsu_unavailable" = "TSU account authentication is currently unavailable."
+"link.tsu_error" = "Failed to generate authentication link. Please try again later."
 
 # Resume
 "resume.no_active_command" = "No active command to resume. Start a command first."

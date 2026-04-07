@@ -12,7 +12,7 @@ import (
 
 type Plugin struct {
 	api          *plugin.SenderAPI
-	linker       AccountLinker
+	tsuLinker    TsuAuthLinker
 	dialog       DialogReader
 	userService  UserLocaleUpdater
 	prefsRepo    notification.PrefsRepository
@@ -23,16 +23,16 @@ type Plugin struct {
 
 func New(
 	api *plugin.SenderAPI,
-	linker AccountLinker,
+	tsuLinker TsuAuthLinker,
 	dialog DialogReader,
 	userService UserLocaleUpdater,
 	prefsRepo notification.PrefsRepository,
 	pluginLister PluginLister,
 	authChecker CommandAuthChecker,
 ) *Plugin {
-	return &Plugin{
+	p := &Plugin{
 		api:          api,
-		linker:       linker,
+		tsuLinker:    tsuLinker,
 		dialog:       dialog,
 		userService:  userService,
 		prefsRepo:    prefsRepo,
@@ -46,6 +46,7 @@ func New(
 			PluginsCommand(pluginLister),
 		},
 	}
+	return p
 }
 
 func (p *Plugin) ID() string                           { return "core" }

@@ -6,7 +6,7 @@ type PlatformUserID string
 
 type GlobalUser struct {
 	ID             GlobalUserID     `json:"id"`
-	TsuAccountsID  *int64           `json:"tsu_accounts_id,omitempty"`
+	TsuAccountsID  *string          `json:"tsu_accounts_id,omitempty"`
 	PrimaryChannel ChannelType      `json:"primary_channel"`
 	ProfileData    map[string]any   `json:"profile_data,omitempty"`
 	Locale         string           `json:"locale"`
