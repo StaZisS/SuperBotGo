@@ -13,8 +13,8 @@ CREATE INDEX idx_admin_credentials_email ON admin_credentials (email);
 -- Seed: create the initial admin user and credentials.
 -- Default login: admin@superbot.local / changeme123
 -- IMPORTANT: change the password after first login!
-INSERT INTO global_users (primary_channel, locale, role)
-VALUES ('TELEGRAM', 'ru', 'ADMIN')
+INSERT INTO global_users (locale, role)
+VALUES ('ru', 'ADMIN')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO admin_credentials (global_user_id, email, password_hash)
