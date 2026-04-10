@@ -24,6 +24,7 @@ type BlobGetter func(ctx context.Context, key string) (io.ReadCloser, error)
 type StateManagerRegistrar interface {
 	RegisterCommand(pluginID string, def *state.CommandDefinition)
 	UnregisterCommand(pluginID, name string)
+	UnregisterAllCommands(pluginID string)
 }
 
 type AdminEventHandler struct {
@@ -164,7 +165,9 @@ func (h *AdminEventHandler) unregisterCommands(pluginID string) {
 		for _, def := range p.Commands() {
 			h.stateMgr.UnregisterCommand(pluginID, def.Name)
 		}
+		return
 	}
+	h.stateMgr.UnregisterAllCommands(pluginID)
 }
 
 func (h *AdminEventHandler) readBlob(ctx context.Context, key string) ([]byte, error) {

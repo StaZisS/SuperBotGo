@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"SuperBotGo/internal/model"
@@ -43,6 +44,21 @@ func (m *Manager) UnregisterCommand(pluginID, name string) {
 	key := fqKey(pluginID, name)
 	delete(m.commands, key)
 	delete(m.handlers, key)
+}
+
+// UnregisterAllCommands removes every command registered under the given
+// plugin ID. Used when a plugin is deleted or disabled and the caller no
+// longer has access to the plugin instance to enumerate its commands.
+func (m *Manager) UnregisterAllCommands(pluginID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	prefix := pluginID + "."
+	for key := range m.commands {
+		if strings.HasPrefix(key, prefix) {
+			delete(m.commands, key)
+			delete(m.handlers, key)
+		}
+	}
 }
 
 func (m *Manager) RegisterHandler(name string, handler StateHandler) {

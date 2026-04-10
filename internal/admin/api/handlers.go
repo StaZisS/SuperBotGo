@@ -45,6 +45,7 @@ type cmdInfo struct {
 type StateManagerRegistrar interface {
 	RegisterCommand(pluginID string, def *state.CommandDefinition)
 	UnregisterCommand(pluginID, name string)
+	UnregisterAllCommands(pluginID string)
 }
 
 type AdminHandler struct {
@@ -105,6 +106,24 @@ func (h *AdminHandler) registerPluginCommands(p plugin.Plugin) {
 	for _, def := range p.Commands() {
 		h.stateMgr.RegisterCommand(p.ID(), def)
 	}
+}
+
+// unregisterPluginCommands drops every state-machine command registered for
+// pluginID. If the plugin is still known to the manager we iterate its
+// declared commands directly; otherwise we fall back to UnregisterAllCommands
+// so that stale entries left over from a previous disable/enable cycle are
+// also cleaned up.
+func (h *AdminHandler) unregisterPluginCommands(pluginID string) {
+	if h.stateMgr == nil {
+		return
+	}
+	if p, ok := h.manager.Get(pluginID); ok {
+		for _, def := range p.Commands() {
+			h.stateMgr.UnregisterCommand(pluginID, def.Name)
+		}
+		return
+	}
+	h.stateMgr.UnregisterAllCommands(pluginID)
 }
 
 func (h *AdminHandler) RegisterRoutes(mux *http.ServeMux) {

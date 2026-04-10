@@ -166,6 +166,8 @@ func (h *AdminHandler) handleDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.unregisterPluginCommands(pluginID)
+
 	if err := h.loader.UnloadPlugin(r.Context(), pluginID); err != nil {
 		slog.Warn("admin: error unloading plugin", "id", pluginID, "error", err)
 	}
@@ -192,13 +194,7 @@ func (h *AdminHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.stateMgr != nil {
-		if p, ok := h.manager.Get(pluginID); ok {
-			for _, def := range p.Commands() {
-				h.stateMgr.UnregisterCommand(pluginID, def.Name)
-			}
-		}
-	}
+	h.unregisterPluginCommands(pluginID)
 
 	if record.Enabled {
 		if err := h.loader.UnloadPlugin(r.Context(), pluginID); err != nil {
