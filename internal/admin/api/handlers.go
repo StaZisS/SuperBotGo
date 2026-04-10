@@ -49,16 +49,17 @@ type StateManagerRegistrar interface {
 }
 
 type AdminHandler struct {
-	store    PluginStore
-	blobs    BlobStore
-	loader   *adapter.Loader
-	manager  *plugin.Manager
-	rt       *wasmrt.Runtime
-	hostAPI  *hostapi.HostAPI
-	stateMgr StateManagerRegistrar
-	cmdStore CommandPermStore
-	versions VersionStore
-	bus      *pubsub.Bus
+	store       PluginStore
+	blobs       BlobStore
+	loader      *adapter.Loader
+	manager     *plugin.Manager
+	rt          *wasmrt.Runtime
+	hostAPI     *hostapi.HostAPI
+	stateMgr    StateManagerRegistrar
+	cmdStore    CommandPermStore
+	versions    VersionStore
+	bus         *pubsub.Bus
+	invalidator PolicyInvalidator
 }
 
 func NewAdminHandler(
@@ -72,8 +73,9 @@ func NewAdminHandler(
 	cmdStore CommandPermStore,
 	versions VersionStore,
 	bus *pubsub.Bus,
+	invalidator ...PolicyInvalidator,
 ) *AdminHandler {
-	return &AdminHandler{
+	h := &AdminHandler{
 		store:    store,
 		blobs:    blobs,
 		loader:   loader,
@@ -85,6 +87,10 @@ func NewAdminHandler(
 		versions: versions,
 		bus:      bus,
 	}
+	if len(invalidator) > 0 {
+		h.invalidator = invalidator[0]
+	}
+	return h
 }
 
 func (h *AdminHandler) publish(ctx context.Context, eventType, pluginID string) {
@@ -124,6 +130,22 @@ func (h *AdminHandler) unregisterPluginCommands(pluginID string) {
 		return
 	}
 	h.stateMgr.UnregisterAllCommands(pluginID)
+}
+
+// invalidatePluginPolicies drops cached authorization policy entries for every
+// command a plugin declares. Called during delete so that stale policies
+// can't authorize commands belonging to a plugin that no longer exists.
+func (h *AdminHandler) invalidatePluginPolicies(pluginID string) {
+	if h.invalidator == nil {
+		return
+	}
+	p, ok := h.manager.Get(pluginID)
+	if !ok {
+		return
+	}
+	for _, def := range p.Commands() {
+		h.invalidator.InvalidateCommandPolicy(pluginID, def.Name)
+	}
 }
 
 func (h *AdminHandler) RegisterRoutes(mux *http.ServeMux) {

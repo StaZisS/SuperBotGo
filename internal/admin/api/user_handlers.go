@@ -75,12 +75,24 @@ type UserStore interface {
 	UnlinkAccount(ctx context.Context, accountID int64) error
 }
 
-type UserHandler struct {
-	store UserStore
+// SubjectInvalidator drops cached authorization state for a specific user.
+// Wired up with an Authorizer so deleted users cannot continue to be
+// authorized from stale cache entries.
+type SubjectInvalidator interface {
+	InvalidateUser(userID model.GlobalUserID)
 }
 
-func NewUserHandler(store UserStore) *UserHandler {
-	return &UserHandler{store: store}
+type UserHandler struct {
+	store       UserStore
+	invalidator SubjectInvalidator
+}
+
+func NewUserHandler(store UserStore, invalidator ...SubjectInvalidator) *UserHandler {
+	h := &UserHandler{store: store}
+	if len(invalidator) > 0 {
+		h.invalidator = invalidator[0]
+	}
+	return h
 }
 
 func (h *UserHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -162,6 +174,9 @@ func (h *UserHandler) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to delete user")
 		return
 	}
+	if h.invalidator != nil {
+		h.invalidator.InvalidateUser(model.GlobalUserID(id))
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
@@ -198,6 +213,9 @@ func (h *UserHandler) handleRemoveUserRole(w http.ResponseWriter, r *http.Reques
 	if err := h.store.RemoveUserRole(r.Context(), id, req.RoleName, req.RoleType); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to remove role")
 		return
+	}
+	if h.invalidator != nil {
+		h.invalidator.InvalidateUser(model.GlobalUserID(id))
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
 }

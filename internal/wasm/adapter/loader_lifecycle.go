@@ -8,6 +8,36 @@ import (
 	"time"
 )
 
+// DropPluginData reverts every goose migration declared by the loaded plugin
+// and removes its per-plugin goose tracking table. The plugin must still be
+// loaded when this is called — callers that need to clean up a disabled
+// plugin should load it temporarily first.
+func (l *Loader) DropPluginData(ctx context.Context, pluginID string) error {
+	l.mu.RLock()
+	lp, ok := l.plugins[pluginID]
+	l.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("plugin %q not loaded", pluginID)
+	}
+
+	meta := lp.plugin.Meta()
+	if len(meta.Migrations) == 0 {
+		return nil
+	}
+
+	sqlStore := l.hostAPI.SQLStore()
+	if sqlStore == nil {
+		return nil
+	}
+
+	dsn := sqlStore.DSN(pluginID, "default")
+	if dsn == "" {
+		return nil
+	}
+
+	return dropPluginMigrations(ctx, pluginID, dsn, meta.Migrations)
+}
+
 func (l *Loader) UnloadPlugin(ctx context.Context, pluginID string) error {
 	l.mu.Lock()
 	lp, ok := l.plugins[pluginID]

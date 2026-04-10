@@ -96,15 +96,43 @@ func (h *UniversityRefHandler) listRefItems(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, items)
 }
 
+// preDeleteCascades lists dependent cleanup statements that must run before
+// a parent row can be deleted. Only needed for parents whose FKs use
+// ON DELETE RESTRICT and would otherwise block the delete.
+var preDeleteCascades = map[string][]string{
+	"courses":   {"DELETE FROM teaching_assignments WHERE course_id = $1"},
+	"semesters": {"DELETE FROM teaching_assignments WHERE semester_id = $1"},
+}
+
 func (h *UniversityRefHandler) deleteEntity(w http.ResponseWriter, r *http.Request, table string) {
 	id, err := h.pathID(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
-	_, err = h.pool.Exec(r.Context(), fmt.Sprintf("DELETE FROM %s WHERE id = $1", table), id)
+
+	ctx := r.Context()
+	tx, err := h.pool.Begin(ctx)
 	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to begin tx")
+		return
+	}
+	defer tx.Rollback(ctx)
+
+	for _, stmt := range preDeleteCascades[table] {
+		if _, err := tx.Exec(ctx, stmt, id); err != nil {
+			writeError(w, http.StatusConflict, "cannot delete: dependent rows cleanup failed")
+			return
+		}
+	}
+
+	if _, err := tx.Exec(ctx, fmt.Sprintf("DELETE FROM %s WHERE id = $1", table), id); err != nil {
 		writeError(w, http.StatusConflict, "cannot delete: entity may be referenced")
+		return
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to commit delete")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})

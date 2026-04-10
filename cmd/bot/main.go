@@ -293,6 +293,7 @@ func main() {
 		cmdPermStore,
 		versionStore,
 		adminBus,
+		authorizer,
 	)
 
 	adminMux := http.NewServeMux()
@@ -305,7 +306,7 @@ func main() {
 	cmdPermHandler := adminapi.NewCommandPermHandler(cmdPermStore, authorizer)
 	cmdPermHandler.RegisterRoutes(adminMux)
 	userStore := adminapi.NewPgUserStore(pool)
-	userHandler := adminapi.NewUserHandler(userStore)
+	userHandler := adminapi.NewUserHandler(userStore, authorizer)
 	userHandler.RegisterRoutes(adminMux)
 	pluginPermHandler := adminapi.NewPluginPermHandler(pluginStore, wasmLoader, hostAPI, adminBus)
 	pluginPermHandler.RegisterRoutes(adminMux)

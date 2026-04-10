@@ -166,6 +166,7 @@ func (h *AdminHandler) handleDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.invalidatePluginPolicies(pluginID)
 	h.unregisterPluginCommands(pluginID)
 
 	if err := h.loader.UnloadPlugin(r.Context(), pluginID); err != nil {
@@ -187,41 +188,87 @@ func (h *AdminHandler) handleDisable(w http.ResponseWriter, r *http.Request) {
 
 func (h *AdminHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	pluginID := r.PathValue("id")
+	ctx := r.Context()
 
-	record, err := h.store.GetPlugin(r.Context(), pluginID)
+	record, err := h.store.GetPlugin(ctx, pluginID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "plugin not found")
 		return
 	}
 
+	h.invalidatePluginPolicies(pluginID)
 	h.unregisterPluginCommands(pluginID)
 
-	if record.Enabled {
-		if err := h.loader.UnloadPlugin(r.Context(), pluginID); err != nil {
+	// DropPluginData needs the plugin loaded to access its declared migrations
+	// and DSN. If the plugin is currently disabled, load it transiently just
+	// for the cleanup pass.
+	mustUnload := record.Enabled
+	if !record.Enabled && record.WasmKey != "" {
+		if rc, err := h.blobs.Get(ctx, record.WasmKey); err == nil {
+			wasmBytes, readErr := io.ReadAll(rc)
+			rc.Close()
+			if readErr == nil {
+				if _, err := h.loader.LoadPluginFromBytes(ctx, wasmBytes, record.ConfigJSON); err != nil {
+					slog.Warn("admin: failed to load disabled plugin for cleanup",
+						"plugin", pluginID, "error", err)
+				} else {
+					mustUnload = true
+				}
+			}
+		}
+	}
+
+	if err := h.loader.DropPluginData(ctx, pluginID); err != nil {
+		slog.Warn("admin: failed to drop plugin DB data", "plugin", pluginID, "error", err)
+	}
+
+	if kv := h.hostAPI.KVStore(); kv != nil {
+		kv.DropPlugin(pluginID)
+	}
+
+	if mustUnload {
+		if err := h.loader.UnloadPlugin(ctx, pluginID); err != nil {
 			slog.Warn("admin: error unloading plugin during delete", "id", pluginID, "error", err)
 		}
 	}
 	h.manager.Remove(pluginID)
 
+	if h.versions != nil {
+		if versions, err := h.versions.ListVersions(ctx, pluginID); err == nil {
+			for _, v := range versions {
+				if v.WasmKey == "" || v.WasmKey == record.WasmKey {
+					continue
+				}
+				if err := h.blobs.Delete(ctx, v.WasmKey); err != nil {
+					slog.Warn("admin: failed to delete version wasm blob",
+						"plugin", pluginID, "key", v.WasmKey, "error", err)
+				}
+			}
+		} else {
+			slog.Warn("admin: failed to list versions for cleanup",
+				"plugin", pluginID, "error", err)
+		}
+	}
+
 	if record.WasmKey != "" {
-		if err := h.blobs.Delete(r.Context(), record.WasmKey); err != nil {
+		if err := h.blobs.Delete(ctx, record.WasmKey); err != nil {
 			slog.Warn("admin: failed to delete wasm blob", "key", record.WasmKey, "error", err)
 		}
 	}
 
 	if h.cmdStore != nil {
-		if err := h.cmdStore.DeleteAllPluginCommandSettings(r.Context(), pluginID); err != nil {
+		if err := h.cmdStore.DeleteAllPluginCommandSettings(ctx, pluginID); err != nil {
 			slog.Error("admin: failed to delete command settings on plugin delete",
 				"plugin", pluginID, "error", err)
 		}
 	}
 
-	if err := h.store.DeletePlugin(r.Context(), pluginID); err != nil {
+	if err := h.store.DeletePlugin(ctx, pluginID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete record")
 		return
 	}
 
-	h.publish(r.Context(), pubsub.EventPluginUninstalled, pluginID)
+	h.publish(ctx, pubsub.EventPluginUninstalled, pluginID)
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
