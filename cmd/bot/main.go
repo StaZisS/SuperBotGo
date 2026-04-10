@@ -199,6 +199,7 @@ func main() {
 		os.Exit(1)
 	}
 	pool, dbErr := database.NewPool(wasmCtx, connString)
+	syncSvc := university.NewSyncService(pool)
 	if dbErr != nil {
 		logger.Error("failed to connect to PostgreSQL", slog.Any("error", dbErr))
 		os.Exit(1)
@@ -328,9 +329,10 @@ func main() {
 	positionStore := adminapi.NewPgPositionStore(pool)
 	positionHandler := adminapi.NewPositionHandler(positionStore)
 	positionHandler.RegisterRoutes(adminMux)
+	importHandler := adminapi.NewImportHandler(pool, syncSvc)
+	importHandler.RegisterRoutes(adminMux)
 
-	syncService := university.NewSyncService(pool)
-	universitySyncHandler := adminapi.NewUniversitySyncHandler(syncService)
+	universitySyncHandler := adminapi.NewUniversitySyncHandler(syncSvc)
 	universitySyncHandler.RegisterRoutes(adminMux)
 
 	if cfg.UniversitySync.Enabled {
@@ -342,7 +344,7 @@ func main() {
 			BaseURL: cfg.UniversitySync.BaseURL,
 			Token:   cfg.UniversitySync.Token,
 		}
-		puller := university.NewPuller(dataSource, syncService, logger, pullInterval)
+		puller := university.NewPuller(dataSource, syncSvc, logger, pullInterval)
 		go func() {
 			if err := puller.Run(wasmCtx); err != nil && wasmCtx.Err() == nil {
 				logger.Error("university puller stopped", slog.Any("error", err))
