@@ -61,93 +61,25 @@ func (l *Loader) LoadPlugin(ctx context.Context, wasmPath string, config json.Ra
 }
 
 func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, config json.RawMessage) (*WasmPlugin, error) {
-
 	compiled, err := l.rt.CompileModule(ctx, wasmBytes)
 	if err != nil {
 		return nil, fmt.Errorf("compile wasm plugin: %w", err)
 	}
 
-	const probeID = "_temp_probe"
-	l.hostAPI.GrantPermissions(probeID, nil)
-	compiled.ID = probeID
-
-	meta, err := compiled.CallMeta(ctx)
-	l.hostAPI.RevokePermissions(probeID)
+	meta, permissions, err := l.probePlugin(ctx, compiled)
 	if err != nil {
 		_ = compiled.Close(ctx)
-		return nil, fmt.Errorf("call meta: %w", err)
+		return nil, err
 	}
 
-	// Derive internal permissions from declared requirements.
-	permissions := hostapi.PermissionsFromRequirements(meta.Requirements)
-
-	l.mu.RLock()
-	if existing, ok := l.plugins[meta.ID]; ok {
-		oldVer := existing.plugin.Version()
-		newVer := meta.Version
-		if oldVer == newVer {
-			slog.Warn("wasm: plugin with the same version is already loaded",
-				"id", meta.ID, "version", newVer)
-		} else if registry.CompareVersions(newVer, oldVer) < 0 {
-			slog.Warn("wasm: loading older plugin version than currently loaded",
-				"id", meta.ID, "current_version", oldVer, "new_version", newVer)
-		}
-	}
-	l.mu.RUnlock()
+	l.warnOnVersionChange(meta)
 
 	if err := l.checkDependencies(ctx, compiled, &meta, wasmBytes); err != nil {
 		return nil, err
 	}
 
-	l.hostAPI.GrantPermissions(meta.ID, permissions)
-	compiled.ID = meta.ID
-	compiled.Version = meta.Version
-
-	if len(config) > 0 {
-		if err := ValidateConfigAgainstSchema(meta.ConfigSchema, config); err != nil {
-			_ = compiled.Close(ctx)
-			l.hostAPI.RevokePermissions(meta.ID)
-			return nil, fmt.Errorf("plugin %q: %w", meta.ID, err)
-		}
-	}
-
-	l.registerDatabases(meta.ID, config)
-
-	// Validate that all declared database requirements are fulfilled.
-	for _, req := range meta.Requirements {
-		if req.Type != "database" {
-			continue
-		}
-		dbName := req.Name
-		if dbName == "" {
-			dbName = "default"
-		}
-		if sqlStore := l.hostAPI.SQLStore(); sqlStore == nil || !sqlStore.HasDSN(meta.ID, dbName) {
-			_ = compiled.Close(ctx)
-			l.hostAPI.RevokePermissions(meta.ID)
-			return nil, fmt.Errorf("plugin %q requires database %q but its connection string is not configured", meta.ID, dbName)
-		}
-	}
-
-	// Run plugin SQL migrations against the "default" database before configure.
-	if len(meta.Migrations) > 0 {
-		if sqlStore := l.hostAPI.SQLStore(); sqlStore != nil {
-			if dsn := sqlStore.DSN(meta.ID, "default"); dsn != "" {
-				if err := runPluginMigrations(ctx, meta.ID, dsn, meta.Migrations); err != nil {
-					_ = compiled.Close(ctx)
-					l.hostAPI.RevokePermissions(meta.ID)
-					return nil, fmt.Errorf("plugin %q migrations: %w", meta.ID, err)
-				}
-			}
-		}
-	}
-
-	if len(config) > 0 {
-		if err := compiled.CallConfigure(ctx, config); err != nil {
-			_ = compiled.Close(ctx)
-			l.hostAPI.RevokePermissions(meta.ID)
-			return nil, fmt.Errorf("configure plugin %q: %w", meta.ID, err)
-		}
+	if err := l.activatePlugin(ctx, compiled, meta, config, permissions); err != nil {
+		return nil, err
 	}
 
 	compiled.EnablePool(l.rt.Config().PoolConfig())
@@ -162,6 +94,121 @@ func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, conf
 		messageSend: l.messageSend,
 	}
 
+	l.registerLoadedPlugin(meta, compiled, config, wp, wasmBytes)
+
+	slog.Info("wasm: plugin loaded", "id", meta.ID, "name", meta.Name, "version", meta.Version)
+	return wp, nil
+}
+
+func (l *Loader) probePlugin(ctx context.Context, compiled *wasmrt.CompiledModule) (wasmrt.PluginMeta, []string, error) {
+	const probeID = "_temp_probe"
+	l.hostAPI.GrantPermissions(probeID, nil)
+	compiled.ID = probeID
+
+	meta, err := compiled.CallMeta(ctx)
+	l.hostAPI.RevokePermissions(probeID)
+	if err != nil {
+		return wasmrt.PluginMeta{}, nil, fmt.Errorf("call meta: %w", err)
+	}
+	return meta, hostapi.PermissionsFromRequirements(meta.Requirements), nil
+}
+
+func (l *Loader) warnOnVersionChange(meta wasmrt.PluginMeta) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+
+	existing, ok := l.plugins[meta.ID]
+	if !ok {
+		return
+	}
+
+	oldVer := existing.plugin.Version()
+	newVer := meta.Version
+	if oldVer == newVer {
+		slog.Warn("wasm: plugin with the same version is already loaded",
+			"id", meta.ID, "version", newVer)
+		return
+	}
+	if registry.CompareVersions(newVer, oldVer) < 0 {
+		slog.Warn("wasm: loading older plugin version than currently loaded",
+			"id", meta.ID, "current_version", oldVer, "new_version", newVer)
+	}
+}
+
+func (l *Loader) activatePlugin(ctx context.Context, compiled *wasmrt.CompiledModule, meta wasmrt.PluginMeta, config json.RawMessage, permissions []string) error {
+	l.hostAPI.GrantPermissions(meta.ID, permissions)
+	compiled.ID = meta.ID
+	compiled.Version = meta.Version
+
+	if len(config) > 0 {
+		if err := ValidateConfigAgainstSchema(meta.ConfigSchema, config); err != nil {
+			l.closeActivatedPlugin(ctx, meta.ID, compiled)
+			return fmt.Errorf("plugin %q: %w", meta.ID, err)
+		}
+	}
+
+	l.registerDatabases(meta.ID, config)
+
+	if err := l.validateDatabaseRequirements(meta); err != nil {
+		l.closeActivatedPlugin(ctx, meta.ID, compiled)
+		return err
+	}
+
+	if err := l.runPluginMigrations(ctx, meta); err != nil {
+		l.closeActivatedPlugin(ctx, meta.ID, compiled)
+		return err
+	}
+
+	if len(config) > 0 {
+		if err := compiled.CallConfigure(ctx, config); err != nil {
+			l.closeActivatedPlugin(ctx, meta.ID, compiled)
+			return fmt.Errorf("configure plugin %q: %w", meta.ID, err)
+		}
+	}
+
+	return nil
+}
+
+func (l *Loader) closeActivatedPlugin(ctx context.Context, pluginID string, compiled *wasmrt.CompiledModule) {
+	_ = compiled.Close(ctx)
+	l.hostAPI.RevokePermissions(pluginID)
+}
+
+func (l *Loader) validateDatabaseRequirements(meta wasmrt.PluginMeta) error {
+	for _, req := range meta.Requirements {
+		if req.Type != "database" {
+			continue
+		}
+		dbName := req.Name
+		if dbName == "" {
+			dbName = "default"
+		}
+		if sqlStore := l.hostAPI.SQLStore(); sqlStore == nil || !sqlStore.HasDSN(meta.ID, dbName) {
+			return fmt.Errorf("plugin %q requires database %q but its connection string is not configured", meta.ID, dbName)
+		}
+	}
+	return nil
+}
+
+func (l *Loader) runPluginMigrations(ctx context.Context, meta wasmrt.PluginMeta) error {
+	if len(meta.Migrations) == 0 {
+		return nil
+	}
+	sqlStore := l.hostAPI.SQLStore()
+	if sqlStore == nil {
+		return nil
+	}
+	dsn := sqlStore.DSN(meta.ID, "default")
+	if dsn == "" {
+		return nil
+	}
+	if err := runPluginMigrations(ctx, meta.ID, dsn, meta.Migrations); err != nil {
+		return fmt.Errorf("plugin %q migrations: %w", meta.ID, err)
+	}
+	return nil
+}
+
+func (l *Loader) registerLoadedPlugin(meta wasmrt.PluginMeta, compiled *wasmrt.CompiledModule, config json.RawMessage, wp *WasmPlugin, wasmBytes []byte) {
 	l.mu.Lock()
 	l.plugins[meta.ID] = &loadedPlugin{
 		plugin:   wp,
@@ -181,9 +228,6 @@ func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, conf
 	}
 
 	l.registerInRegistry(&meta, wasmBytes)
-
-	slog.Info("wasm: plugin loaded", "id", meta.ID, "name", meta.Name, "version", meta.Version)
-	return wp, nil
 }
 
 // checkDependencies resolves plugin dependencies and verifies integrity if a registry is configured.

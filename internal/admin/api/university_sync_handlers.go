@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 
 	"SuperBotGo/internal/university"
@@ -44,6 +45,28 @@ type batchResult struct {
 	Errors  []string `json:"errors,omitempty"`
 }
 
+type batchSyncConfig[T any] struct {
+	validate func(T) string
+	sync     func(context.Context, T) error
+	describe func(T) string
+}
+
+func runBatchSync[T any](ctx context.Context, items []T, cfg batchSyncConfig[T]) batchResult {
+	res := batchResult{Total: len(items)}
+	for _, item := range items {
+		if msg := cfg.validate(item); msg != "" {
+			res.Errors = append(res.Errors, msg)
+			continue
+		}
+		if err := cfg.sync(ctx, item); err != nil {
+			res.Errors = append(res.Errors, cfg.describe(item)+": "+err.Error())
+			continue
+		}
+		res.Success++
+	}
+	return res
+}
+
 type syncPersonRequest struct {
 	ExternalID string `json:"external_id"`
 	LastName   string `json:"last_name"`
@@ -59,25 +82,27 @@ func (h *UniversitySyncHandler) handleSyncPersons(w http.ResponseWriter, r *http
 		return
 	}
 
-	res := batchResult{Total: len(items)}
-	for _, item := range items {
-		if item.ExternalID == "" || item.LastName == "" || item.FirstName == "" {
-			res.Errors = append(res.Errors, "person missing external_id, last_name or first_name")
-			continue
-		}
-		if err := h.sync.SyncPerson(r.Context(), university.PersonInput{
-			ExternalID: item.ExternalID,
-			LastName:   item.LastName,
-			FirstName:  item.FirstName,
-			MiddleName: item.MiddleName,
-			Email:      item.Email,
-			Phone:      item.Phone,
-		}); err != nil {
-			res.Errors = append(res.Errors, "person "+item.ExternalID+": "+err.Error())
-			continue
-		}
-		res.Success++
-	}
+	res := runBatchSync(r.Context(), items, batchSyncConfig[syncPersonRequest]{
+		validate: func(item syncPersonRequest) string {
+			if item.ExternalID == "" || item.LastName == "" || item.FirstName == "" {
+				return "person missing external_id, last_name or first_name"
+			}
+			return ""
+		},
+		sync: func(ctx context.Context, item syncPersonRequest) error {
+			return h.sync.SyncPerson(ctx, university.PersonInput{
+				ExternalID: item.ExternalID,
+				LastName:   item.LastName,
+				FirstName:  item.FirstName,
+				MiddleName: item.MiddleName,
+				Email:      item.Email,
+				Phone:      item.Phone,
+			})
+		},
+		describe: func(item syncPersonRequest) string {
+			return "person " + item.ExternalID
+		},
+	})
 	writeJSON(w, statusForBatch(res), res)
 }
 
@@ -92,21 +117,23 @@ func (h *UniversitySyncHandler) handleSyncCourses(w http.ResponseWriter, r *http
 		return
 	}
 
-	res := batchResult{Total: len(items)}
-	for _, item := range items {
-		if item.Code == "" || item.Name == "" {
-			res.Errors = append(res.Errors, "course missing code or name")
-			continue
-		}
-		if err := h.sync.SyncCourse(r.Context(), university.CourseInput{
-			Code: item.Code,
-			Name: item.Name,
-		}); err != nil {
-			res.Errors = append(res.Errors, "course "+item.Code+": "+err.Error())
-			continue
-		}
-		res.Success++
-	}
+	res := runBatchSync(r.Context(), items, batchSyncConfig[syncCourseRequest]{
+		validate: func(item syncCourseRequest) string {
+			if item.Code == "" || item.Name == "" {
+				return "course missing code or name"
+			}
+			return ""
+		},
+		sync: func(ctx context.Context, item syncCourseRequest) error {
+			return h.sync.SyncCourse(ctx, university.CourseInput{
+				Code: item.Code,
+				Name: item.Name,
+			})
+		},
+		describe: func(item syncCourseRequest) string {
+			return "course " + item.Code
+		},
+	})
 	writeJSON(w, statusForBatch(res), res)
 }
 
@@ -121,21 +148,23 @@ func (h *UniversitySyncHandler) handleSyncSemesters(w http.ResponseWriter, r *ht
 		return
 	}
 
-	res := batchResult{Total: len(items)}
-	for _, item := range items {
-		if item.Year == 0 || item.SemesterType == "" {
-			res.Errors = append(res.Errors, "semester missing year or semester_type")
-			continue
-		}
-		if err := h.sync.SyncSemester(r.Context(), university.SemesterInput{
-			Year:         item.Year,
-			SemesterType: item.SemesterType,
-		}); err != nil {
-			res.Errors = append(res.Errors, "semester: "+err.Error())
-			continue
-		}
-		res.Success++
-	}
+	res := runBatchSync(r.Context(), items, batchSyncConfig[syncSemesterRequest]{
+		validate: func(item syncSemesterRequest) string {
+			if item.Year == 0 || item.SemesterType == "" {
+				return "semester missing year or semester_type"
+			}
+			return ""
+		},
+		sync: func(ctx context.Context, item syncSemesterRequest) error {
+			return h.sync.SyncSemester(ctx, university.SemesterInput{
+				Year:         item.Year,
+				SemesterType: item.SemesterType,
+			})
+		},
+		describe: func(syncSemesterRequest) string {
+			return "semester"
+		},
+	})
 	writeJSON(w, statusForBatch(res), res)
 }
 
@@ -151,22 +180,24 @@ func (h *UniversitySyncHandler) handleSyncFaculties(w http.ResponseWriter, r *ht
 		return
 	}
 
-	res := batchResult{Total: len(items)}
-	for _, item := range items {
-		if item.Code == "" || item.Name == "" {
-			res.Errors = append(res.Errors, "faculty missing code or name")
-			continue
-		}
-		if err := h.sync.SyncFaculty(r.Context(), university.FacultyInput{
-			Code:      item.Code,
-			Name:      item.Name,
-			ShortName: item.ShortName,
-		}); err != nil {
-			res.Errors = append(res.Errors, "faculty "+item.Code+": "+err.Error())
-			continue
-		}
-		res.Success++
-	}
+	res := runBatchSync(r.Context(), items, batchSyncConfig[syncFacultyRequest]{
+		validate: func(item syncFacultyRequest) string {
+			if item.Code == "" || item.Name == "" {
+				return "faculty missing code or name"
+			}
+			return ""
+		},
+		sync: func(ctx context.Context, item syncFacultyRequest) error {
+			return h.sync.SyncFaculty(ctx, university.FacultyInput{
+				Code:      item.Code,
+				Name:      item.Name,
+				ShortName: item.ShortName,
+			})
+		},
+		describe: func(item syncFacultyRequest) string {
+			return "faculty " + item.Code
+		},
+	})
 	writeJSON(w, statusForBatch(res), res)
 }
 
@@ -183,23 +214,25 @@ func (h *UniversitySyncHandler) handleHierarchyNodes(w http.ResponseWriter, r *h
 		return
 	}
 
-	res := batchResult{Total: len(items)}
-	for _, item := range items {
-		if item.Code == "" || item.ParentCode == "" || item.Name == "" {
-			res.Errors = append(res.Errors, level.Table+" missing code, parent_code or name")
-			continue
-		}
-		if err := h.sync.SyncHierarchyNode(r.Context(), level, university.HierarchyNodeInput{
-			Code:       item.Code,
-			ParentCode: item.ParentCode,
-			Name:       item.Name,
-			Extra:      item.Extra,
-		}); err != nil {
-			res.Errors = append(res.Errors, level.Table+" "+item.Code+": "+err.Error())
-			continue
-		}
-		res.Success++
-	}
+	res := runBatchSync(r.Context(), items, batchSyncConfig[syncHierarchyNodeRequest]{
+		validate: func(item syncHierarchyNodeRequest) string {
+			if item.Code == "" || item.ParentCode == "" || item.Name == "" {
+				return level.Table + " missing code, parent_code or name"
+			}
+			return ""
+		},
+		sync: func(ctx context.Context, item syncHierarchyNodeRequest) error {
+			return h.sync.SyncHierarchyNode(ctx, level, university.HierarchyNodeInput{
+				Code:       item.Code,
+				ParentCode: item.ParentCode,
+				Name:       item.Name,
+				Extra:      item.Extra,
+			})
+		},
+		describe: func(item syncHierarchyNodeRequest) string {
+			return level.Table + " " + item.Code
+		},
+	})
 	writeJSON(w, statusForBatch(res), res)
 }
 
@@ -236,23 +269,25 @@ func (h *UniversitySyncHandler) handleSyncTeacherPositions(w http.ResponseWriter
 		return
 	}
 
-	res := batchResult{Total: len(items)}
-	for _, item := range items {
-		if item.PersonExternalID == "" || item.DepartmentCode == "" || item.PositionTitle == "" {
-			res.Errors = append(res.Errors, "teacher_position missing required fields")
-			continue
-		}
-		if err := h.sync.SyncTeacherPosition(r.Context(), university.TeacherPositionInput{
-			PersonExternalID: item.PersonExternalID,
-			DepartmentCode:   item.DepartmentCode,
-			PositionTitle:    item.PositionTitle,
-			EmploymentType:   item.EmploymentType,
-		}); err != nil {
-			res.Errors = append(res.Errors, "teacher_position "+item.PersonExternalID+": "+err.Error())
-			continue
-		}
-		res.Success++
-	}
+	res := runBatchSync(r.Context(), items, batchSyncConfig[syncTeacherPositionRequest]{
+		validate: func(item syncTeacherPositionRequest) string {
+			if item.PersonExternalID == "" || item.DepartmentCode == "" || item.PositionTitle == "" {
+				return "teacher_position missing required fields"
+			}
+			return ""
+		},
+		sync: func(ctx context.Context, item syncTeacherPositionRequest) error {
+			return h.sync.SyncTeacherPosition(ctx, university.TeacherPositionInput{
+				PersonExternalID: item.PersonExternalID,
+				DepartmentCode:   item.DepartmentCode,
+				PositionTitle:    item.PositionTitle,
+				EmploymentType:   item.EmploymentType,
+			})
+		},
+		describe: func(item syncTeacherPositionRequest) string {
+			return "teacher_position " + item.PersonExternalID
+		},
+	})
 	writeJSON(w, statusForBatch(res), res)
 }
 
@@ -273,27 +308,29 @@ func (h *UniversitySyncHandler) handleSyncStudentPositions(w http.ResponseWriter
 		return
 	}
 
-	res := batchResult{Total: len(items)}
-	for _, item := range items {
-		if item.PersonExternalID == "" {
-			res.Errors = append(res.Errors, "student_position missing person_external_id")
-			continue
-		}
-		if err := h.sync.SyncStudentPosition(r.Context(), university.StudentPositionInput{
-			PersonExternalID: item.PersonExternalID,
-			ProgramCode:      item.ProgramCode,
-			StreamCode:       item.StreamCode,
-			GroupCode:        item.GroupCode,
-			Status:           item.Status,
-			NationalityType:  item.NationalityType,
-			FundingType:      item.FundingType,
-			EducationForm:    item.EducationForm,
-		}); err != nil {
-			res.Errors = append(res.Errors, "student_position "+item.PersonExternalID+": "+err.Error())
-			continue
-		}
-		res.Success++
-	}
+	res := runBatchSync(r.Context(), items, batchSyncConfig[syncStudentPositionRequest]{
+		validate: func(item syncStudentPositionRequest) string {
+			if item.PersonExternalID == "" {
+				return "student_position missing person_external_id"
+			}
+			return ""
+		},
+		sync: func(ctx context.Context, item syncStudentPositionRequest) error {
+			return h.sync.SyncStudentPosition(ctx, university.StudentPositionInput{
+				PersonExternalID: item.PersonExternalID,
+				ProgramCode:      item.ProgramCode,
+				StreamCode:       item.StreamCode,
+				GroupCode:        item.GroupCode,
+				Status:           item.Status,
+				NationalityType:  item.NationalityType,
+				FundingType:      item.FundingType,
+				EducationForm:    item.EducationForm,
+			})
+		},
+		describe: func(item syncStudentPositionRequest) string {
+			return "student_position " + item.PersonExternalID
+		},
+	})
 	writeJSON(w, statusForBatch(res), res)
 }
 
@@ -308,21 +345,23 @@ func (h *UniversitySyncHandler) handleSyncStudentSubgroups(w http.ResponseWriter
 		return
 	}
 
-	res := batchResult{Total: len(items)}
-	for _, item := range items {
-		if item.PersonExternalID == "" || item.SubgroupCode == "" {
-			res.Errors = append(res.Errors, "student_subgroup missing required fields")
-			continue
-		}
-		if err := h.sync.SyncStudentSubgroup(r.Context(), university.StudentSubgroupInput{
-			PersonExternalID: item.PersonExternalID,
-			SubgroupCode:     item.SubgroupCode,
-		}); err != nil {
-			res.Errors = append(res.Errors, "student_subgroup "+item.PersonExternalID+": "+err.Error())
-			continue
-		}
-		res.Success++
-	}
+	res := runBatchSync(r.Context(), items, batchSyncConfig[syncStudentSubgroupRequest]{
+		validate: func(item syncStudentSubgroupRequest) string {
+			if item.PersonExternalID == "" || item.SubgroupCode == "" {
+				return "student_subgroup missing required fields"
+			}
+			return ""
+		},
+		sync: func(ctx context.Context, item syncStudentSubgroupRequest) error {
+			return h.sync.SyncStudentSubgroup(ctx, university.StudentSubgroupInput{
+				PersonExternalID: item.PersonExternalID,
+				SubgroupCode:     item.SubgroupCode,
+			})
+		},
+		describe: func(item syncStudentSubgroupRequest) string {
+			return "student_subgroup " + item.PersonExternalID
+		},
+	})
 	writeJSON(w, statusForBatch(res), res)
 }
 
@@ -343,27 +382,29 @@ func (h *UniversitySyncHandler) handleSyncTeachingAssignments(w http.ResponseWri
 		return
 	}
 
-	res := batchResult{Total: len(items)}
-	for _, item := range items {
-		if item.PersonExternalID == "" || item.CourseCode == "" || item.AssignmentType == "" {
-			res.Errors = append(res.Errors, "teaching_assignment missing required fields")
-			continue
-		}
-		if err := h.sync.SyncTeachingAssignment(r.Context(), university.TeachingAssignmentInput{
-			PersonExternalID: item.PersonExternalID,
-			CourseCode:       item.CourseCode,
-			SemesterYear:     item.SemesterYear,
-			SemesterType:     item.SemesterType,
-			StreamCode:       item.StreamCode,
-			GroupCode:        item.GroupCode,
-			AssignmentType:   item.AssignmentType,
-			StudentScope:     item.StudentScope,
-		}); err != nil {
-			res.Errors = append(res.Errors, "teaching_assignment "+item.PersonExternalID+": "+err.Error())
-			continue
-		}
-		res.Success++
-	}
+	res := runBatchSync(r.Context(), items, batchSyncConfig[syncTeachingAssignmentRequest]{
+		validate: func(item syncTeachingAssignmentRequest) string {
+			if item.PersonExternalID == "" || item.CourseCode == "" || item.AssignmentType == "" {
+				return "teaching_assignment missing required fields"
+			}
+			return ""
+		},
+		sync: func(ctx context.Context, item syncTeachingAssignmentRequest) error {
+			return h.sync.SyncTeachingAssignment(ctx, university.TeachingAssignmentInput{
+				PersonExternalID: item.PersonExternalID,
+				CourseCode:       item.CourseCode,
+				SemesterYear:     item.SemesterYear,
+				SemesterType:     item.SemesterType,
+				StreamCode:       item.StreamCode,
+				GroupCode:        item.GroupCode,
+				AssignmentType:   item.AssignmentType,
+				StudentScope:     item.StudentScope,
+			})
+		},
+		describe: func(item syncTeachingAssignmentRequest) string {
+			return "teaching_assignment " + item.PersonExternalID
+		},
+	})
 	writeJSON(w, statusForBatch(res), res)
 }
 
@@ -380,23 +421,25 @@ func (h *UniversitySyncHandler) handleSyncAdminAppointments(w http.ResponseWrite
 		return
 	}
 
-	res := batchResult{Total: len(items)}
-	for _, item := range items {
-		if item.PersonExternalID == "" || item.AppointmentType == "" || item.ScopeType == "" {
-			res.Errors = append(res.Errors, "admin_appointment missing required fields")
-			continue
-		}
-		if err := h.sync.SyncAdminAppointment(r.Context(), university.AdminAppointmentInput{
-			PersonExternalID: item.PersonExternalID,
-			AppointmentType:  item.AppointmentType,
-			ScopeType:        item.ScopeType,
-			ScopeCode:        item.ScopeCode,
-		}); err != nil {
-			res.Errors = append(res.Errors, "admin_appointment "+item.PersonExternalID+": "+err.Error())
-			continue
-		}
-		res.Success++
-	}
+	res := runBatchSync(r.Context(), items, batchSyncConfig[syncAdminAppointmentRequest]{
+		validate: func(item syncAdminAppointmentRequest) string {
+			if item.PersonExternalID == "" || item.AppointmentType == "" || item.ScopeType == "" {
+				return "admin_appointment missing required fields"
+			}
+			return ""
+		},
+		sync: func(ctx context.Context, item syncAdminAppointmentRequest) error {
+			return h.sync.SyncAdminAppointment(ctx, university.AdminAppointmentInput{
+				PersonExternalID: item.PersonExternalID,
+				AppointmentType:  item.AppointmentType,
+				ScopeType:        item.ScopeType,
+				ScopeCode:        item.ScopeCode,
+			})
+		},
+		describe: func(item syncAdminAppointmentRequest) string {
+			return "admin_appointment " + item.PersonExternalID
+		},
+	})
 	writeJSON(w, statusForBatch(res), res)
 }
 

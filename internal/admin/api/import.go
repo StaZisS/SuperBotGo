@@ -10,17 +10,15 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/xuri/excelize/v2"
 )
 
 type ImportHandler struct {
-	pool    *pgxpool.Pool
 	syncSvc *university.SyncService
 }
 
-func NewImportHandler(pool *pgxpool.Pool, syncSvc *university.SyncService) *ImportHandler {
-	return &ImportHandler{pool: pool, syncSvc: syncSvc}
+func NewImportHandler(syncSvc *university.SyncService) *ImportHandler {
+	return &ImportHandler{syncSvc: syncSvc}
 }
 
 func (h *ImportHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -285,73 +283,36 @@ func validateStudentRow(row studentRow) *validationError {
 
 // importStudent импортирует одного студента, возвращает (created, error)
 func (h *ImportHandler) importStudent(ctx context.Context, row studentRow) (bool, error) {
-	// 1. Sync Person
-	if err := h.syncSvc.SyncPerson(ctx, university.PersonInput{
-		ExternalID: row.ExternalID,
-		LastName:   row.LastName,
-		FirstName:  row.FirstName,
-		MiddleName: row.MiddleName,
-		Email:      row.Email,
-		Phone:      row.Phone,
-	}); err != nil {
-		return false, fmt.Errorf("sync person: %w", err)
-	}
-
-	// Check if position already exists
-	var exists bool
-	err := h.pool.QueryRow(ctx,
-		`SELECT EXISTS(SELECT 1 FROM student_positions 
-          WHERE person_id = (SELECT id FROM persons WHERE external_id = $1)
-            AND study_group_id = (SELECT id FROM study_groups WHERE code = $2))`,
-		row.ExternalID, row.GroupCode,
-	).Scan(&exists)
-	if err != nil {
-		slog.Warn("failed to check existing position", "error", err)
-	}
-
-	// 2. Sync StudentPosition
-	status := row.Status
-	if status == "" {
-		status = "active"
-	}
-	nat := row.NationalityType
-	if nat == "" {
-		nat = "domestic"
-	}
-	fund := row.FundingType
-	if fund == "" {
-		fund = "budget"
-	}
-	edu := row.EducationForm
-	if edu == "" {
-		edu = "full_time"
-	}
-
-	if err := h.syncSvc.SyncStudentPosition(ctx, university.StudentPositionInput{
-		PersonExternalID: row.ExternalID,
-		ProgramCode:      row.ProgramCode,
-		StreamCode:       row.StreamCode,
-		GroupCode:        row.GroupCode,
-		Status:           status,
-		NationalityType:  nat,
-		FundingType:      fund,
-		EducationForm:    edu,
-	}); err != nil {
-		return false, fmt.Errorf("sync student position: %w", err)
-	}
-
-	// 3. Sync subgroups
-	for _, sgCode := range row.SubgroupCodes {
-		if err := h.syncSvc.SyncStudentSubgroup(ctx, university.StudentSubgroupInput{
+	result, err := h.syncSvc.ImportStudent(ctx, university.StudentImportInput{
+		Person: university.PersonInput{
+			ExternalID: row.ExternalID,
+			LastName:   row.LastName,
+			FirstName:  row.FirstName,
+			MiddleName: row.MiddleName,
+			Email:      row.Email,
+			Phone:      row.Phone,
+		},
+		Position: university.StudentPositionInput{
 			PersonExternalID: row.ExternalID,
-			SubgroupCode:     sgCode,
-		}); err != nil {
-			slog.Warn("failed to sync subgroup",
-				"external_id", row.ExternalID,
-				"subgroup", sgCode,
-				"error", err)
-		}
+			ProgramCode:      row.ProgramCode,
+			StreamCode:       row.StreamCode,
+			GroupCode:        row.GroupCode,
+			Status:           row.Status,
+			NationalityType:  row.NationalityType,
+			FundingType:      row.FundingType,
+			EducationForm:    row.EducationForm,
+		},
+		SubgroupCodes: row.SubgroupCodes,
+	})
+	if err != nil {
+		return false, err
 	}
 
-	return !exists, nil
+	for _, warning := range result.Warnings {
+		slog.Warn("failed to sync subgroup",
+			"external_id", row.ExternalID,
+			"error", warning)
+	}
+
+	return result.Created, nil
 }

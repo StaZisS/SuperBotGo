@@ -171,18 +171,16 @@ func (m *ChannelManager) handleCommand(
 	}
 
 	if result.IsComplete {
-		m.recordFocus(userID, pluginID)
-		req := model.CommandRequest{
-			UserID:      userID,
-			ChannelType: channelType,
-			ChatID:      chatID,
-			PluginID:    pluginID,
-			CommandName: commandName,
-			Params:      result.Params,
-			Locale:      loc,
-			Files:       extractFiles(input),
-		}
-		return m.routeCommand(ctx, pluginID, req)
+		return m.dispatchCompletedCommand(ctx, completedCommand{
+			userID:      userID,
+			channelType: channelType,
+			chatID:      chatID,
+			pluginID:    pluginID,
+			commandName: commandName,
+			params:      result.Params,
+			locale:      loc,
+			files:       extractFiles(input),
+		})
 	}
 
 	return m.adapters.SendToChat(ctx, channelType, chatID, result.Message)
@@ -198,43 +196,78 @@ func (m *ChannelManager) handleInput(
 ) error {
 	result, err := m.state.ProcessInput(ctx, userID, chatID, input, loc)
 	if err != nil {
-		// Silently ignore files that arrive without an active dialog
-		// (e.g. extra photos from a Telegram media group after dialog completed).
-		if errors.Is(err, state.ErrNoActiveDialog) {
-			if _, ok := input.(model.FileInput); ok {
-				return nil
-			}
+		if m.shouldIgnoreInputError(err, input) {
+			return nil
 		}
 		return err
 	}
 
-	if !result.Message.IsEmpty() {
-		if sendErr := m.adapters.SendToChat(ctx, channelType, chatID, result.Message); sendErr != nil {
-			return sendErr
-		}
+	if err := m.sendResultMessage(ctx, channelType, chatID, result.Message); err != nil {
+		return err
 	}
 
 	if result.IsComplete {
-		pluginID := result.PluginID
-		if pluginID == "" {
-			// Fallback for dialogs started before the PluginID field existed.
-			pluginID = m.plugins.GetPluginIDByCommand(result.CommandName)
-		}
-		m.recordFocus(userID, pluginID)
-		req := model.CommandRequest{
-			UserID:      userID,
-			PluginID:    pluginID,
-			CommandName: result.CommandName,
-			Params:      result.Params,
-			ChannelType: channelType,
-			ChatID:      chatID,
-			Locale:      loc,
-			Files:       extractFiles(input),
-		}
-		return m.routeCommand(ctx, pluginID, req)
+		return m.dispatchCompletedCommand(ctx, completedCommand{
+			userID:      userID,
+			channelType: channelType,
+			chatID:      chatID,
+			pluginID:    m.resultPluginID(result),
+			commandName: result.CommandName,
+			params:      result.Params,
+			locale:      loc,
+			files:       extractFiles(input),
+		})
 	}
 
 	return nil
+}
+
+type completedCommand struct {
+	userID      model.GlobalUserID
+	channelType model.ChannelType
+	chatID      string
+	pluginID    string
+	commandName string
+	params      model.OptionMap
+	locale      string
+	files       []model.FileRef
+}
+
+func (m *ChannelManager) dispatchCompletedCommand(ctx context.Context, cmd completedCommand) error {
+	m.recordFocus(cmd.userID, cmd.pluginID)
+	return m.routeCommand(ctx, cmd.pluginID, model.CommandRequest{
+		UserID:      cmd.userID,
+		ChannelType: cmd.channelType,
+		ChatID:      cmd.chatID,
+		PluginID:    cmd.pluginID,
+		CommandName: cmd.commandName,
+		Params:      cmd.params,
+		Locale:      cmd.locale,
+		Files:       cmd.files,
+	})
+}
+
+func (m *ChannelManager) resultPluginID(result *StateResult) string {
+	if result.PluginID != "" {
+		return result.PluginID
+	}
+	// Fallback for dialogs started before the PluginID field existed.
+	return m.plugins.GetPluginIDByCommand(result.CommandName)
+}
+
+func (m *ChannelManager) shouldIgnoreInputError(err error, input model.UserInput) bool {
+	if !errors.Is(err, state.ErrNoActiveDialog) {
+		return false
+	}
+	_, isFile := input.(model.FileInput)
+	return isFile
+}
+
+func (m *ChannelManager) sendResultMessage(ctx context.Context, channelType model.ChannelType, chatID string, msg model.Message) error {
+	if msg.IsEmpty() {
+		return nil
+	}
+	return m.adapters.SendToChat(ctx, channelType, chatID, msg)
 }
 
 // buildDisambiguationMessage builds an options message listing all candidates.

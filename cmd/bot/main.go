@@ -4,56 +4,21 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
-	"SuperBotGo/internal/admin"
-	adminapi "SuperBotGo/internal/admin/api"
-	tsuauth "SuperBotGo/internal/auth/tsu"
 	"SuperBotGo/internal/authz"
-	"SuperBotGo/internal/authz/outbox"
-	"SuperBotGo/internal/authz/providers"
-	"SuperBotGo/internal/authz/tuples"
 	"SuperBotGo/internal/channel"
-	"SuperBotGo/internal/channel/dedup"
-	"SuperBotGo/internal/channel/discord"
-	"SuperBotGo/internal/channel/telegram"
-	"SuperBotGo/internal/chat"
-	"SuperBotGo/internal/config"
-	"SuperBotGo/internal/database"
-	"SuperBotGo/internal/filestore"
-	"SuperBotGo/internal/i18n"
-	"SuperBotGo/internal/locale"
-	"SuperBotGo/internal/metrics"
-	"SuperBotGo/internal/model"
 	"SuperBotGo/internal/notification"
 	"SuperBotGo/internal/plugin"
 	"SuperBotGo/internal/plugin/core"
-	"SuperBotGo/internal/pubsub"
 	"SuperBotGo/internal/state"
 	"SuperBotGo/internal/state/storage"
-	"SuperBotGo/internal/trigger"
 	"SuperBotGo/internal/university"
 	"SuperBotGo/internal/user"
-	"SuperBotGo/internal/wasm/adapter"
-	"SuperBotGo/internal/wasm/eventbus"
-	"SuperBotGo/internal/wasm/hostapi"
-	"SuperBotGo/internal/wasm/registry"
-	wasmrt "SuperBotGo/internal/wasm/runtime"
-
-	// Импорты для SpiceDB
-	v1 "github.com/authzed/authzed-go/proto/authzed/api/v1"
-	authzed "github.com/authzed/authzed-go/v1"
-	"github.com/authzed/grpcutil"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"google.golang.org/grpc"                      // <--- ДОБАВИТЬ
-	"google.golang.org/grpc/credentials/insecure" // <--- ДОБАВИТЬ
 )
 
 const (
@@ -66,377 +31,91 @@ const (
 )
 
 func main() {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	slog.SetDefault(logger)
+	logger := newLogger()
 
-	cfg, err := config.Load()
+	cfg, err := loadApplicationConfig(logger)
 	if err != nil {
 		logger.Error("failed to load config", slog.Any("error", err))
 		os.Exit(1)
 	}
 
-	locale.SetDefault(cfg.DefaultLocale)
+	bootstrapCtx := context.Background()
 
-	if err := i18n.Init(cfg.DefaultLocale); err != nil {
-		logger.Warn("i18n initialization failed, continuing with fallback keys", slog.Any("error", err))
-	}
-
-	// Initialize FileStore (S3).
-	fileStore, err := filestore.NewS3Store(context.Background(), filestore.S3StoreConfig{
-		Bucket:    cfg.FileStore.S3.Bucket,
-		Region:    cfg.FileStore.S3.Region,
-		Endpoint:  cfg.FileStore.S3.Endpoint,
-		AccessKey: cfg.FileStore.S3.AccessKey,
-		SecretKey: cfg.FileStore.S3.SecretKey,
-		Prefix:    cfg.FileStore.S3.Prefix,
-	})
+	fileStore, err := newFileStore(bootstrapCtx, cfg, logger)
 	if err != nil {
-		logger.Error("failed to create S3 file store", slog.Any("error", err))
+		logger.Error("failed to create file store", slog.Any("error", err))
 		os.Exit(1)
 	}
-	logger.Info("using S3 file store", slog.String("bucket", cfg.FileStore.S3.Bucket))
 
-	var chatRegistry chat.Registry
-	adapterRegistry := channel.NewAdapterRegistry()
-	pluginManager := plugin.NewManager()
-
-	m := metrics.New()
-
-	wasmCtx := context.Background()
-
-	rt, err := wasmrt.NewRuntime(wasmCtx, wasmrt.Config{
-		CacheDir:                cfg.Admin.ModulesDir + "/.cache",
-		DefaultMemoryLimitPages: defaultWasmMemoryLimitPages,
-	})
+	runtime, err := newRuntimeServices(bootstrapCtx, cfg, logger, fileStore)
 	if err != nil {
-		logger.Error("failed to create wasm runtime", slog.Any("error", err))
+		logger.Error("failed to initialise runtime services", slog.Any("error", err))
 		os.Exit(1)
 	}
 
-	rt.SetMetrics(m)
-
-	hostAPI := hostapi.NewHostAPI(hostapi.Dependencies{
-		FileStore: fileStore,
-	})
-	hostAPI.SetMetrics(m)
-
-	ebMetrics := eventbus.NewMetrics()
-	pluginEventBus := eventbus.New(nil, ebMetrics)
-	hostAPI.SetEventBus(pluginEventBus)
-	logger.Info("plugin event bus initialised with at-least-once delivery")
-
-	if err := hostAPI.RegisterHostModule(wasmCtx, rt); err != nil {
-		logger.Error("failed to register wasm host module", slog.Any("error", err))
+	blobStore, err := newBlobStore(bootstrapCtx, cfg, logger)
+	if err != nil {
+		logger.Error("failed to create blob store", slog.Any("error", err))
 		os.Exit(1)
 	}
 
-	var senderAPI *plugin.SenderAPI
-
-	pluginRegistry := registry.NewPluginRegistry()
-
-	wasmLoader := adapter.NewLoader(rt, hostAPI, adapter.MessageSendFunc(func(ctx context.Context, channelType model.ChannelType, chatID string, msg model.Message) error {
-		if senderAPI == nil {
-			return fmt.Errorf("sender API not initialized")
-		}
-		return senderAPI.ReplyToChat(ctx, channelType, chatID, msg)
-	}))
-	wasmLoader.SetMetrics(m)
-	wasmLoader.SetRegistry(pluginRegistry)
-
-	triggerRegistry := trigger.NewRegistry()
-	wasmLoader.SetTriggerRegistry(triggerRegistry)
-
-	triggerRouter := trigger.NewRouter(triggerRegistry, pluginManager)
-	cronScheduler := trigger.NewCronScheduler(triggerRouter)
-	triggerRegistry.SetCronScheduler(cronScheduler)
-
-	var blobStore adminapi.BlobStore
-	switch cfg.Admin.BlobStore {
-	case "s3":
-		s3Store, s3Err := adminapi.NewS3BlobStore(wasmCtx, adminapi.S3BlobStoreConfig{
-			Bucket:    cfg.Admin.S3.Bucket,
-			Region:    cfg.Admin.S3.Region,
-			Endpoint:  cfg.Admin.S3.Endpoint,
-			AccessKey: cfg.Admin.S3.AccessKey,
-			SecretKey: cfg.Admin.S3.SecretKey,
-			Prefix:    cfg.Admin.S3.Prefix,
-		})
-		if s3Err != nil {
-			logger.Error("failed to create S3 blob store", slog.Any("error", s3Err))
-			os.Exit(1)
-		}
-		blobStore = s3Store
-		logger.Info("using S3 blob store", slog.String("bucket", cfg.Admin.S3.Bucket))
-	default:
-		fsStore, fsErr := adminapi.NewLocalFSBlobStore(cfg.Admin.ModulesDir)
-		if fsErr != nil {
-			logger.Error("failed to create blob store", slog.Any("error", fsErr))
-			os.Exit(1)
-		}
-		blobStore = fsStore
-		logger.Info("using local filesystem blob store", slog.String("dir", cfg.Admin.ModulesDir))
-	}
-
-	if cfg.Redis.Addr == "" {
-		logger.Error("Redis configuration is required (redis addr must be set)")
+	redisClient, err := newRedisClient(bootstrapCtx, cfg, logger, runtime.cronScheduler)
+	if err != nil {
+		logger.Error("failed to initialise Redis", slog.Any("error", err))
 		os.Exit(1)
 	}
-	redisClient, redisErr := database.NewRedisClient(wasmCtx, cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
-	if redisErr != nil {
-		logger.Error("failed to connect to Redis", slog.Any("error", redisErr))
+
+	stores, err := newPostgresServices(bootstrapCtx, cfg, logger)
+	if err != nil {
+		logger.Error("failed to initialise PostgreSQL services", slog.Any("error", err))
 		os.Exit(1)
 	}
-	cronScheduler.SetRedis(redisClient)
-	logger.Info("connected to Redis", slog.String("addr", cfg.Redis.Addr))
 
-	connString := fmt.Sprintf(
-		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		cfg.Database.Host, cfg.Database.Port, cfg.Database.User,
-		cfg.Database.Password, cfg.Database.DBName, cfg.Database.SSLMode,
-	)
-	if cfg.Database.Host == "" || cfg.Database.DBName == "" {
-		logger.Error("PostgreSQL configuration is required (database host and name must be set)")
+	userService := user.NewService(stores.userRepo, stores.accountRepo)
+	studentResolver := university.NewPgStudentResolver(stores.pool)
+	runtime.hostAPI.SetNotifier(notification.NewWasmNotifier(
+		notification.NewNotifyAPI(runtime.adapterRegistry, userService, stores.notifPrefsRepo, studentResolver),
+	))
+
+	spiceClient, err := configureSpiceDB(bootstrapCtx, cfg, stores, logger)
+	if err != nil {
+		logger.Error("failed to initialise SpiceDB", slog.Any("error", err))
 		os.Exit(1)
 	}
-	pool, dbErr := database.NewPool(wasmCtx, connString)
-	syncSvc := university.NewSyncService(pool)
-	if dbErr != nil {
-		logger.Error("failed to connect to PostgreSQL", slog.Any("error", dbErr))
-		os.Exit(1)
-	}
-	if migErr := database.RunMigrations(connString); migErr != nil {
-		logger.Error("failed to run database migrations", slog.Any("error", migErr))
-		os.Exit(1)
-	}
-	userRepo := user.NewPgUserRepo(pool)
-	accountRepo := user.NewPgAccountRepo(pool)
-	pluginStore := adminapi.NewPgPluginStore(pool)
-	versionStore := adminapi.NewPgVersionStore(pool)
-	cmdPermStore := adminapi.NewPgCommandPermStore(pool)
-	adminChatStore := adminapi.NewPgAdminChatStore(pool)
-	authzStore := authz.NewPgStore(pool)
-	universityProvider := providers.NewUniversityProvider(pool)
-	adminBus := pubsub.NewBus(pool, connString, generateInstanceID())
-	chatRegistry = chat.NewPgRegistry(pool)
-	notifPrefsRepo := notification.NewPgPrefsRepo(pool)
-	logger.Info("using PostgreSQL stores")
 
-	userService := user.NewService(userRepo, accountRepo)
-
-	studentResolver := university.NewPgStudentResolver(pool)
-	notifyAPI := notification.NewNotifyAPI(adapterRegistry, userService, notifPrefsRepo, studentResolver)
-	hostAPI.SetNotifier(notification.NewWasmNotifier(notifyAPI))
-
-	var spiceClient *authzed.Client
-	if cfg.SpiceDB.Endpoint != "" {
-		// Используем grpcutil для правильной настройки токена и insecure соединения
-		client, err := authzed.NewClient(
-			cfg.SpiceDB.Endpoint,
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpcutil.WithInsecureBearerToken(cfg.SpiceDB.Token),
-		)
-		if err != nil {
-			logger.Error("failed to create SpiceDB client", slog.Any("error", err))
-			os.Exit(1)
-		}
-		spiceClient = client
-		logger.Info("SpiceDB client initialized", slog.String("endpoint", cfg.SpiceDB.Endpoint))
-
-		// Загрузка схемы авторизации в SpiceDB (идемпотентно)
-		schemaBytes, err := os.ReadFile("deployments/schema.zed")
-		if err != nil {
-			logger.Error("failed to read SpiceDB schema file", slog.Any("error", err))
-			os.Exit(1)
-		}
-		if _, err := spiceClient.WriteSchema(wasmCtx, &v1.WriteSchemaRequest{
-			Schema: string(schemaBytes),
-		}); err != nil {
-			logger.Error("failed to write SpiceDB schema", slog.Any("error", err))
-			os.Exit(1)
-		}
-		logger.Info("SpiceDB schema loaded")
-
-		// Outbox worker: processes authz_outbox table and writes to SpiceDB.
-		tupleWriter := tuples.NewWriter(spiceClient)
-		outboxWorker := outbox.NewWorker(pool, tupleWriter, logger)
-		go func() {
-			if err := outboxWorker.Run(wasmCtx); err != nil && wasmCtx.Err() == nil {
-				logger.Error("authz outbox worker stopped", slog.Any("error", err))
-			}
-		}()
-	} else {
-		logger.Warn("SpiceDB endpoint not configured, authorization may not work correctly")
-	}
-
-	authorizer := authz.NewAuthorizer(authzStore, spiceClient, logger, universityProvider)
-
-	schemaBuilder := authz.NewRuleSchemaBuilder(authzStore, universityProvider)
-	ruleSchemaHandler := adminapi.NewRuleSchemaHandler(schemaBuilder)
-
-	if err := adminapi.AutoloadPlugins(wasmCtx, pluginStore, blobStore, wasmLoader, pluginManager); err != nil {
-		logger.Warn("wasm autoload failed", slog.Any("error", err))
-	}
-
-	adapter.RegisterWasmPlugins(pluginManager, wasmLoader)
+	authorizer := authz.NewAuthorizer(stores.authzStore, spiceClient, logger, stores.universityProvider)
+	autoloadPlugins(bootstrapCtx, stores, blobStore, runtime, logger)
 
 	dialogStore := storage.NewRedisStorage(redisClient)
 	logger.Info("using Redis dialog storage")
 	stateMgr := state.NewManager(dialogStore)
 
-	adminHandler := adminapi.NewAdminHandler(
-		pluginStore,
-		blobStore,
-		wasmLoader,
-		pluginManager,
-		rt,
-		hostAPI,
-		stateMgr,
-		cmdPermStore,
-		versionStore,
-		adminBus,
-		authorizer,
-	)
+	adminMux, authHandler := registerAdminRoutes(cfg, logger, runtime, stores, blobStore, authorizer, stateMgr, spiceClient)
+	tsuAuth := configureTSUAccounts(cfg, stores.userRepo, stores.accountRepo, stores.pool, adminMux, logger)
+	adminServer := newAdminServer(cfg, authHandler, adminMux)
+	startUniversityPuller(bootstrapCtx, cfg, stores.syncSvc, logger)
+	startAdminServer(adminServer, logger, cfg.Admin.Port)
 
-	adminMux := http.NewServeMux()
-	adminCredStore := adminapi.NewPgAdminCredStore(pool)
-	authHandler := adminapi.NewAuthHandler(cfg.Admin.APIKey, adminCredStore)
-	authHandler.RegisterRoutes(adminMux)
-	adminCredHandler := adminapi.NewAdminCredHandler(adminCredStore)
-	adminCredHandler.RegisterRoutes(adminMux)
-	adminHandler.RegisterRoutes(adminMux)
-	cmdPermHandler := adminapi.NewCommandPermHandler(cmdPermStore, authorizer)
-	cmdPermHandler.RegisterRoutes(adminMux)
-	userStore := adminapi.NewPgUserStore(pool)
-	userHandler := adminapi.NewUserHandler(userStore, authorizer)
-	userHandler.RegisterRoutes(adminMux)
-	pluginPermHandler := adminapi.NewPluginPermHandler(pluginStore, wasmLoader, hostAPI, adminBus)
-	pluginPermHandler.RegisterRoutes(adminMux)
-	chatHandler := adminapi.NewChatHandler(adminChatStore, adapterRegistry)
-	chatHandler.RegisterRoutes(adminMux)
-	channelStatusHandler := adminapi.NewChannelStatusHandler(adapterRegistry, adminapi.ChannelStatusConfig{
-		TelegramConfigured: cfg.Telegram.Token != "",
-		DiscordConfigured:  cfg.Discord.Token != "",
-	})
-	channelStatusHandler.RegisterRoutes(adminMux)
-	ruleSchemaHandler.RegisterRoutes(adminMux)
-	if spiceClient != nil {
-		relHandler := adminapi.NewRelationshipHandler(spiceClient)
-		relHandler.RegisterRoutes(adminMux)
-	}
-
-	universityRefHandler := adminapi.NewUniversityRefHandler(pool)
-	universityRefHandler.RegisterRoutes(adminMux)
-	positionStore := adminapi.NewPgPositionStore(pool)
-	positionHandler := adminapi.NewPositionHandler(positionStore)
-	positionHandler.RegisterRoutes(adminMux)
-	importHandler := adminapi.NewImportHandler(pool, syncSvc)
-	importHandler.RegisterRoutes(adminMux)
-
-	universitySyncHandler := adminapi.NewUniversitySyncHandler(syncSvc)
-	universitySyncHandler.RegisterRoutes(adminMux)
-
-	if cfg.UniversitySync.Enabled {
-		pullInterval, err := time.ParseDuration(cfg.UniversitySync.Interval)
-		if err != nil {
-			pullInterval = defaultSyncInterval
-		}
-		dataSource := &university.StubDataSource{
-			BaseURL: cfg.UniversitySync.BaseURL,
-			Token:   cfg.UniversitySync.Token,
-		}
-		puller := university.NewPuller(dataSource, syncSvc, logger, pullInterval)
-		go func() {
-			if err := puller.Run(wasmCtx); err != nil && wasmCtx.Err() == nil {
-				logger.Error("university puller stopped", slog.Any("error", err))
-			}
-		}()
-	}
-
-	httpTrigger := trigger.NewHTTPTriggerHandler(triggerRouter, triggerRegistry)
-	httpTrigger.SetMetrics(m)
-	adminMux.Handle("/api/triggers/http/", httpTrigger)
-
-	adminMux.Handle("GET /metrics", promhttp.Handler())
-
-	admin.RegisterStaticRoutes(adminMux)
-
-	authMiddleware := adminapi.NewAdminAuthMiddleware(authHandler)
-	adminServer := &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.Admin.Port),
-		Handler:      authMiddleware.Wrap(adminMux),
-		ReadTimeout:  httpReadTimeout,
-		WriteTimeout: httpWriteTimeout,
-		IdleTimeout:  httpIdleTimeout,
-	}
-
-	go func() {
-		logger.Info("starting Admin API HTTP server", slog.Int("port", cfg.Admin.Port))
-		if err := adminServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("admin API server error", slog.Any("error", err))
-		}
-	}()
-
-	senderAPI = plugin.NewSenderAPI(adapterRegistry, userService)
-
-	var tsuStateStore *tsuauth.StateStore
-	var tsuAuthLinker core.TsuAuthLinker
-
-	if cfg.TsuAccounts.ApplicationID != "" && cfg.TsuAccounts.SecretKey != "" {
-		tsuClient := tsuauth.NewClient(
-			&http.Client{Timeout: 10 * time.Second},
-			cfg.TsuAccounts.ApplicationID,
-			cfg.TsuAccounts.SecretKey,
-			cfg.TsuAccounts.BaseURL,
-		)
-
-		loginURL := fmt.Sprintf("http://localhost:%d/oauth/authorize", cfg.Admin.Port)
-		if cfg.TsuAccounts.CallbackURL != "" {
-			loginURL = strings.TrimSuffix(cfg.TsuAccounts.CallbackURL, "/login") + "/authorize"
-		}
-		tsuStateStore = tsuauth.NewStateStore(loginURL)
-
-		personLinker := user.NewPersonAutoLinker(pool)
-		tsuLinker := tsuauth.NewLinker(userRepo, accountRepo, personLinker, logger)
-		tsuHandler := tsuauth.NewHandler(tsuClient, tsuStateStore, tsuLinker, cfg.TsuAccounts.CallbackURL, logger)
-		tsuHandler.RegisterRoutes(adminMux)
-
-		tsuAuthLinker = tsuStateStore
-		logger.Info("TSU.Accounts authentication enabled")
-	} else {
-		logger.Info("TSU.Accounts not configured, skipping")
-	}
+	runtime.senderAPI = plugin.NewSenderAPI(runtime.adapterRegistry, userService)
 
 	allPlugins := []plugin.Plugin{
-		core.New(senderAPI, tsuAuthLinker, stateMgr, userService, notifPrefsRepo, pluginManager, authorizer),
+		core.New(runtime.senderAPI, tsuAuth.linker, stateMgr, userService, stores.notifPrefsRepo, runtime.pluginManager, authorizer),
 	}
-
-	for _, p := range allPlugins {
-		for _, def := range p.Commands() {
-			stateMgr.RegisterCommand(p.ID(), def)
-		}
-	}
-
-	for _, wp := range pluginManager.All() {
-		for _, def := range wp.Commands() {
-			stateMgr.RegisterCommand(wp.ID(), def)
-		}
-	}
+	registerPluginCommands(stateMgr, allPlugins)
+	registerPluginCommandsFromMap(stateMgr, runtime.pluginManager.All())
 
 	stateAdapter := channel.NewStateManagerAdapter(stateMgr)
-
-	pluginManager.Load(allPlugins)
-
-	cronScheduler.Start()
+	runtime.pluginManager.Load(allPlugins)
+	runtime.cronScheduler.Start()
 
 	focusTracker := plugin.NewFocusTracker(focusTrackerTimeout)
-
 	channelMgr := channel.NewChannelManager(
 		userService,
-		triggerRouter,
+		runtime.triggerRouter,
 		stateAdapter,
-		pluginManager,
+		runtime.pluginManager,
 		authorizer,
-		adapterRegistry,
+		runtime.adapterRegistry,
 		focusTracker,
 		logger,
 	)
@@ -444,107 +123,13 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	pluginFetcher := func(fCtx context.Context, id string) (*pubsub.PluginData, error) {
-		rec, err := pluginStore.GetPlugin(fCtx, id)
-		if err != nil {
-			return nil, err
-		}
-		return &pubsub.PluginData{
-			WasmKey:    rec.WasmKey,
-			ConfigJSON: rec.ConfigJSON,
-		}, nil
-	}
-	eventHandler := pubsub.NewAdminEventHandler(
-		pluginFetcher, blobStore.Get, wasmLoader, pluginManager, hostAPI, stateMgr,
-	)
-	go func() {
-		if err := adminBus.Subscribe(ctx, eventHandler.Handle); err != nil {
-			logger.Error("pubsub subscriber stopped", slog.Any("error", err))
-		}
-	}()
-	logger.Info("pub/sub subscriber started", slog.String("instance", adminBus.InstanceID()))
+	startPubSubSubscriber(ctx, logger, stores, blobStore, runtime, stateMgr)
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-	var commandNames []string
-	for _, p := range pluginManager.All() {
-		for _, def := range p.Commands() {
-			commandNames = append(commandNames, def.Name)
-		}
-	}
-
-	joinHandler := newChatJoinHandler(chatRegistry, logger)
-
-	dedupMw := dedup.Middleware(redisClient, dedup.Config{}, logger)
-
-	if cfg.Telegram.Token != "" {
-		logger.Info("starting Telegram bot", slog.String("mode", cfg.Telegram.Mode))
-		tgHandler := channel.Chain(channelMgr.OnUpdate, dedupMw, telegram.CallbackNormalizer())
-		tgBot, err := telegram.NewBot(telegram.BotConfig{
-			Token:         cfg.Telegram.Token,
-			Mode:          cfg.Telegram.Mode,
-			WebhookURL:    cfg.Telegram.WebhookURL,
-			WebhookSecret: cfg.Telegram.WebhookSecret,
-			WebhookListen: cfg.Telegram.WebhookListen,
-		}, tgHandler, joinHandler, fileStore, cfg.FileStore.MaxFileSize, logger)
-		if err != nil {
-			logger.Error("failed to create Telegram bot", slog.Any("error", err))
-		} else {
-			tgBot.RegisterCommands(commandNames)
-			channelMgr.RegisterAdapter(tgBot.Adapter())
-			go func() {
-				if err := tgBot.Start(ctx); err != nil {
-					logger.Error("Telegram bot stopped with error", slog.Any("error", err))
-				}
-			}()
-		}
-	} else {
-		logger.Warn("Telegram token not configured, Telegram bot will not start")
-	}
-
-	if cfg.Discord.Token != "" {
-		logger.Info("starting Discord bot",
-			slog.Int("shard_id", cfg.Discord.ShardID),
-			slog.Int("shard_count", cfg.Discord.ShardCount))
-		dcHandler := channel.Chain(channelMgr.OnUpdate, dedupMw)
-		dcBot, err := discord.NewBot(discord.BotConfig{
-			Token:      cfg.Discord.Token,
-			ShardID:    cfg.Discord.ShardID,
-			ShardCount: cfg.Discord.ShardCount,
-		}, dcHandler, joinHandler, fileStore, cfg.FileStore.MaxFileSize, logger)
-		if err != nil {
-			logger.Error("failed to create Discord bot", slog.Any("error", err))
-		} else {
-			channelMgr.RegisterAdapter(dcBot.Adapter())
-			go func() {
-				if err := dcBot.Start(ctx); err != nil {
-					logger.Error("Discord bot stopped with error", slog.Any("error", err))
-				}
-			}()
-		}
-	} else {
-		logger.Warn("Discord token not configured, Discord bot will not start")
-	}
-
-	// Start file store cleanup goroutine.
-	go func() {
-		ticker := time.NewTicker(1 * time.Hour)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				n, err := fileStore.Cleanup(ctx)
-				if err != nil {
-					logger.Error("file store cleanup error", slog.Any("error", err))
-				} else if n > 0 {
-					logger.Info("file store cleanup", slog.Int("removed", n))
-				}
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
+	startConfiguredBots(ctx, cfg, logger, fileStore, redisClient, channelMgr, collectCommandNames(runtime.pluginManager), stores.chatRegistry)
+	startFileStoreCleanup(ctx, logger, fileStore)
 
 	logger.Info("SuperBotGo started, waiting for shutdown signal")
 
@@ -554,27 +139,9 @@ func main() {
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
-	if err := adminServer.Shutdown(shutdownCtx); err != nil {
-		logger.Error("admin API server shutdown error", slog.Any("error", err))
-	} else {
-		logger.Info("admin API server stopped")
-	}
-
-	cronScheduler.Stop()
-
-	if tsuStateStore != nil {
-		tsuStateStore.Stop()
-	}
-
-	if err := wasmLoader.Close(shutdownCtx); err != nil {
-		logger.Error("wasm loader close error", slog.Any("error", err))
-	}
-	if err := rt.Close(shutdownCtx); err != nil {
-		logger.Error("wasm runtime close error", slog.Any("error", err))
-	}
+	shutdownRuntime(shutdownCtx, logger, adminServer, runtime.cronScheduler, tsuAuth.stateStore, runtime.wasmLoader, runtime.rt)
 
 	logger.Info("SuperBotGo stopped")
-
 }
 
 func generateInstanceID() string {

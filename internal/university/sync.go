@@ -43,29 +43,106 @@ type PersonInput struct {
 
 func (s *SyncService) SyncPerson(ctx context.Context, in PersonInput) error {
 	return s.inTx(ctx, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `
-			INSERT INTO persons (external_id, last_name, first_name, middle_name, email, phone)
-			VALUES ($1, $2, $3, nullif($4, ''), nullif($5, ''), nullif($6, ''))
-			ON CONFLICT (external_id) DO UPDATE SET
-				last_name = $2, first_name = $3, middle_name = nullif($4, ''),
-				email = nullif($5, ''), phone = nullif($6, ''), updated_at = now()
-		`, in.ExternalID, in.LastName, in.FirstName, in.MiddleName, in.Email, in.Phone)
-		if err != nil {
-			return err
+		return s.syncPersonTx(ctx, tx, in)
+	})
+}
+
+func (s *SyncService) syncPersonTx(ctx context.Context, tx pgx.Tx, in PersonInput) error {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO persons (external_id, last_name, first_name, middle_name, email, phone)
+		VALUES ($1, $2, $3, nullif($4, ''), nullif($5, ''), nullif($6, ''))
+		ON CONFLICT (external_id) DO UPDATE SET
+			last_name = $2, first_name = $3, middle_name = nullif($4, ''),
+			email = nullif($5, ''), phone = nullif($6, ''), updated_at = now()
+	`, in.ExternalID, in.LastName, in.FirstName, in.MiddleName, in.Email, in.Phone)
+	if err != nil {
+		return err
+	}
+
+	// Auto-link: if a global_user with matching tsu_accounts_id exists,
+	// set persons.global_user_id automatically.
+	_, err = tx.Exec(ctx, `
+		UPDATE persons
+		SET global_user_id = (SELECT id FROM global_users WHERE tsu_accounts_id = $1),
+		    updated_at = now()
+		WHERE external_id = $1
+		  AND global_user_id IS NULL
+		  AND EXISTS (SELECT 1 FROM global_users WHERE tsu_accounts_id = $1)
+	`, in.ExternalID)
+	return err
+}
+
+type StudentImportInput struct {
+	Person        PersonInput
+	Position      StudentPositionInput
+	SubgroupCodes []string
+}
+
+type StudentImportResult struct {
+	Created  bool
+	Warnings []error
+}
+
+func (s *SyncService) ImportStudent(ctx context.Context, in StudentImportInput) (StudentImportResult, error) {
+	position := normalizeStudentPositionInput(in.Position)
+	result := StudentImportResult{}
+
+	err := s.inTx(ctx, func(tx pgx.Tx) error {
+		if err := s.syncPersonTx(ctx, tx, in.Person); err != nil {
+			return fmt.Errorf("sync person: %w", err)
 		}
 
-		// Auto-link: if a global_user with matching tsu_accounts_id exists,
-		// set persons.global_user_id automatically.
-		_, err = tx.Exec(ctx, `
-			UPDATE persons
-			SET global_user_id = (SELECT id FROM global_users WHERE tsu_accounts_id = $1),
-			    updated_at = now()
-			WHERE external_id = $1
-			  AND global_user_id IS NULL
-			  AND EXISTS (SELECT 1 FROM global_users WHERE tsu_accounts_id = $1)
-		`, in.ExternalID)
-		return err
+		exists, err := s.studentPositionExistsTx(ctx, tx, position.PersonExternalID, position.GroupCode)
+		if err != nil {
+			return fmt.Errorf("check student position: %w", err)
+		}
+		result.Created = !exists
+
+		if err := s.syncStudentPositionTx(ctx, tx, position); err != nil {
+			return fmt.Errorf("sync student position: %w", err)
+		}
+
+		for _, subgroupCode := range in.SubgroupCodes {
+			if err := s.syncStudentSubgroupTx(ctx, tx, StudentSubgroupInput{
+				PersonExternalID: position.PersonExternalID,
+				SubgroupCode:     subgroupCode,
+			}); err != nil {
+				result.Warnings = append(result.Warnings, fmt.Errorf("sync subgroup %s: %w", subgroupCode, err))
+			}
+		}
+		return nil
 	})
+	if err != nil {
+		return StudentImportResult{}, err
+	}
+	return result, nil
+}
+
+func normalizeStudentPositionInput(in StudentPositionInput) StudentPositionInput {
+	if in.Status == "" {
+		in.Status = "active"
+	}
+	if in.NationalityType == "" {
+		in.NationalityType = "domestic"
+	}
+	if in.FundingType == "" {
+		in.FundingType = "budget"
+	}
+	if in.EducationForm == "" {
+		in.EducationForm = "full_time"
+	}
+	return in
+}
+
+func (s *SyncService) studentPositionExistsTx(ctx context.Context, tx pgx.Tx, externalID, groupCode string) (bool, error) {
+	var exists bool
+	err := tx.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM student_positions
+          WHERE person_id = (SELECT id FROM persons WHERE external_id = $1)
+            AND study_group_id = (SELECT id FROM study_groups WHERE code = $2))`,
+		externalID, groupCode,
+	).Scan(&exists)
+	return exists, err
 }
 
 type CourseInput struct {
@@ -213,35 +290,40 @@ type StudentPositionInput struct {
 
 func (s *SyncService) SyncStudentPosition(ctx context.Context, in StudentPositionInput) error {
 	return s.inTx(ctx, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO student_positions (
-				person_id, program_id, stream_id, study_group_id,
-				status, nationality_type, funding_type, education_form
-			)
-			VALUES (
-				(SELECT id FROM persons WHERE external_id = $1),
-				(SELECT id FROM programs WHERE code = $2),
-				(SELECT id FROM streams WHERE code = $3),
-				(SELECT id FROM study_groups WHERE code = $4),
-				$5, $6, $7, $8
-			)
-			ON CONFLICT ON CONSTRAINT student_positions_pkey DO NOTHING
-		`, in.PersonExternalID, in.ProgramCode, in.StreamCode, in.GroupCode,
-			in.Status, in.NationalityType, in.FundingType, in.EducationForm); err != nil {
-			return fmt.Errorf("upsert student_position for %s: %w", in.PersonExternalID, err)
-		}
-
-		if err := outbox.EnqueueDeleteBySubject(ctx, tx, "user", in.PersonExternalID, "member"); err != nil {
-			return err
-		}
-
-		if in.Status == "active" && in.GroupCode != "" {
-			return outbox.EnqueueTouch(ctx, tx, []tuples.Tuple{
-				{ObjectType: "study_group", ObjectID: in.GroupCode, Relation: "member", SubjectType: "user", SubjectID: in.PersonExternalID},
-			})
-		}
-		return nil
+		return s.syncStudentPositionTx(ctx, tx, in)
 	})
+}
+
+func (s *SyncService) syncStudentPositionTx(ctx context.Context, tx pgx.Tx, in StudentPositionInput) error {
+	in = normalizeStudentPositionInput(in)
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO student_positions (
+			person_id, program_id, stream_id, study_group_id,
+			status, nationality_type, funding_type, education_form
+		)
+		VALUES (
+			(SELECT id FROM persons WHERE external_id = $1),
+			(SELECT id FROM programs WHERE code = $2),
+			(SELECT id FROM streams WHERE code = $3),
+			(SELECT id FROM study_groups WHERE code = $4),
+			$5, $6, $7, $8
+		)
+		ON CONFLICT ON CONSTRAINT student_positions_pkey DO NOTHING
+	`, in.PersonExternalID, in.ProgramCode, in.StreamCode, in.GroupCode,
+		in.Status, in.NationalityType, in.FundingType, in.EducationForm); err != nil {
+		return fmt.Errorf("upsert student_position for %s: %w", in.PersonExternalID, err)
+	}
+
+	if err := outbox.EnqueueDeleteBySubject(ctx, tx, "user", in.PersonExternalID, "member"); err != nil {
+		return err
+	}
+
+	if in.Status == "active" && in.GroupCode != "" {
+		return outbox.EnqueueTouch(ctx, tx, []tuples.Tuple{
+			{ObjectType: "study_group", ObjectID: in.GroupCode, Relation: "member", SubjectType: "user", SubjectID: in.PersonExternalID},
+		})
+	}
+	return nil
 }
 
 type StudentSubgroupInput struct {
@@ -251,23 +333,27 @@ type StudentSubgroupInput struct {
 
 func (s *SyncService) SyncStudentSubgroup(ctx context.Context, in StudentSubgroupInput) error {
 	return s.inTx(ctx, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO student_subgroups (student_position_id, subgroup_id)
-			VALUES (
-				(SELECT sp.id FROM student_positions sp
-				 JOIN persons p ON p.id = sp.person_id
-				 WHERE p.external_id = $1 AND sp.status = 'active'
-				 LIMIT 1),
-				(SELECT id FROM subgroups WHERE code = $2)
-			)
-			ON CONFLICT (student_position_id, subgroup_id) DO NOTHING
-		`, in.PersonExternalID, in.SubgroupCode); err != nil {
-			return fmt.Errorf("upsert student_subgroup %s->%s: %w", in.PersonExternalID, in.SubgroupCode, err)
-		}
+		return s.syncStudentSubgroupTx(ctx, tx, in)
+	})
+}
 
-		return outbox.EnqueueTouch(ctx, tx, []tuples.Tuple{
-			{ObjectType: "subgroup", ObjectID: in.SubgroupCode, Relation: "member", SubjectType: "user", SubjectID: in.PersonExternalID},
-		})
+func (s *SyncService) syncStudentSubgroupTx(ctx context.Context, tx pgx.Tx, in StudentSubgroupInput) error {
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO student_subgroups (student_position_id, subgroup_id)
+		VALUES (
+			(SELECT sp.id FROM student_positions sp
+			 JOIN persons p ON p.id = sp.person_id
+			 WHERE p.external_id = $1 AND sp.status = 'active'
+			 LIMIT 1),
+			(SELECT id FROM subgroups WHERE code = $2)
+		)
+		ON CONFLICT (student_position_id, subgroup_id) DO NOTHING
+	`, in.PersonExternalID, in.SubgroupCode); err != nil {
+		return fmt.Errorf("upsert student_subgroup %s->%s: %w", in.PersonExternalID, in.SubgroupCode, err)
+	}
+
+	return outbox.EnqueueTouch(ctx, tx, []tuples.Tuple{
+		{ObjectType: "subgroup", ObjectID: in.SubgroupCode, Relation: "member", SubjectType: "user", SubjectID: in.PersonExternalID},
 	})
 }
 

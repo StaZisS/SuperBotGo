@@ -206,7 +206,32 @@ func (s *PgPositionStore) GetAllPositions(ctx context.Context, personID int64) (
 		Admin:   make([]AdminAppointmentInfo, 0),
 	}
 
-	// Student positions
+	studentPositions, err := s.loadStudentPositions(ctx, personID)
+	if err != nil {
+		return nil, err
+	}
+	result.Student = studentPositions
+
+	if err := s.loadStudentSubgroups(ctx, result.Student); err != nil {
+		return nil, err
+	}
+
+	teacherPositions, err := s.loadTeacherPositions(ctx, personID)
+	if err != nil {
+		return nil, err
+	}
+	result.Teacher = teacherPositions
+
+	adminAppointments, err := s.loadAdminAppointments(ctx, personID)
+	if err != nil {
+		return nil, err
+	}
+	result.Admin = adminAppointments
+
+	return result, nil
+}
+
+func (s *PgPositionStore) loadStudentPositions(ctx context.Context, personID int64) ([]StudentPositionInfo, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT sp.id, sp.program_id, COALESCE(p.name,''), sp.stream_id, COALESCE(st.name, st.code, ''),
 		       sp.study_group_id, COALESCE(sg.name, sg.code, ''), sp.status, sp.nationality_type, sp.funding_type, sp.education_form,
@@ -222,6 +247,8 @@ func (s *PgPositionStore) GetAllPositions(ctx context.Context, personID int64) (
 		return nil, fmt.Errorf("query student positions: %w", err)
 	}
 	defer rows.Close()
+
+	positions := make([]StudentPositionInfo, 0)
 	for rows.Next() {
 		var sp StudentPositionInfo
 		if err := rows.Scan(&sp.ID, &sp.ProgramID, &sp.ProgramName, &sp.StreamID, &sp.StreamName,
@@ -230,41 +257,49 @@ func (s *PgPositionStore) GetAllPositions(ctx context.Context, personID int64) (
 			return nil, fmt.Errorf("scan student position: %w", err)
 		}
 		sp.Subgroups = make([]SubgroupBrief, 0)
-		result.Student = append(result.Student, sp)
+		positions = append(positions, sp)
+	}
+	return positions, nil
+}
+
+func (s *PgPositionStore) loadStudentSubgroups(ctx context.Context, positions []StudentPositionInfo) error {
+	if len(positions) == 0 {
+		return nil
 	}
 
-	// Load subgroups for all student positions
-	if len(result.Student) > 0 {
-		posIDs := make([]int64, len(result.Student))
-		posIdx := make(map[int64]int, len(result.Student))
-		for i, sp := range result.Student {
-			posIDs[i] = sp.ID
-			posIdx[sp.ID] = i
-		}
-		sgRows, err := s.pool.Query(ctx, `
-			SELECT ss.student_position_id, sub.id, COALESCE(sub.name, sub.code)
-			FROM student_subgroups ss
-			JOIN subgroups sub ON sub.id = ss.subgroup_id
-			WHERE ss.student_position_id = ANY($1)
-			ORDER BY sub.id`, posIDs)
-		if err != nil {
-			return nil, fmt.Errorf("query student subgroups: %w", err)
-		}
-		defer sgRows.Close()
-		for sgRows.Next() {
-			var posID, subID int64
-			var subName string
-			if err := sgRows.Scan(&posID, &subID, &subName); err != nil {
-				return nil, fmt.Errorf("scan student subgroup: %w", err)
-			}
-			if idx, ok := posIdx[posID]; ok {
-				result.Student[idx].Subgroups = append(result.Student[idx].Subgroups, SubgroupBrief{ID: subID, Name: subName})
-			}
-		}
+	posIDs := make([]int64, len(positions))
+	posIdx := make(map[int64]int, len(positions))
+	for i, sp := range positions {
+		posIDs[i] = sp.ID
+		posIdx[sp.ID] = i
 	}
 
-	// Teacher positions
-	rows2, err := s.pool.Query(ctx, `
+	rows, err := s.pool.Query(ctx, `
+		SELECT ss.student_position_id, sub.id, COALESCE(sub.name, sub.code)
+		FROM student_subgroups ss
+		JOIN subgroups sub ON sub.id = ss.subgroup_id
+		WHERE ss.student_position_id = ANY($1)
+		ORDER BY sub.id`, posIDs)
+	if err != nil {
+		return fmt.Errorf("query student subgroups: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var posID, subID int64
+		var subName string
+		if err := rows.Scan(&posID, &subID, &subName); err != nil {
+			return fmt.Errorf("scan student subgroup: %w", err)
+		}
+		if idx, ok := posIdx[posID]; ok {
+			positions[idx].Subgroups = append(positions[idx].Subgroups, SubgroupBrief{ID: subID, Name: subName})
+		}
+	}
+	return nil
+}
+
+func (s *PgPositionStore) loadTeacherPositions(ctx context.Context, personID int64) ([]TeacherPositionInfo, error) {
+	rows, err := s.pool.Query(ctx, `
 		SELECT tp.id, tp.department_id, COALESCE(d.name,''), tp.position_title, tp.employment_type, tp.status, d.faculty_id
 		FROM teacher_positions tp
 		LEFT JOIN departments d ON tp.department_id = d.id
@@ -273,17 +308,21 @@ func (s *PgPositionStore) GetAllPositions(ctx context.Context, personID int64) (
 	if err != nil {
 		return nil, fmt.Errorf("query teacher positions: %w", err)
 	}
-	defer rows2.Close()
-	for rows2.Next() {
+	defer rows.Close()
+
+	positions := make([]TeacherPositionInfo, 0)
+	for rows.Next() {
 		var tp TeacherPositionInfo
-		if err := rows2.Scan(&tp.ID, &tp.DepartmentID, &tp.DepartmentName, &tp.PositionTitle, &tp.EmploymentType, &tp.Status, &tp.FacultyID); err != nil {
+		if err := rows.Scan(&tp.ID, &tp.DepartmentID, &tp.DepartmentName, &tp.PositionTitle, &tp.EmploymentType, &tp.Status, &tp.FacultyID); err != nil {
 			return nil, fmt.Errorf("scan teacher position: %w", err)
 		}
-		result.Teacher = append(result.Teacher, tp)
+		positions = append(positions, tp)
 	}
+	return positions, nil
+}
 
-	// Admin appointments
-	rows3, err := s.pool.Query(ctx, `
+func (s *PgPositionStore) loadAdminAppointments(ctx context.Context, personID int64) ([]AdminAppointmentInfo, error) {
+	rows, err := s.pool.Query(ctx, `
 		SELECT aa.id, aa.appointment_type, aa.scope_type, aa.scope_id, aa.status,
 		       COALESCE(f.name, d.name, p.name, st.name, sg.name, '') as scope_name
 		FROM administrative_appointments aa
@@ -297,16 +336,17 @@ func (s *PgPositionStore) GetAllPositions(ctx context.Context, personID int64) (
 	if err != nil {
 		return nil, fmt.Errorf("query admin appointments: %w", err)
 	}
-	defer rows3.Close()
-	for rows3.Next() {
+	defer rows.Close()
+
+	appointments := make([]AdminAppointmentInfo, 0)
+	for rows.Next() {
 		var aa AdminAppointmentInfo
-		if err := rows3.Scan(&aa.ID, &aa.AppointmentType, &aa.ScopeType, &aa.ScopeID, &aa.Status, &aa.ScopeName); err != nil {
+		if err := rows.Scan(&aa.ID, &aa.AppointmentType, &aa.ScopeType, &aa.ScopeID, &aa.Status, &aa.ScopeName); err != nil {
 			return nil, fmt.Errorf("scan admin appointment: %w", err)
 		}
-		result.Admin = append(result.Admin, aa)
+		appointments = append(appointments, aa)
 	}
-
-	return result, nil
+	return appointments, nil
 }
 
 func (s *PgPositionStore) syncStudentMemberTuple(ctx context.Context, tx pgx.Tx, personID int64) error {
@@ -360,91 +400,100 @@ func (s *PgPositionStore) saveSubgroups(ctx context.Context, tx pgx.Tx, position
 	return nil
 }
 
-func (s *PgPositionStore) CreateStudentPosition(ctx context.Context, personID int64, req StudentPositionRequest) (*StudentPositionInfo, error) {
+func (s *PgPositionStore) withStudentPositionTx(ctx context.Context, fn func(tx pgx.Tx) error) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer tx.Rollback(ctx)
 
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func studentPositionInfoFromRequest(id int64, req StudentPositionRequest) *StudentPositionInfo {
+	return &StudentPositionInfo{
+		ID:              id,
+		ProgramID:       req.ProgramID,
+		StreamID:        req.StreamID,
+		StudyGroupID:    req.StudyGroupID,
+		Status:          req.Status,
+		NationalityType: req.NationalityType,
+		FundingType:     req.FundingType,
+		EducationForm:   req.EducationForm,
+	}
+}
+
+func (s *PgPositionStore) studentPositionPersonID(ctx context.Context, tx pgx.Tx, posID int64) (int64, error) {
+	var personID int64
+	if err := tx.QueryRow(ctx, `SELECT person_id FROM student_positions WHERE id = $1`, posID).Scan(&personID); err != nil {
+		return 0, fmt.Errorf("find position: %w", err)
+	}
+	return personID, nil
+}
+
+func (s *PgPositionStore) CreateStudentPosition(ctx context.Context, personID int64, req StudentPositionRequest) (*StudentPositionInfo, error) {
 	var id int64
-	err = tx.QueryRow(ctx,
-		`INSERT INTO student_positions (person_id, program_id, stream_id, study_group_id, status, nationality_type, funding_type, education_form)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-		personID, req.ProgramID, req.StreamID, req.StudyGroupID, req.Status, req.NationalityType, req.FundingType, req.EducationForm,
-	).Scan(&id)
-	if err != nil {
-		return nil, fmt.Errorf("create student position: %w", err)
-	}
-
-	if err := s.saveSubgroups(ctx, tx, id, req.SubgroupIDs); err != nil {
+	if err := s.withStudentPositionTx(ctx, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx,
+			`INSERT INTO student_positions (person_id, program_id, stream_id, study_group_id, status, nationality_type, funding_type, education_form)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+			personID, req.ProgramID, req.StreamID, req.StudyGroupID, req.Status, req.NationalityType, req.FundingType, req.EducationForm,
+		).Scan(&id); err != nil {
+			return fmt.Errorf("create student position: %w", err)
+		}
+		if err := s.saveSubgroups(ctx, tx, id, req.SubgroupIDs); err != nil {
+			return err
+		}
+		if err := s.syncStudentMemberTuple(ctx, tx, personID); err != nil {
+			return fmt.Errorf("sync spicedb: %w", err)
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 
-	if err := s.syncStudentMemberTuple(ctx, tx, personID); err != nil {
-		return nil, fmt.Errorf("sync spicedb: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, err
-	}
-
-	return &StudentPositionInfo{ID: id, ProgramID: req.ProgramID, StreamID: req.StreamID, StudyGroupID: req.StudyGroupID,
-		Status: req.Status, NationalityType: req.NationalityType, FundingType: req.FundingType, EducationForm: req.EducationForm}, nil
+	return studentPositionInfoFromRequest(id, req), nil
 }
 
 func (s *PgPositionStore) UpdateStudentPosition(ctx context.Context, posID int64, req StudentPositionRequest) error {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-
-	var personID int64
-	err = tx.QueryRow(ctx, `SELECT person_id FROM student_positions WHERE id = $1`, posID).Scan(&personID)
-	if err != nil {
-		return fmt.Errorf("find position: %w", err)
-	}
-
-	_, err = tx.Exec(ctx,
-		`UPDATE student_positions SET program_id=$2, stream_id=$3, study_group_id=$4, status=$5,
-		 nationality_type=$6, funding_type=$7, education_form=$8, updated_at=now() WHERE id=$1`,
-		posID, req.ProgramID, req.StreamID, req.StudyGroupID, req.Status, req.NationalityType, req.FundingType, req.EducationForm)
-	if err != nil {
-		return fmt.Errorf("update student position: %w", err)
-	}
-
-	if err := s.saveSubgroups(ctx, tx, posID, req.SubgroupIDs); err != nil {
-		return err
-	}
-
-	if err := s.syncStudentMemberTuple(ctx, tx, personID); err != nil {
-		return fmt.Errorf("sync spicedb: %w", err)
-	}
-	return tx.Commit(ctx)
+	return s.withStudentPositionTx(ctx, func(tx pgx.Tx) error {
+		personID, err := s.studentPositionPersonID(ctx, tx, posID)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx,
+			`UPDATE student_positions SET program_id=$2, stream_id=$3, study_group_id=$4, status=$5,
+			 nationality_type=$6, funding_type=$7, education_form=$8, updated_at=now() WHERE id=$1`,
+			posID, req.ProgramID, req.StreamID, req.StudyGroupID, req.Status, req.NationalityType, req.FundingType, req.EducationForm); err != nil {
+			return fmt.Errorf("update student position: %w", err)
+		}
+		if err := s.saveSubgroups(ctx, tx, posID, req.SubgroupIDs); err != nil {
+			return err
+		}
+		if err := s.syncStudentMemberTuple(ctx, tx, personID); err != nil {
+			return fmt.Errorf("sync spicedb: %w", err)
+		}
+		return nil
+	})
 }
 
 func (s *PgPositionStore) DeleteStudentPosition(ctx context.Context, posID int64) error {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-
-	var personID int64
-	err = tx.QueryRow(ctx, `SELECT person_id FROM student_positions WHERE id = $1`, posID).Scan(&personID)
-	if err != nil {
-		return fmt.Errorf("find position: %w", err)
-	}
-
-	_, err = tx.Exec(ctx, `DELETE FROM student_positions WHERE id = $1`, posID)
-	if err != nil {
-		return err
-	}
-
-	if err := s.syncStudentMemberTuple(ctx, tx, personID); err != nil {
-		return fmt.Errorf("sync spicedb: %w", err)
-	}
-	return tx.Commit(ctx)
+	return s.withStudentPositionTx(ctx, func(tx pgx.Tx) error {
+		personID, err := s.studentPositionPersonID(ctx, tx, posID)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM student_positions WHERE id = $1`, posID); err != nil {
+			return err
+		}
+		if err := s.syncStudentMemberTuple(ctx, tx, personID); err != nil {
+			return fmt.Errorf("sync spicedb: %w", err)
+		}
+		return nil
+	})
 }
 
 func (s *PgPositionStore) CreateTeacherPosition(ctx context.Context, personID int64, req TeacherPositionRequest) (*TeacherPositionInfo, error) {

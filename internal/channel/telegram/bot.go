@@ -36,6 +36,12 @@ type Bot struct {
 	lifecycleCtx context.Context
 }
 
+type telegramIncomingFile struct {
+	file     *tele.File
+	name     string
+	mimeType string
+}
+
 func NewBot(cfg BotConfig, handler channel.UpdateHandlerFunc, joinHandler channel.ChatJoinHandler, fs filestore.FileStore, maxFileSize int64, logger *slog.Logger) (*Bot, error) {
 	if logger == nil {
 		logger = slog.Default()
@@ -159,8 +165,13 @@ func (b *Bot) handleTextMessage(c tele.Context) error {
 }
 
 func (b *Bot) handleFileMessage(c tele.Context, fileType model.FileType) error {
-	// Skip if no fileStore configured
 	if b.fileStore == nil {
+		return nil
+	}
+
+	msg := c.Message()
+	incoming := extractIncomingTelegramFile(msg, fileType)
+	if incoming == nil {
 		return nil
 	}
 
@@ -168,83 +179,13 @@ func (b *Bot) handleFileMessage(c tele.Context, fileType model.FileType) error {
 	platformUserID := strconv.FormatInt(c.Sender().ID, 10)
 	updateID := strconv.Itoa(c.Update().ID)
 
-	// Extract the tele.File from the message based on type
-	var teleFile *tele.File
-	var filename string
-	var mimeType string
-
-	msg := c.Message()
-	switch fileType {
-	case model.FileTypePhoto:
-		if msg.Photo != nil {
-			teleFile = &msg.Photo.File
-			filename = "photo.jpg"
-			mimeType = "image/jpeg"
-		}
-	case model.FileTypeDocument:
-		if msg.Document != nil {
-			teleFile = &msg.Document.File
-			filename = msg.Document.FileName
-			mimeType = msg.Document.MIME
-		}
-	case model.FileTypeAudio:
-		if msg.Audio != nil {
-			teleFile = &msg.Audio.File
-			filename = msg.Audio.FileName
-			if filename == "" {
-				filename = "audio"
-			}
-			mimeType = msg.Audio.MIME
-		}
-	case model.FileTypeVideo:
-		if msg.Video != nil {
-			teleFile = &msg.Video.File
-			filename = msg.Video.FileName
-			if filename == "" {
-				filename = "video.mp4"
-			}
-			mimeType = msg.Video.MIME
-		}
-	case model.FileTypeVoice:
-		if msg.Voice != nil {
-			teleFile = &msg.Voice.File
-			filename = "voice.ogg"
-			mimeType = msg.Voice.MIME
-		}
-	}
-
-	if teleFile == nil {
+	if b.isFileTooLarge(platformUserID, incoming.file) {
 		return nil
 	}
 
-	// Check file size limit
-	if b.maxFileSize > 0 && int64(teleFile.FileSize) > b.maxFileSize {
-		b.logger.Warn("telegram: file too large, ignoring",
-			slog.String("user", platformUserID),
-			slog.Int64("file_size", teleFile.FileSize),
-			slog.Int64("max_size", b.maxFileSize))
-		return nil
-	}
-
-	// Download from Telegram
-	reader, err := b.bot.File(teleFile)
+	ref, err := b.storeTelegramFile(b.deriveContext(), platformUserID, fileType, incoming)
 	if err != nil {
-		b.logger.Error("telegram: failed to download file",
-			slog.String("user", platformUserID),
-			slog.Any("error", err))
-		return nil
-	}
-	defer reader.Close()
-
-	// Store in FileStore
-	ctx := b.deriveContext()
-	ref, err := b.fileStore.Store(ctx, filestore.FileMeta{
-		Name:     filename,
-		MIMEType: mimeType,
-		FileType: fileType,
-	}, reader)
-	if err != nil {
-		b.logger.Error("telegram: failed to store file",
+		b.logger.Error("telegram: failed to persist file",
 			slog.String("user", platformUserID),
 			slog.Any("error", err))
 		return nil
@@ -257,39 +198,143 @@ func (b *Bot) handleFileMessage(c tele.Context, fileType model.FileType) error {
 		slog.String("file_type", string(fileType)),
 		slog.String("album_id", msg.AlbumID))
 
-	caption := ""
-	if msg.Caption != "" {
-		caption = msg.Caption
-	}
-
-	entry := albumEntry{
-		ref:      ref,
-		caption:  caption,
-		chatID:   chatID,
-		userID:   platformUserID,
-		updateID: updateID,
-		username: c.Sender().Username,
-	}
-
-	// If part of an album (media group), buffer and wait for more files.
+	entry := b.buildAlbumEntry(c, ref)
 	if b.albums.add(msg.AlbumID, entry) {
 		return nil
 	}
 
-	// Single file — dispatch immediately.
-	if err := b.handler(ctx, channel.Update{
-		ChannelType:      model.ChannelTelegram,
-		PlatformUserID:   model.PlatformUserID(platformUserID),
-		PlatformUpdateID: "tg:" + updateID,
-		Input:            model.FileInput{Caption: caption, Files: []model.FileRef{ref}},
-		ChatID:           chatID,
-		Username:         c.Sender().Username,
-	}); err != nil {
+	if err := b.dispatchFileUpdate(b.deriveContext(), chatID, platformUserID, updateID, c.Sender().Username, entry.caption, []model.FileRef{ref}); err != nil {
 		b.logger.Error("telegram: error handling file message",
 			slog.String("user", platformUserID),
 			slog.Any("error", err))
 	}
 	return nil
+}
+
+func extractIncomingTelegramFile(msg *tele.Message, fileType model.FileType) *telegramIncomingFile {
+	switch fileType {
+	case model.FileTypePhoto:
+		if msg.Photo == nil {
+			return nil
+		}
+		return &telegramIncomingFile{
+			file:     &msg.Photo.File,
+			name:     "photo.jpg",
+			mimeType: "image/jpeg",
+		}
+	case model.FileTypeDocument:
+		if msg.Document == nil {
+			return nil
+		}
+		return &telegramIncomingFile{
+			file:     &msg.Document.File,
+			name:     msg.Document.FileName,
+			mimeType: msg.Document.MIME,
+		}
+	case model.FileTypeAudio:
+		if msg.Audio == nil {
+			return nil
+		}
+		name := msg.Audio.FileName
+		if name == "" {
+			name = "audio"
+		}
+		return &telegramIncomingFile{
+			file:     &msg.Audio.File,
+			name:     name,
+			mimeType: msg.Audio.MIME,
+		}
+	case model.FileTypeVideo:
+		if msg.Video == nil {
+			return nil
+		}
+		name := msg.Video.FileName
+		if name == "" {
+			name = "video.mp4"
+		}
+		return &telegramIncomingFile{
+			file:     &msg.Video.File,
+			name:     name,
+			mimeType: msg.Video.MIME,
+		}
+	case model.FileTypeVoice:
+		if msg.Voice == nil {
+			return nil
+		}
+		return &telegramIncomingFile{
+			file:     &msg.Voice.File,
+			name:     "voice.ogg",
+			mimeType: msg.Voice.MIME,
+		}
+	default:
+		return nil
+	}
+}
+
+func (b *Bot) isFileTooLarge(platformUserID string, file *tele.File) bool {
+	if b.maxFileSize > 0 && int64(file.FileSize) > b.maxFileSize {
+		b.logger.Warn("telegram: file too large, ignoring",
+			slog.String("user", platformUserID),
+			slog.Int64("file_size", file.FileSize),
+			slog.Int64("max_size", b.maxFileSize))
+		return true
+	}
+	return false
+}
+
+func (b *Bot) storeTelegramFile(ctx context.Context, platformUserID string, fileType model.FileType, incoming *telegramIncomingFile) (model.FileRef, error) {
+	reader, err := b.bot.File(incoming.file)
+	if err != nil {
+		return model.FileRef{}, fmt.Errorf("download file for user %s: %w", platformUserID, err)
+	}
+	defer reader.Close()
+
+	ref, err := b.fileStore.Store(ctx, filestore.FileMeta{
+		Name:     incoming.name,
+		MIMEType: incoming.mimeType,
+		FileType: fileType,
+	}, reader)
+	if err != nil {
+		return model.FileRef{}, fmt.Errorf("store file for user %s: %w", platformUserID, err)
+	}
+	return ref, nil
+}
+
+func (b *Bot) buildAlbumEntry(c tele.Context, ref model.FileRef) albumEntry {
+	caption := c.Message().Caption
+	return albumEntry{
+		ref:      ref,
+		caption:  caption,
+		chatID:   strconv.FormatInt(c.Chat().ID, 10),
+		userID:   strconv.FormatInt(c.Sender().ID, 10),
+		updateID: strconv.Itoa(c.Update().ID),
+		username: c.Sender().Username,
+	}
+}
+
+func (b *Bot) dispatchFileUpdate(ctx context.Context, chatID, platformUserID, updateID, username, caption string, files []model.FileRef) error {
+	return b.handler(ctx, channel.Update{
+		ChannelType:      model.ChannelTelegram,
+		PlatformUserID:   model.PlatformUserID(platformUserID),
+		PlatformUpdateID: "tg:" + updateID,
+		Input:            model.FileInput{Caption: caption, Files: files},
+		ChatID:           chatID,
+		Username:         username,
+	})
+}
+
+func collectAlbumFiles(entries []albumEntry) ([]model.FileRef, string) {
+	refs := make([]model.FileRef, len(entries))
+	for i, entry := range entries {
+		refs[i] = entry.ref
+	}
+
+	for _, entry := range entries {
+		if entry.caption != "" {
+			return refs, entry.caption
+		}
+	}
+	return refs, ""
 }
 
 // flushAlbum is called when an album's flush timer fires. It combines all
@@ -300,34 +345,14 @@ func (b *Bot) flushAlbum(album *pendingAlbum) {
 	}
 
 	first := album.entries[0]
-	refs := make([]model.FileRef, len(album.entries))
-	for i, e := range album.entries {
-		refs[i] = e.ref
-	}
-
-	// Use caption from whichever entry has one (Telegram sets caption on first photo only).
-	caption := ""
-	for _, e := range album.entries {
-		if e.caption != "" {
-			caption = e.caption
-			break
-		}
-	}
+	refs, caption := collectAlbumFiles(album.entries)
 
 	b.logger.Info("telegram: flushing album",
 		slog.String("user", first.userID),
 		slog.String("chat", first.chatID),
 		slog.Int("files", len(refs)))
 
-	ctx := b.deriveContext()
-	if err := b.handler(ctx, channel.Update{
-		ChannelType:      model.ChannelTelegram,
-		PlatformUserID:   model.PlatformUserID(first.userID),
-		PlatformUpdateID: "tg:" + first.updateID,
-		Input:            model.FileInput{Caption: caption, Files: refs},
-		ChatID:           first.chatID,
-		Username:         first.username,
-	}); err != nil {
+	if err := b.dispatchFileUpdate(b.deriveContext(), first.chatID, first.userID, first.updateID, first.username, caption, refs); err != nil {
 		b.logger.Error("telegram: error handling album",
 			slog.String("user", first.userID),
 			slog.Any("error", err))

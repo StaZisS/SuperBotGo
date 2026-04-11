@@ -48,15 +48,21 @@ func (wp *WasmPlugin) Commands() []*state.CommandDefinition {
 			Description: t.Description,
 		}
 
-		for _, nd := range t.Nodes {
-			if cn := wp.nodeDefToCommandNode(nd); cn != nil {
-				def.Nodes = append(def.Nodes, cn)
-			}
-		}
+		def.Nodes = wp.commandNodes(t.Nodes)
 
 		defs = append(defs, def)
 	}
 	return defs
+}
+
+func (wp *WasmPlugin) commandNodes(defs []wasmrt.NodeDef) []state.CommandNode {
+	nodes := make([]state.CommandNode, 0, len(defs))
+	for _, nd := range defs {
+		if cn := wp.nodeDefToCommandNode(nd); cn != nil {
+			nodes = append(nodes, cn)
+		}
+	}
+	return nodes
 }
 
 func (wp *WasmPlugin) nodeDefToCommandNode(nd wasmrt.NodeDef) state.CommandNode {
@@ -78,96 +84,10 @@ func (wp *WasmPlugin) stepNodeDefToStepNode(nd wasmrt.NodeDef) state.StepNode {
 		ParamName: nd.Param,
 	}
 
-	if len(nd.Blocks) > 0 {
-		blocks := nd.Blocks
-		node.MessageBuilder = func(ctx state.StepContext) model.Message {
-			var contentBlocks []model.ContentBlock
-			for _, b := range blocks {
-				switch b.Type {
-				case "text":
-					text := resolveLocalized(b.Text, b.Texts, ctx.Locale)
-					contentBlocks = append(contentBlocks, model.TextBlock{
-						Text:  text,
-						Style: parseTextStyle(b.Style),
-					})
-				case "options":
-					opts := make([]model.Option, len(b.Options))
-					for j, o := range b.Options {
-						label := resolveLocalized(o.Label, o.Labels, ctx.Locale)
-						opts[j] = model.Option{Label: label, Value: o.Value}
-					}
-					prompt := resolveLocalized(b.Prompt, b.Prompts, ctx.Locale)
-					contentBlocks = append(contentBlocks, model.OptionsBlock{
-						Prompt:  prompt,
-						Options: opts,
-					})
-				case "dynamic_options":
-					opts := wp.callOptionsCallback(b.OptionsFn, ctx)
-					prompt := resolveLocalized(b.Prompt, b.Prompts, ctx.Locale)
-					contentBlocks = append(contentBlocks, model.OptionsBlock{
-						Prompt:  prompt,
-						Options: opts,
-					})
-				case "link":
-					contentBlocks = append(contentBlocks, model.LinkBlock{
-						URL:   b.URL,
-						Label: b.Label,
-					})
-				case "image":
-					contentBlocks = append(contentBlocks, model.ImageBlock{URL: b.URL})
-				}
-			}
-			return model.Message{Blocks: contentBlocks}
-		}
-	} else {
-		node.MessageBuilder = func(_ state.StepContext) model.Message {
-			return model.Message{}
-		}
-	}
-
-	if nd.Validation != "" {
-		pattern := nd.Validation
-		node.Validate = func(input model.UserInput) bool {
-			re, err := regexp.Compile(pattern)
-			if err != nil {
-				slog.Warn("wasm: invalid validation regex", "pattern", pattern, "error", err)
-				return false
-			}
-			return re.MatchString(input.TextValue())
-		}
-	}
-	if nd.ValidateFn != "" {
-		cbName := nd.ValidateFn
-		node.Validate = func(input model.UserInput) bool {
-			return wp.callValidateCallback(cbName, input.TextValue())
-		}
-	}
-
-	if nd.VisibleWhen != nil {
-		cond := nd.VisibleWhen
-		node.Condition = func(params model.OptionMap) bool {
-			return evalCondition(cond, params)
-		}
-	}
-	if nd.ConditionFn != "" {
-		cbName := nd.ConditionFn
-		node.Condition = func(params model.OptionMap) bool {
-			return wp.callConditionCallback(cbName, params)
-		}
-	}
-
-	if nd.Pagination != nil {
-		pag := nd.Pagination
-		cbName := pag.Provider
-		node.Pagination = &state.PaginationConfig{
-			Prompt:   pag.Prompt,
-			Prompts:  pag.Prompts,
-			PageSize: pag.PageSize,
-			PageProvider: func(ctx state.StepContext, page int) state.OptionsPage {
-				return wp.callPaginationCallback(cbName, ctx, page)
-			},
-		}
-	}
+	node.MessageBuilder = wp.buildStepMessage(nd.Blocks)
+	node.Validate = wp.buildStepValidator(nd)
+	node.Condition = wp.buildStepCondition(nd)
+	node.Pagination = wp.buildStepPagination(nd)
 
 	return node
 }
@@ -178,22 +98,10 @@ func (wp *WasmPlugin) branchNodeDefToBranchNode(nd wasmrt.NodeDef) state.BranchN
 		Cases:   make(map[string][]state.CommandNode),
 	}
 	for value, children := range nd.Cases {
-		var nodes []state.CommandNode
-		for _, child := range children {
-			if cn := wp.nodeDefToCommandNode(child); cn != nil {
-				nodes = append(nodes, cn)
-			}
-		}
-		bn.Cases[value] = nodes
+		bn.Cases[value] = wp.commandNodes(children)
 	}
 	if len(nd.Default) > 0 {
-		var nodes []state.CommandNode
-		for _, child := range nd.Default {
-			if cn := wp.nodeDefToCommandNode(child); cn != nil {
-				nodes = append(nodes, cn)
-			}
-		}
-		bn.Default = nodes
+		bn.Default = wp.commandNodes(nd.Default)
 	}
 	return bn
 }
@@ -201,44 +109,127 @@ func (wp *WasmPlugin) branchNodeDefToBranchNode(nd wasmrt.NodeDef) state.BranchN
 func (wp *WasmPlugin) condBranchNodeDefToCondBranchNode(nd wasmrt.NodeDef) state.ConditionalBranchNode {
 	cbn := state.ConditionalBranchNode{}
 	for _, cc := range nd.ConditionalCases {
-		childNodes := make([]state.CommandNode, 0, len(cc.Nodes))
-		for _, child := range cc.Nodes {
-			if cn := wp.nodeDefToCommandNode(child); cn != nil {
-				childNodes = append(childNodes, cn)
-			}
-		}
-
-		var predicate func(model.OptionMap) bool
-		if cc.Condition != nil {
-			cond := cc.Condition
-			predicate = func(params model.OptionMap) bool {
-				return evalCondition(cond, params)
-			}
-		}
-		if cc.ConditionFn != "" {
-			cbName := cc.ConditionFn
-			predicate = func(params model.OptionMap) bool {
-				return wp.callConditionCallback(cbName, params)
-			}
-		}
+		predicate := wp.conditionalPredicate(cc.Condition, cc.ConditionFn)
 
 		if predicate != nil {
 			cbn.Cases = append(cbn.Cases, state.ConditionalCase{
 				Predicate: predicate,
-				Nodes:     childNodes,
+				Nodes:     wp.commandNodes(cc.Nodes),
 			})
 		}
 	}
 	if len(nd.Default) > 0 {
-		var nodes []state.CommandNode
-		for _, child := range nd.Default {
-			if cn := wp.nodeDefToCommandNode(child); cn != nil {
-				nodes = append(nodes, cn)
-			}
-		}
-		cbn.Default = nodes
+		cbn.Default = wp.commandNodes(nd.Default)
 	}
 	return cbn
+}
+
+func (wp *WasmPlugin) buildStepMessage(blocks []wasmrt.BlockDef) func(state.StepContext) model.Message {
+	if len(blocks) == 0 {
+		return func(state.StepContext) model.Message { return model.Message{} }
+	}
+	return func(ctx state.StepContext) model.Message {
+		contentBlocks := make([]model.ContentBlock, 0, len(blocks))
+		for _, block := range blocks {
+			if rendered := wp.renderStepBlock(block, ctx); rendered != nil {
+				contentBlocks = append(contentBlocks, rendered)
+			}
+		}
+		return model.Message{Blocks: contentBlocks}
+	}
+}
+
+func (wp *WasmPlugin) renderStepBlock(block wasmrt.BlockDef, ctx state.StepContext) model.ContentBlock {
+	switch block.Type {
+	case "text":
+		return model.TextBlock{
+			Text:  resolveLocalized(block.Text, block.Texts, ctx.Locale),
+			Style: parseTextStyle(block.Style),
+		}
+	case "options":
+		return model.OptionsBlock{
+			Prompt:  resolveLocalized(block.Prompt, block.Prompts, ctx.Locale),
+			Options: convertOptions(block.Options, ctx.Locale),
+		}
+	case "dynamic_options":
+		return model.OptionsBlock{
+			Prompt:  resolveLocalized(block.Prompt, block.Prompts, ctx.Locale),
+			Options: wp.callOptionsCallback(block.OptionsFn, ctx),
+		}
+	case "link":
+		return model.LinkBlock{URL: block.URL, Label: block.Label}
+	case "image":
+		return model.ImageBlock{URL: block.URL}
+	default:
+		return nil
+	}
+}
+
+func (wp *WasmPlugin) buildStepValidator(nd wasmrt.NodeDef) func(model.UserInput) bool {
+	if nd.ValidateFn != "" {
+		cbName := nd.ValidateFn
+		return func(input model.UserInput) bool {
+			return wp.callValidateCallback(cbName, input.TextValue())
+		}
+	}
+	if nd.Validation == "" {
+		return nil
+	}
+	pattern := nd.Validation
+	return func(input model.UserInput) bool {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			slog.Warn("wasm: invalid validation regex", "pattern", pattern, "error", err)
+			return false
+		}
+		return re.MatchString(input.TextValue())
+	}
+}
+
+func (wp *WasmPlugin) buildStepCondition(nd wasmrt.NodeDef) func(model.OptionMap) bool {
+	if nd.ConditionFn != "" {
+		cbName := nd.ConditionFn
+		return func(params model.OptionMap) bool {
+			return wp.callConditionCallback(cbName, params)
+		}
+	}
+	if nd.VisibleWhen == nil {
+		return nil
+	}
+	cond := nd.VisibleWhen
+	return func(params model.OptionMap) bool {
+		return evalCondition(cond, params)
+	}
+}
+
+func (wp *WasmPlugin) buildStepPagination(nd wasmrt.NodeDef) *state.PaginationConfig {
+	if nd.Pagination == nil {
+		return nil
+	}
+	pag := nd.Pagination
+	cbName := pag.Provider
+	return &state.PaginationConfig{
+		Prompt:   pag.Prompt,
+		Prompts:  pag.Prompts,
+		PageSize: pag.PageSize,
+		PageProvider: func(ctx state.StepContext, page int) state.OptionsPage {
+			return wp.callPaginationCallback(cbName, ctx, page)
+		},
+	}
+}
+
+func (wp *WasmPlugin) conditionalPredicate(cond *wasmrt.ConditionDef, callbackName string) func(model.OptionMap) bool {
+	if callbackName != "" {
+		return func(params model.OptionMap) bool {
+			return wp.callConditionCallback(callbackName, params)
+		}
+	}
+	if cond == nil {
+		return nil
+	}
+	return func(params model.OptionMap) bool {
+		return evalCondition(cond, params)
+	}
 }
 
 // callStepCallback is the shared call/unmarshal path for all wasm step callbacks.
