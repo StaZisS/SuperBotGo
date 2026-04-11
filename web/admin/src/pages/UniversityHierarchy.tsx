@@ -1,9 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Link } from 'react-router-dom'
 import { api, RefItem } from '@/api/client'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/utils'
-import { Plus, Pencil, Trash2, Upload } from 'lucide-react'
+import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -133,92 +132,92 @@ function EntityTab({ config }: { config: EntityTabConfig }) {
   const setField = (key: string, value: any) => setForm(prev => ({ ...prev, [key]: value }))
 
   return (
-      <div className="space-y-4">
-        {config.parentCascade && (
-            <CascadingSelect levels={config.parentCascade} values={cascade} onChange={setCascade} />
-        )}
+    <div className="space-y-4">
+      {config.parentCascade && (
+        <CascadingSelect levels={config.parentCascade} values={cascade} onChange={setCascade} />
+      )}
 
-        {canList && (
-            <>
-              <div className="flex justify-end">
-                <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                  <Button variant="outline" size="sm" onClick={openAdd}>
-                    <Plus className="mr-1 h-4 w-4" />Добавить
-                  </Button>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>{editingId ? 'Редактировать' : 'Создать'}</DialogTitle>
-                    </DialogHeader>
-                    <div className="grid gap-3">
-                      {config.fields.map(f => (
-                          <div key={f.key} className="space-y-1.5">
-                            <Label className="text-xs">{f.label}{f.required && ' *'}</Label>
-                            {f.type === 'select' && f.options ? (
-                                <Select value={form[f.key] || ''} onValueChange={v => setField(f.key, v)}>
-                                  <SelectTrigger><SelectValue placeholder="Выберите" /></SelectTrigger>
-                                  <SelectContent>
-                                    {Object.entries(f.options).map(([k, v]) => (
-                                        <SelectItem key={k} value={k}>{v}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                            ) : (
-                                <Input
-                                    type={f.type === 'number' ? 'number' : 'text'}
-                                    value={form[f.key] ?? ''}
-                                    onChange={e => setField(f.key, e.target.value)}
-                                />
-                            )}
-                          </div>
-                      ))}
+      {canList && (
+        <>
+          <div className="flex justify-end">
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+              <Button variant="outline" size="sm" onClick={openAdd}>
+                <Plus className="mr-1 h-4 w-4" />Добавить
+              </Button>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>{editingId ? 'Редактировать' : 'Создать'}</DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-3">
+                  {config.fields.map(f => (
+                    <div key={f.key} className="space-y-1.5">
+                      <Label className="text-xs">{f.label}{f.required && ' *'}</Label>
+                      {f.type === 'select' && f.options ? (
+                        <Select value={form[f.key] || ''} onValueChange={v => setField(f.key, v)}>
+                          <SelectTrigger><SelectValue placeholder="Выберите" /></SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(f.options).map(([k, v]) => (
+                              <SelectItem key={k} value={k}>{v}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input
+                          type={f.type === 'number' ? 'number' : 'text'}
+                          value={form[f.key] ?? ''}
+                          onChange={e => setField(f.key, e.target.value)}
+                        />
+                      )}
                     </div>
-                    <DialogFooter>
-                      <Button onClick={handleSave}>Сохранить</Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </div>
+                  ))}
+                </div>
+                <DialogFooter>
+                  <Button onClick={handleSave}>Сохранить</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
 
-              {loading ? (
-                  <p className="text-sm text-muted-foreground">Загрузка...</p>
-              ) : items.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Нет записей</p>
-              ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-20">ID</TableHead>
-                        <TableHead>Код</TableHead>
-                        <TableHead>Название</TableHead>
-                        <TableHead className="w-24 text-right">Действия</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {items.map(item => (
-                          <TableRow key={item.id}>
-                            <TableCell className="font-mono text-sm">{item.id}</TableCell>
-                            <TableCell className="font-mono">{item.code}</TableCell>
-                            <TableCell>{item.name}</TableCell>
-                            <TableCell className="text-right space-x-1">
-                              <Button variant="ghost" size="icon" onClick={() => openEdit(item)}>
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                              <Button variant="ghost" size="icon" onClick={() => handleDelete(item.id)}>
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-              )}
-            </>
-        )}
+          {loading ? (
+            <p className="text-sm text-muted-foreground">Загрузка...</p>
+          ) : items.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Нет записей</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-20">ID</TableHead>
+                  <TableHead>Код</TableHead>
+                  <TableHead>Название</TableHead>
+                  <TableHead className="w-24 text-right">Действия</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map(item => (
+                  <TableRow key={item.id}>
+                    <TableCell className="font-mono text-sm">{item.id}</TableCell>
+                    <TableCell className="font-mono">{item.code}</TableCell>
+                    <TableCell>{item.name}</TableCell>
+                    <TableCell className="text-right space-x-1">
+                      <Button variant="ghost" size="icon" onClick={() => openEdit(item)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => handleDelete(item.id)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </>
+      )}
 
-        {!canList && (
-            <p className="text-sm text-muted-foreground py-4">Выберите родительский элемент в фильтре выше</p>
-        )}
-      </div>
+      {!canList && (
+        <p className="text-sm text-muted-foreground py-4">Выберите родительский элемент в фильтре выше</p>
+      )}
+    </div>
   )
 }
 
@@ -332,35 +331,27 @@ const TABS: { key: string; label: string; config: EntityTabConfig }[] = [
 
 export default function UniversityHierarchy() {
   return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Структура университета</h1>
-          <Button variant="outline" size="sm" asChild>
-            <Link to="/admin/import/students">
-              <Upload className="mr-1.5 h-4 w-4" />
-              Импорт студентов
-            </Link>
-          </Button>
-        </div>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Управление иерархией</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Tabs defaultValue="faculties">
-              <TabsList className="flex flex-wrap h-auto gap-1 mb-4">
-                {TABS.map(t => (
-                    <TabsTrigger key={t.key} value={t.key} className="text-xs">{t.label}</TabsTrigger>
-                ))}
-              </TabsList>
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold">Структура университета</h1>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Управление иерархией</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Tabs defaultValue="faculties">
+            <TabsList className="flex flex-wrap h-auto gap-1 mb-4">
               {TABS.map(t => (
-                  <TabsContent key={t.key} value={t.key}>
-                    <EntityTab config={t.config} />
-                  </TabsContent>
+                <TabsTrigger key={t.key} value={t.key} className="text-xs">{t.label}</TabsTrigger>
               ))}
-            </Tabs>
-          </CardContent>
-        </Card>
-      </div>
+            </TabsList>
+            {TABS.map(t => (
+              <TabsContent key={t.key} value={t.key}>
+                <EntityTab config={t.config} />
+              </TabsContent>
+            ))}
+          </Tabs>
+        </CardContent>
+      </Card>
+    </div>
   )
 }
