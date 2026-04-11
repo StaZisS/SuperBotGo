@@ -1,9 +1,10 @@
+// web/admin/src/api/client.ts
 const BASE = '/api/admin'
 
 export class ApiError extends Error {
   constructor(
-    message: string,
-    public status: number,
+      message: string,
+      public status: number,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -46,9 +47,9 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     const msg =
-      (data && typeof data === 'object' && 'error' in data && typeof (data as Record<string, unknown>).error === 'string')
-        ? (data as Record<string, string>).error
-        : `HTTP ${res.status}`
+        (data && typeof data === 'object' && 'error' in data && typeof (data as Record<string, unknown>).error === 'string')
+            ? (data as Record<string, string>).error
+            : `HTTP ${res.status}`
     throw new ApiError(msg, res.status)
   }
 
@@ -294,17 +295,33 @@ export interface AdminCredentialInfo {
   updated_at: string
 }
 
+// === IMPORT ===
+
+export interface ImportResult {
+  total: number
+  created: number
+  updated: number
+  skipped: number
+  errors: ImportError[]
+}
+
+export interface ImportError {
+  row: number
+  field?: string
+  message: string
+}
+
 // Helpers for university reference CRUD — reduce per-entity boilerplate.
 const refList = (res: string, param?: string) => (parentId?: number) => {
   const qs = param && parentId != null ? `?${param}=${parentId}` : ''
   return request<RefItem[]>(`/university/${res}${qs}`)
 }
 const refCreate = (res: string) => (data: Record<string, unknown>) =>
-  request<{ id: number }>(`/university/manage/${res}`, { method: 'POST', body: JSON.stringify(data) })
+    request<{ id: number }>(`/university/manage/${res}`, { method: 'POST', body: JSON.stringify(data) })
 const refUpdate = (res: string) => (id: number, data: Record<string, unknown>) =>
-  request<{ status: string }>(`/university/manage/${res}/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+    request<{ status: string }>(`/university/manage/${res}/${id}`, { method: 'PUT', body: JSON.stringify(data) })
 const refDelete = (res: string) => (id: number) =>
-  request<{ status: string }>(`/university/manage/${res}/${id}`, { method: 'DELETE' })
+    request<{ status: string }>(`/university/manage/${res}/${id}`, { method: 'DELETE' })
 
 export const api = {
   listPlugins: () => request<PluginInfo[]>('/plugins'),
@@ -318,16 +335,16 @@ export const api = {
   },
 
   installPlugin: (id: string, body: { wasm_key: string; config: unknown }) =>
-    request<{ id: string; status: string }>(`/plugins/${encodeURIComponent(id)}/install`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
+      request<{ id: string; status: string }>(`/plugins/${encodeURIComponent(id)}/install`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
 
   updateConfig: (id: string, config: unknown) =>
-    request<{ status: string }>(`/plugins/${encodeURIComponent(id)}/config`, {
-      method: 'PUT',
-      body: JSON.stringify({ config }),
-    }),
+      request<{ status: string }>(`/plugins/${encodeURIComponent(id)}/config`, {
+        method: 'PUT',
+        body: JSON.stringify({ config }),
+      }),
 
   updatePlugin: (id: string, file: File) => {
     const form = new FormData()
@@ -339,48 +356,48 @@ export const api = {
   },
 
   disablePlugin: (id: string) =>
-    request<{ status: string }>(`/plugins/${encodeURIComponent(id)}/disable`, { method: 'POST' }),
+      request<{ status: string }>(`/plugins/${encodeURIComponent(id)}/disable`, { method: 'POST' }),
 
   enablePlugin: (id: string) =>
-    request<{ status: string }>(`/plugins/${encodeURIComponent(id)}/enable`, { method: 'POST' }),
+      request<{ status: string }>(`/plugins/${encodeURIComponent(id)}/enable`, { method: 'POST' }),
 
   deletePlugin: (id: string) =>
-    request<{ status: string }>(`/plugins/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+      request<{ status: string }>(`/plugins/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
   getRuleSchema: () => request<RuleSchema>('/rule-schema'),
 
   listCommandSettings: (pluginId: string) =>
-    request<CommandSetting[]>(`/plugins/${encodeURIComponent(pluginId)}/commands/settings`),
+      request<CommandSetting[]>(`/plugins/${encodeURIComponent(pluginId)}/commands/settings`),
 
   setCommandEnabled: (pluginId: string, commandName: string, enabled: boolean) =>
-    request<{ status: string }>(
-      `/plugins/${encodeURIComponent(pluginId)}/commands/${encodeURIComponent(commandName)}/enabled`,
-      { method: 'PUT', body: JSON.stringify({ enabled }) },
-    ),
+      request<{ status: string }>(
+          `/plugins/${encodeURIComponent(pluginId)}/commands/${encodeURIComponent(commandName)}/enabled`,
+          { method: 'PUT', body: JSON.stringify({ enabled }) },
+      ),
 
   setCommandPolicy: (pluginId: string, commandName: string, expression: string) =>
-    request<{ status: string }>(
-      `/plugins/${encodeURIComponent(pluginId)}/commands/${encodeURIComponent(commandName)}/policy`,
-      { method: 'PUT', body: JSON.stringify({ expression }) },
-    ),
+      request<{ status: string }>(
+          `/plugins/${encodeURIComponent(pluginId)}/commands/${encodeURIComponent(commandName)}/policy`,
+          { method: 'PUT', body: JSON.stringify({ expression }) },
+      ),
 
   getPluginRequirements: (id: string) =>
-    request<PluginRequirementsDetail>(`/plugins/${encodeURIComponent(id)}/requirements`),
+      request<PluginRequirementsDetail>(`/plugins/${encodeURIComponent(id)}/requirements`),
 
   listVersions: (pluginId: string) =>
-    request<VersionInfo[]>(`/plugins/${encodeURIComponent(pluginId)}/versions`),
+      request<VersionInfo[]>(`/plugins/${encodeURIComponent(pluginId)}/versions`),
 
   rollbackVersion: (pluginId: string, versionId: number) =>
-    request<{ status: string; version: string; version_id: number }>(
-      `/plugins/${encodeURIComponent(pluginId)}/versions/${versionId}/rollback`,
-      { method: 'POST' },
-    ),
+      request<{ status: string; version: string; version_id: number }>(
+          `/plugins/${encodeURIComponent(pluginId)}/versions/${versionId}/rollback`,
+          { method: 'POST' },
+      ),
 
   deleteVersion: (pluginId: string, versionId: number) =>
-    request<{ status: string }>(
-      `/plugins/${encodeURIComponent(pluginId)}/versions/${versionId}`,
-      { method: 'DELETE' },
-    ),
+      request<{ status: string }>(
+          `/plugins/${encodeURIComponent(pluginId)}/versions/${versionId}`,
+          { method: 'DELETE' },
+      ),
 
   listChannelStatus: () => request<ChannelStatus[]>('/channels/status'),
 
@@ -393,10 +410,10 @@ export const api = {
   },
 
   broadcast: (chatIds: number[], text: string) =>
-    request<BroadcastResult[]>('/broadcast', {
-      method: 'POST',
-      body: JSON.stringify({ chat_ids: chatIds, text }),
-    }),
+      request<BroadcastResult[]>('/broadcast', {
+        method: 'POST',
+        body: JSON.stringify({ chat_ids: chatIds, text }),
+      }),
 
   // === USERS ===
 
@@ -538,4 +555,30 @@ export const api = {
         if (!res.ok) throw new ApiError(data.error ?? `HTTP ${res.status}`, res.status)
         return data as { status: string }
       }),
+
+  // === IMPORT ===
+
+  downloadImportTemplate: () =>
+      fetch(`${BASE}/import/template`)
+          .then((res) => {
+            if (!res.ok) throw new ApiError(`HTTP ${res.status}`, res.status)
+            return res.blob()
+          })
+          .then((blob) => {
+            const url = window.URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = 'students_template.xlsx'
+            a.click()
+            window.URL.revokeObjectURL(url)
+          }),
+
+  importStudents: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<ImportResult>(`/import/students`, {
+      method: 'POST',
+      body: form,
+    })
+  },
 }

@@ -15,6 +15,7 @@ import UserDetail from './pages/UserDetail'
 import UniversityHierarchy from './pages/UniversityHierarchy'
 import Login from './pages/Login'
 import { AuthProvider, useAuth } from './hooks/useAuth'
+import StudentImport from './pages/StudentImport'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { authenticated, loading } = useAuth()
@@ -52,6 +53,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="/admin/plugins/:id/versions" element={<PluginVersions />} />
               <Route path="/admin/university" element={<UniversityHierarchy />} />
               <Route path="*" element={<Navigate to="/admin/plugins" replace />} />
+              <Route path="/admin/import/students" element={<StudentImport />} />
             </Route>
           </Routes>
         </RequireAuth>
