@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Clock, Globe, Radio, Terminal, TriangleAlert } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { ArrowLeft, Clock, Globe, Radio, Terminal, TriangleAlert } from 'lucide-react'
 import { api, PluginMeta } from '@/api/client'
 import WasmUploader from '@/components/WasmUploader'
 import RequirementsPanel from '@/components/RequirementsPanel'
@@ -149,6 +149,12 @@ export default function PluginUpload() {
   return (
     <div>
       <div className="mb-6">
+        <Button variant="ghost" size="sm" asChild className="mb-2 -ml-2">
+          <Link to="/admin/plugins">
+            <ArrowLeft className="mr-1 h-4 w-4" />
+            Назад
+          </Link>
+        </Button>
         <h2 className="text-lg font-semibold">Загрузка плагина</h2>
         <p className="text-sm text-muted-foreground mt-1">
           Загрузите .wasm файл для установки нового плагина

@@ -38,5 +38,5 @@ vendor/
 .DS_Store
 Thumbs.db
 .codex/
-.claude/
+.codex/
 skills-lock.json

@@ -49,6 +49,8 @@
 "settings.channel_updated" = "Уведомления будут приходить в {{.V0}}."
 "settings.ch_telegram" = "Только Telegram"
 "settings.ch_discord" = "Только Discord"
+"settings.ch_vk" = "Только VK"
+"settings.ch_mattermost" = "Только Mattermost"
 "settings.ch_tg_then_dc" = "Сначала Telegram, затем Discord"
 "settings.ch_dc_then_tg" = "Сначала Discord, затем Telegram"
 "settings.mute_mentions" = "Упоминания (@)"

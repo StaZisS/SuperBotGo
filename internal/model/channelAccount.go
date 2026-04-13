@@ -3,8 +3,10 @@ package model
 type ChannelType string
 
 const (
-	ChannelTelegram ChannelType = "TELEGRAM"
-	ChannelDiscord  ChannelType = "DISCORD"
+	ChannelTelegram   ChannelType = "TELEGRAM"
+	ChannelDiscord    ChannelType = "DISCORD"
+	ChannelVK         ChannelType = "VK"
+	ChannelMattermost ChannelType = "MATTERMOST"
 )
 
 type ChannelAccount struct {

@@ -50,11 +50,18 @@ func (formatter) FormatText(b model.TextBlock) string {
 
 func (formatter) FormatMention(b model.MentionBlock) string {
 	name := escapeHTML(b.Username)
+	if name == "" {
+		name = "user"
+	}
 	return fmt.Sprintf(`<a href="tg://user?id=%s">%s</a>`, b.UserID, name)
 }
 
 func (formatter) FormatLink(b model.LinkBlock) string {
-	label := escapeHTML(b.Label)
+	label := b.Label
+	if label == "" {
+		label = b.URL
+	}
+	label = escapeHTML(label)
 	return fmt.Sprintf(`<a href="%s">%s</a>`, b.URL, label)
 }
 
@@ -71,6 +78,9 @@ func (r *Renderer) Render(msg model.Message) RenderedMessage {
 	}
 
 	text := strings.Join(parts.TextParts, "\n")
+	if text == "" && parts.Options != nil {
+		text = strings.Join(renderOptionLines(parts.Options.Options), "\n")
+	}
 	if len([]rune(text)) > telegramMaxMessageLength {
 		runes := []rune(text)
 		text = string(runes[:telegramMaxMessageLength-3]) + "..."
@@ -88,12 +98,28 @@ func (r *Renderer) Render(msg model.Message) RenderedMessage {
 func buildOptionsKeyboard(b model.OptionsBlock) [][]InlineButton {
 	keyboard := make([][]InlineButton, 0, len(b.Options))
 	for _, opt := range b.Options {
+		label := channel.OptionLabel(opt)
+		if label == "" {
+			continue
+		}
 		row := []InlineButton{
-			{Text: opt.Label, CallbackData: opt.Value},
+			{Text: label, CallbackData: opt.Value},
 		}
 		keyboard = append(keyboard, row)
 	}
 	return keyboard
+}
+
+func renderOptionLines(options []model.Option) []string {
+	lines := make([]string, 0, len(options))
+	for _, opt := range options {
+		label := channel.OptionLabel(opt)
+		if label == "" {
+			continue
+		}
+		lines = append(lines, "• "+escapeHTML(label))
+	}
+	return lines
 }
 
 func escapeHTML(text string) string {

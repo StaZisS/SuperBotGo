@@ -57,6 +57,8 @@ func SettingsCommand() *state.CommandDefinition {
 						p.LocalizedOptions("settings.channel_prompt", func(o *state.OptionsBuilder) {
 							o.LocalizedOption("settings.ch_telegram", "TELEGRAM")
 							o.LocalizedOption("settings.ch_discord", "DISCORD")
+							o.LocalizedOption("settings.ch_vk", "VK")
+							o.LocalizedOption("settings.ch_mattermost", "MATTERMOST")
 							o.LocalizedOption("settings.ch_tg_then_dc", "TELEGRAM,DISCORD")
 							o.LocalizedOption("settings.ch_dc_then_tg", "DISCORD,TELEGRAM")
 						})
@@ -273,6 +275,10 @@ func formatChannelDisplay(raw string) string {
 			parts[i] = "Telegram"
 		case "DISCORD":
 			parts[i] = "Discord"
+		case "VK":
+			parts[i] = "VK"
+		case "MATTERMOST":
+			parts[i] = "Mattermost"
 		}
 	}
 	return strings.Join(parts, " → ")

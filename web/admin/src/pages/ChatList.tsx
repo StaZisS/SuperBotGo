@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import ChannelStatusCard from '@/components/ChannelStatusCard'
 
-const CHANNEL_TYPES = ['', 'TELEGRAM', 'DISCORD'] as const
+const CHANNEL_TYPES = ['', 'TELEGRAM', 'DISCORD', 'VK', 'MATTERMOST'] as const
 const CHAT_KINDS = ['', 'GROUP', 'PRIVATE', 'CHANNEL'] as const
 
 const kindLabel: Record<string, string> = {
@@ -27,11 +27,15 @@ const kindLabel: Record<string, string> = {
 const channelLabel: Record<string, string> = {
   TELEGRAM: 'Telegram',
   DISCORD: 'Discord',
+  VK: 'VK',
+  MATTERMOST: 'Mattermost',
 }
 
 const channelVariant: Record<string, 'default' | 'secondary' | 'outline'> = {
   TELEGRAM: 'default',
   DISCORD: 'secondary',
+  VK: 'outline',
+  MATTERMOST: 'secondary',
 }
 
 const MAX_BROADCAST_LENGTH = 4096

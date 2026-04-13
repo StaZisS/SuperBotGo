@@ -9,12 +9,14 @@ import { Badge } from '@/components/ui/badge'
 import { Search, Trash2, X, Loader2, Users } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
-const CHANNEL_SHORT: Record<string, string> = { TELEGRAM: 'TG', DISCORD: 'DC' }
+const CHANNEL_SHORT: Record<string, string> = { TELEGRAM: 'TG', DISCORD: 'DC', VK: 'VK', MATTERMOST: 'MM' }
 
 const CHANNEL_FILTERS = [
     { value: '', label: 'Все каналы' },
     { value: 'TELEGRAM', label: 'Telegram' },
     { value: 'DISCORD', label: 'Discord' },
+    { value: 'VK', label: 'VK' },
+    { value: 'MATTERMOST', label: 'Mattermost' },
 ]
 
 const ROLE_FILTERS = [

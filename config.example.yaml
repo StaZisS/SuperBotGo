@@ -33,7 +33,7 @@ redis:
 
 telegram:
   token: "YOUR_TELEGRAM_BOT_TOKEN"
-  mode: polling              # "polling" (default, for dev) or "webhook" (for prod/k8s)
+  mode: polling              # "polling" or "webhook"
   # webhook_url: ""          # required when mode=webhook, e.g. "https://bot.example.com/tg/webhook"
   # webhook_secret: ""       # optional secret token for webhook request validation
   # webhook_listen: ":8443"  # local address for webhook HTTP server
@@ -42,6 +42,19 @@ discord:
   token: "YOUR_DISCORD_BOT_TOKEN"
   shard_id: 0                # 0-indexed shard identifier (default 0)
   shard_count: 1             # total number of shards (1 = no sharding)
+
+vk:
+  token: "YOUR_VK_COMMUNITY_TOKEN"
+  mode: longpoll                # "longpoll" or "callback"
+  # callback_url: ""           # required when mode=callback, e.g. "https://bot.example.com/vk/callback"
+  callback_path: "/vk/callback" # local HTTP path handled by SuperBotGo
+
+mattermost:
+  url: "https://mattermost.example.com"
+  token: "YOUR_MATTERMOST_BOT_TOKEN"
+  # actions_url: ""            # public URL for interactive button callbacks, e.g. "https://bot.example.com/mattermost/actions"
+  actions_path: "/mattermost/actions" # local HTTP path handled by SuperBotGo
+  # actions_secret: ""         # shared secret embedded into interactive action callbacks
 
 filestore:
   default_ttl: "24h"

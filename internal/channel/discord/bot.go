@@ -32,6 +32,7 @@ type Bot struct {
 	logger       *slog.Logger
 	connected    atomic.Bool
 	lifecycleCtx context.Context
+	tracker      *channelTracker
 }
 
 func NewBot(cfg BotConfig, handler channel.UpdateHandlerFunc, joinHandler channel.ChatJoinHandler, fs filestore.FileStore, maxFileSize int64, logger *slog.Logger) (*Bot, error) {
@@ -65,6 +66,7 @@ func NewBot(cfg BotConfig, handler channel.UpdateHandlerFunc, joinHandler channe
 		httpClient:  &http.Client{Timeout: 30 * time.Second},
 		maxFileSize: maxFileSize,
 		logger:      logger,
+		tracker:     newChannelTracker(),
 	}
 
 	b.registerHandlers()
@@ -115,11 +117,13 @@ func (b *Bot) registerHandlers() {
 			slog.String("guild_name", g.Name))
 
 		ctx := b.deriveContext()
+		textChannelIDs := make([]string, 0, len(g.Channels))
 
 		for _, ch := range g.Channels {
 			if ch.Type != discordgo.ChannelTypeGuildText {
 				continue
 			}
+			textChannelIDs = append(textChannelIDs, ch.ID)
 
 			b.logger.Info("discord: registering channel",
 				slog.String("channel_id", ch.ID),
@@ -133,6 +137,7 @@ func (b *Bot) registerHandlers() {
 					slog.Any("error", err))
 			}
 		}
+		b.tracker.ReplaceGuild(g.ID, textChannelIDs)
 	})
 
 	b.session.AddHandler(func(s *discordgo.Session, g *discordgo.GuildDelete) {
@@ -151,9 +156,21 @@ func (b *Bot) registerHandlers() {
 		}
 
 		if len(channels) == 0 {
-			b.logger.Warn("discord: guild channels not available in cache, cannot unregister",
-				slog.String("guild_id", g.ID))
-			return
+			tracked := b.tracker.RemoveGuild(g.ID)
+			if len(tracked) == 0 {
+				b.logger.Warn("discord: guild channels not available in cache, cannot unregister",
+					slog.String("guild_id", g.ID))
+				return
+			}
+			channels = make([]*discordgo.Channel, 0, len(tracked))
+			for _, channelID := range tracked {
+				channels = append(channels, &discordgo.Channel{
+					ID:   channelID,
+					Type: discordgo.ChannelTypeGuildText,
+				})
+			}
+		} else {
+			b.tracker.RemoveGuild(g.ID)
 		}
 
 		for _, ch := range channels {
@@ -166,6 +183,18 @@ func (b *Bot) registerHandlers() {
 					slog.Any("error", err))
 			}
 		}
+	})
+
+	b.session.AddHandler(func(s *discordgo.Session, c *discordgo.ChannelCreate) {
+		b.syncGuildTextChannel(c.Channel, false)
+	})
+
+	b.session.AddHandler(func(s *discordgo.Session, c *discordgo.ChannelUpdate) {
+		b.syncGuildTextChannel(c.Channel, true)
+	})
+
+	b.session.AddHandler(func(s *discordgo.Session, c *discordgo.ChannelDelete) {
+		b.removeGuildTextChannel(c.Channel)
 	})
 
 	b.session.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -313,6 +342,78 @@ func detectFileType(contentType string) model.FileType {
 	default:
 		return model.FileTypeDocument
 	}
+}
+
+func (b *Bot) syncGuildTextChannel(ch *discordgo.Channel, updateTitle bool) {
+	if b.joinHandler == nil || ch == nil || ch.Type != discordgo.ChannelTypeGuildText || ch.GuildID == "" {
+		return
+	}
+
+	b.tracker.Upsert(ch.GuildID, ch.ID)
+
+	title := b.resolveChannelTitle(ch)
+	ctx := b.deriveContext()
+	if err := b.joinHandler.OnChatJoin(ctx, model.ChannelDiscord, ch.ID, model.ChatKindGroup, title); err != nil {
+		b.logger.Error("discord: failed to sync channel",
+			slog.String("channel_id", ch.ID),
+			slog.String("guild_id", ch.GuildID),
+			slog.Any("error", err))
+		return
+	}
+
+	if updateTitle {
+		b.logger.Info("discord: channel updated",
+			slog.String("channel_id", ch.ID),
+			slog.String("guild_id", ch.GuildID),
+			slog.String("title", title))
+		return
+	}
+
+	b.logger.Info("discord: channel created",
+		slog.String("channel_id", ch.ID),
+		slog.String("guild_id", ch.GuildID),
+		slog.String("title", title))
+}
+
+func (b *Bot) removeGuildTextChannel(ch *discordgo.Channel) {
+	if b.joinHandler == nil || ch == nil {
+		return
+	}
+	if ch.Type != discordgo.ChannelTypeGuildText && !b.tracker.Has(ch.ID) {
+		return
+	}
+
+	b.tracker.Remove(ch.ID)
+
+	ctx := b.deriveContext()
+	if err := b.joinHandler.OnChatLeave(ctx, model.ChannelDiscord, ch.ID); err != nil {
+		b.logger.Error("discord: failed to unregister deleted channel",
+			slog.String("channel_id", ch.ID),
+			slog.Any("error", err))
+		return
+	}
+
+	b.logger.Info("discord: channel deleted",
+		slog.String("channel_id", ch.ID),
+		slog.String("guild_id", ch.GuildID))
+}
+
+func (b *Bot) resolveChannelTitle(ch *discordgo.Channel) string {
+	if ch == nil {
+		return ""
+	}
+
+	guildName := ch.GuildID
+	if guild, err := b.session.State.Guild(ch.GuildID); err == nil && guild != nil && guild.Name != "" {
+		guildName = guild.Name
+	}
+	if guildName == "" {
+		return ch.Name
+	}
+	if ch.Name == "" {
+		return guildName
+	}
+	return guildName + " / " + ch.Name
 }
 
 // extractInteractionUser returns the user ID and username from a Discord interaction,

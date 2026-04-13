@@ -61,14 +61,14 @@ func (a *Adapter) SendToChatSilent(ctx context.Context, chatID string, msg model
 
 const telegramCaptionMaxLength = 1024
 
-func (a *Adapter) sendMessage(_ context.Context, chatID string, msg model.Message, silent bool) error {
+func (a *Adapter) sendMessage(ctx context.Context, chatID string, msg model.Message, silent bool) error {
 	if msg.IsEmpty() {
 		return fmt.Errorf("telegram: refusing to send empty message to chat %s", chatID)
 	}
 
 	rendered := a.renderer.Render(msg)
 
-	if rendered.Text == "" && len(rendered.PhotoURLs) == 0 && len(rendered.FileRefs) == 0 {
+	if rendered.Text == "" && len(rendered.PhotoURLs) == 0 && len(rendered.FileRefs) == 0 && len(rendered.Keyboard) == 0 {
 		return nil // nothing to send after rendering
 	}
 
@@ -101,31 +101,16 @@ func (a *Adapter) sendMessage(_ context.Context, chatID string, msg model.Messag
 
 	if a.fileStore != nil {
 		for _, ref := range rendered.FileRefs {
-			reader, meta, fErr := a.fileStore.Get(context.Background(), ref.ID)
+			opened, fErr := channel.OpenFileRef(ctx, a.fileStore, ref)
 			if fErr != nil {
 				return fmt.Errorf("telegram: get file %q: %w", ref.ID, fErr)
 			}
-			closers = append(closers, reader)
+			closers = append(closers, opened.Reader)
 
-			name := ref.Name
-			mimeType := ref.MIMEType
-			fileType := ref.FileType
-			if meta != nil {
-				if name == "" {
-					name = meta.Name
-				}
-				if mimeType == "" {
-					mimeType = meta.MIMEType
-				}
-				if fileType == "" {
-					fileType = meta.FileType
-				}
-			}
-
-			if fileType == model.FileTypePhoto {
-				album = append(album, &tele.Photo{File: tele.FromReader(reader)})
+			if opened.Ref.FileType == model.FileTypePhoto {
+				album = append(album, &tele.Photo{File: tele.FromReader(opened.Reader)})
 			} else {
-				docs = append(docs, docEntry{name: name, mimeType: mimeType, reader: reader})
+				docs = append(docs, docEntry{name: opened.Ref.Name, mimeType: opened.Ref.MIMEType, reader: opened.Reader})
 			}
 		}
 	}
@@ -193,7 +178,10 @@ func (a *Adapter) sendMessage(_ context.Context, chatID string, msg model.Messag
 			FileName: d.name,
 			MIME:     d.mimeType,
 		}
-		if _, err := a.bot.Send(recipient, doc); err != nil {
+		opts := &tele.SendOptions{
+			DisableNotification: silent,
+		}
+		if _, err := a.bot.Send(recipient, doc, opts); err != nil {
 			return fmt.Errorf("telegram: send file: %w", err)
 		}
 	}

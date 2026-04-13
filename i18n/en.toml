@@ -49,6 +49,8 @@
 "settings.channel_updated" = "Notifications will be sent to {{.V0}}."
 "settings.ch_telegram" = "Telegram only"
 "settings.ch_discord" = "Discord only"
+"settings.ch_vk" = "VK only"
+"settings.ch_mattermost" = "Mattermost only"
 "settings.ch_tg_then_dc" = "Telegram first, then Discord"
 "settings.ch_dc_then_tg" = "Discord first, then Telegram"
 "settings.mute_mentions" = "Mentions (@)"

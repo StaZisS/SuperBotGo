@@ -51,7 +51,11 @@ func (formatter) FormatMention(b model.MentionBlock) string {
 }
 
 func (formatter) FormatLink(b model.LinkBlock) string {
-	return fmt.Sprintf("[%s](%s)", b.Label, b.URL)
+	label := b.Label
+	if label == "" {
+		label = b.URL
+	}
+	return fmt.Sprintf("[%s](%s)", label, b.URL)
 }
 
 func (formatter) FormatOptionsPrompt(prompt string) string {
@@ -96,12 +100,18 @@ func buildOptionButtons(options []model.Option) [][]Button {
 		}
 		row := make([]Button, 0, end-i)
 		for _, opt := range options[i:end] {
+			label := channel.OptionLabel(opt)
+			if label == "" {
+				continue
+			}
 			row = append(row, Button{
-				Label:    opt.Label,
+				Label:    label,
 				CustomID: opt.Value,
 			})
 		}
-		rows = append(rows, row)
+		if len(row) > 0 {
+			rows = append(rows, row)
+		}
 	}
 	return rows
 }

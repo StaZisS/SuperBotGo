@@ -19,7 +19,9 @@ import (
 	"SuperBotGo/internal/channel"
 	"SuperBotGo/internal/channel/dedup"
 	"SuperBotGo/internal/channel/discord"
+	"SuperBotGo/internal/channel/mattermost"
 	"SuperBotGo/internal/channel/telegram"
+	"SuperBotGo/internal/channel/vk"
 	"SuperBotGo/internal/chat"
 	"SuperBotGo/internal/config"
 	"SuperBotGo/internal/database"
@@ -350,8 +352,10 @@ func registerAdminRoutes(
 	adminapi.NewPluginPermHandler(stores.pluginStore, runtime.wasmLoader, runtime.hostAPI, stores.adminBus).RegisterRoutes(adminMux)
 	adminapi.NewChatHandler(stores.adminChatStore, runtime.adapterRegistry).RegisterRoutes(adminMux)
 	adminapi.NewChannelStatusHandler(runtime.adapterRegistry, adminapi.ChannelStatusConfig{
-		TelegramConfigured: cfg.Telegram.Token != "",
-		DiscordConfigured:  cfg.Discord.Token != "",
+		TelegramConfigured:   cfg.Telegram.Token != "",
+		DiscordConfigured:    cfg.Discord.Token != "",
+		VKConfigured:         cfg.VK.Token != "",
+		MattermostConfigured: cfg.Mattermost.URL != "" && cfg.Mattermost.Token != "",
 	}).RegisterRoutes(adminMux)
 	adminapi.NewRuleSchemaHandler(authz.NewRuleSchemaBuilder(stores.authzStore, stores.universityProvider)).RegisterRoutes(adminMux)
 	if spiceClient != nil {
@@ -467,8 +471,19 @@ func startPubSubSubscriber(ctx context.Context, logger *slog.Logger, stores *pos
 	logger.Info("pub/sub subscriber started", slog.String("instance", stores.adminBus.InstanceID()))
 }
 
-func startConfiguredBots(
-	ctx context.Context,
+func registerBotFeatures(bot any, mux *http.ServeMux, commandNames []string) error {
+	if registrar, ok := bot.(channel.CommandRegistrar); ok {
+		registrar.RegisterCommands(commandNames)
+	}
+	if registrar, ok := bot.(channel.RouteRegistrar); ok {
+		return registrar.RegisterRoutes(mux)
+	}
+	return nil
+}
+
+type botStarter func(context.Context)
+
+func prepareConfiguredBots(
 	cfg *config.Config,
 	logger *slog.Logger,
 	fileStore filestore.FileStore,
@@ -476,9 +491,11 @@ func startConfiguredBots(
 	manager *channel.ChannelManager,
 	commandNames []string,
 	chatRegistry chat.Registry,
-) {
+	mux *http.ServeMux,
+) []botStarter {
 	joinHandler := newChatJoinHandler(chatRegistry, logger)
 	dedupMw := dedup.Middleware(redisClient, dedup.Config{}, logger)
+	var starters []botStarter
 
 	if cfg.Telegram.Token != "" {
 		logger.Info("starting Telegram bot", slog.String("mode", cfg.Telegram.Mode))
@@ -493,13 +510,16 @@ func startConfiguredBots(
 		if err != nil {
 			logger.Error("failed to create Telegram bot", slog.Any("error", err))
 		} else {
-			tgBot.RegisterCommands(commandNames)
-			manager.RegisterAdapter(tgBot.Adapter())
-			go func() {
-				if err := tgBot.Start(ctx); err != nil {
-					logger.Error("Telegram bot stopped with error", slog.Any("error", err))
-				}
-			}()
+			if err := registerBotFeatures(tgBot, mux, commandNames); err != nil {
+				logger.Error("failed to register Telegram features", slog.Any("error", err))
+			} else {
+				manager.RegisterAdapter(tgBot.Adapter())
+				starters = append(starters, func(ctx context.Context) {
+					if err := tgBot.Start(ctx); err != nil {
+						logger.Error("Telegram bot stopped with error", slog.Any("error", err))
+					}
+				})
+			}
 		}
 	} else {
 		logger.Warn("Telegram token not configured, Telegram bot will not start")
@@ -507,29 +527,92 @@ func startConfiguredBots(
 
 	if cfg.Discord.Token == "" {
 		logger.Warn("Discord token not configured, Discord bot will not start")
-		return
-	}
-
-	logger.Info("starting Discord bot",
-		slog.Int("shard_id", cfg.Discord.ShardID),
-		slog.Int("shard_count", cfg.Discord.ShardCount))
-	dcHandler := channel.Chain(manager.OnUpdate, dedupMw)
-	dcBot, err := discord.NewBot(discord.BotConfig{
-		Token:      cfg.Discord.Token,
-		ShardID:    cfg.Discord.ShardID,
-		ShardCount: cfg.Discord.ShardCount,
-	}, dcHandler, joinHandler, fileStore, cfg.FileStore.MaxFileSize, logger)
-	if err != nil {
-		logger.Error("failed to create Discord bot", slog.Any("error", err))
-		return
-	}
-
-	manager.RegisterAdapter(dcBot.Adapter())
-	go func() {
-		if err := dcBot.Start(ctx); err != nil {
-			logger.Error("Discord bot stopped with error", slog.Any("error", err))
+	} else {
+		logger.Info("starting Discord bot",
+			slog.Int("shard_id", cfg.Discord.ShardID),
+			slog.Int("shard_count", cfg.Discord.ShardCount))
+		dcHandler := channel.Chain(manager.OnUpdate, dedupMw)
+		dcBot, err := discord.NewBot(discord.BotConfig{
+			Token:      cfg.Discord.Token,
+			ShardID:    cfg.Discord.ShardID,
+			ShardCount: cfg.Discord.ShardCount,
+		}, dcHandler, joinHandler, fileStore, cfg.FileStore.MaxFileSize, logger)
+		if err != nil {
+			logger.Error("failed to create Discord bot", slog.Any("error", err))
+		} else {
+			manager.RegisterAdapter(dcBot.Adapter())
+			starters = append(starters, func(ctx context.Context) {
+				if err := dcBot.Start(ctx); err != nil {
+					logger.Error("Discord bot stopped with error", slog.Any("error", err))
+				}
+			})
 		}
-	}()
+	}
+
+	if cfg.VK.Token == "" {
+		logger.Warn("VK token not configured, VK bot will not start")
+	} else {
+		logger.Info("starting VK bot", slog.String("mode", cfg.VK.Mode))
+		vkHandler := channel.Chain(manager.OnUpdate, dedupMw)
+		vkBot, err := vk.NewBot(vk.BotConfig{
+			Token:        cfg.VK.Token,
+			Mode:         cfg.VK.Mode,
+			CallbackURL:  cfg.VK.CallbackURL,
+			CallbackPath: cfg.VK.CallbackPath,
+		}, vkHandler, joinHandler, fileStore, cfg.FileStore.MaxFileSize, logger)
+		if err != nil {
+			logger.Error("failed to create VK bot", slog.Any("error", err))
+		} else {
+			if err := registerBotFeatures(vkBot, mux, commandNames); err != nil {
+				logger.Error("failed to register VK features", slog.Any("error", err))
+			} else {
+				manager.RegisterAdapter(vkBot.Adapter())
+				starters = append(starters, func(ctx context.Context) {
+					if err := vkBot.Start(ctx); err != nil {
+						logger.Error("VK bot stopped with error", slog.Any("error", err))
+					}
+				})
+			}
+		}
+	}
+
+	if cfg.Mattermost.URL == "" || cfg.Mattermost.Token == "" {
+		logger.Warn("Mattermost config not complete, Mattermost bot will not start")
+		return starters
+	}
+
+	logger.Info("starting Mattermost bot", slog.String("url", cfg.Mattermost.URL))
+	mmHandler := channel.Chain(manager.OnUpdate, dedupMw)
+	mmBot, err := mattermost.NewBot(mattermost.BotConfig{
+		URL:           cfg.Mattermost.URL,
+		Token:         cfg.Mattermost.Token,
+		ActionsURL:    cfg.Mattermost.ActionsURL,
+		ActionsPath:   cfg.Mattermost.ActionsPath,
+		ActionsSecret: cfg.Mattermost.ActionsSecret,
+	}, mmHandler, joinHandler, fileStore, cfg.FileStore.MaxFileSize, logger)
+	if err != nil {
+		logger.Error("failed to create Mattermost bot", slog.Any("error", err))
+		return starters
+	}
+
+	if err := registerBotFeatures(mmBot, mux, commandNames); err != nil {
+		logger.Error("failed to register Mattermost features", slog.Any("error", err))
+		return starters
+	}
+	manager.RegisterAdapter(mmBot.Adapter())
+	starters = append(starters, func(ctx context.Context) {
+		if err := mmBot.Start(ctx); err != nil {
+			logger.Error("Mattermost bot stopped with error", slog.Any("error", err))
+		}
+	})
+
+	return starters
+}
+
+func startPreparedBots(ctx context.Context, starters []botStarter) {
+	for _, starter := range starters {
+		go starter(ctx)
+	}
 }
 
 func startFileStoreCleanup(ctx context.Context, logger *slog.Logger, fileStore filestore.FileStore) {

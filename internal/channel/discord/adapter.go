@@ -58,14 +58,14 @@ func (a *Adapter) SendToChatSilent(ctx context.Context, chatID string, msg model
 }
 
 func (a *Adapter) sendToUser(ctx context.Context, platformUserID model.PlatformUserID, msg model.Message, silent bool) error {
-	dmChannel, err := a.session.UserChannelCreate(string(platformUserID))
+	dmChannel, err := a.session.UserChannelCreate(string(platformUserID), discordgo.WithContext(ctx))
 	if err != nil {
 		return fmt.Errorf("discord: create DM channel for user %s: %w", platformUserID, err)
 	}
 	return a.sendMessage(ctx, dmChannel.ID, msg, silent)
 }
 
-func (a *Adapter) sendMessage(_ context.Context, channelID string, msg model.Message, silent bool) error {
+func (a *Adapter) sendMessage(ctx context.Context, channelID string, msg model.Message, silent bool) error {
 	if msg.IsEmpty() {
 		return fmt.Errorf("discord: refusing to send empty message to channel %s", channelID)
 	}
@@ -106,23 +106,19 @@ func (a *Adapter) sendMessage(_ context.Context, channelID string, msg model.Mes
 
 	if a.fileStore != nil {
 		for _, ref := range rendered.FileRefs {
-			reader, meta, fErr := a.fileStore.Get(context.Background(), ref.ID)
+			opened, fErr := channel.OpenFileRef(ctx, a.fileStore, ref)
 			if fErr != nil {
 				return fmt.Errorf("discord: get file %q: %w", ref.ID, fErr)
 			}
-			name := ref.Name
-			if name == "" && meta != nil {
-				name = meta.Name
-			}
 			msgSend.Files = append(msgSend.Files, &discordgo.File{
-				Name:   name,
-				Reader: reader,
+				Name:   opened.Ref.Name,
+				Reader: opened.Reader,
 			})
 			// Note: reader is closed by discordgo after sending.
 		}
 	}
 
-	_, err := a.session.ChannelMessageSendComplex(channelID, msgSend)
+	_, err := a.session.ChannelMessageSendComplex(channelID, msgSend, discordgo.WithContext(ctx))
 	if err != nil {
 		return fmt.Errorf("discord: send message to %s: %w", channelID, err)
 	}

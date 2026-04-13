@@ -8,8 +8,10 @@ import (
 )
 
 type ChannelStatusConfig struct {
-	TelegramConfigured bool
-	DiscordConfigured  bool
+	TelegramConfigured   bool
+	DiscordConfigured    bool
+	VKConfigured         bool
+	MattermostConfigured bool
 }
 
 type ChannelStatusHandler struct {
@@ -39,6 +41,8 @@ func (h *ChannelStatusHandler) handleStatus(w http.ResponseWriter, _ *http.Reque
 	}{
 		{"Telegram", model.ChannelTelegram, h.config.TelegramConfigured},
 		{"Discord", model.ChannelDiscord, h.config.DiscordConfigured},
+		{"VK", model.ChannelVK, h.config.VKConfigured},
+		{"Mattermost", model.ChannelMattermost, h.config.MattermostConfigured},
 	}
 
 	result := make([]channelStatusEntry, 0, len(channels))

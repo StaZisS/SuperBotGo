@@ -16,6 +16,8 @@ type Config struct {
 	Redis          RedisConfig          `koanf:"redis"`
 	Telegram       TelegramConfig       `koanf:"telegram"`
 	Discord        DiscordConfig        `koanf:"discord"`
+	VK             VKConfig             `koanf:"vk"`
+	Mattermost     MattermostConfig     `koanf:"mattermost"`
 	Admin          AdminConfig          `koanf:"admin"`
 	SpiceDB        SpiceDBConfig        `koanf:"spicedb"`
 	UniversitySync UniversitySyncConfig `koanf:"university_sync"`
@@ -89,6 +91,21 @@ type DiscordConfig struct {
 	ShardCount int    `koanf:"shard_count"`
 }
 
+type VKConfig struct {
+	Token        string `koanf:"token"`
+	Mode         string `koanf:"mode"`
+	CallbackURL  string `koanf:"callback_url"`
+	CallbackPath string `koanf:"callback_path"`
+}
+
+type MattermostConfig struct {
+	URL           string `koanf:"url"`
+	Token         string `koanf:"token"`
+	ActionsURL    string `koanf:"actions_url"`
+	ActionsPath   string `koanf:"actions_path"`
+	ActionsSecret string `koanf:"actions_secret"`
+}
+
 type FileStoreConfig struct {
 	S3          S3Config `koanf:"s3"`
 	DefaultTTL  string   `koanf:"default_ttl"`   // e.g. "24h", "0" for no expiry
@@ -147,8 +164,17 @@ func Load() (*Config, error) {
 	if cfg.Telegram.Mode == "" {
 		cfg.Telegram.Mode = "polling"
 	}
+	if cfg.VK.Mode == "" {
+		cfg.VK.Mode = "longpoll"
+	}
+	if cfg.VK.CallbackPath == "" {
+		cfg.VK.CallbackPath = "/vk/callback"
+	}
 	if cfg.Discord.ShardCount <= 0 {
 		cfg.Discord.ShardCount = 1
+	}
+	if cfg.Mattermost.ActionsPath == "" {
+		cfg.Mattermost.ActionsPath = "/mattermost/actions"
 	}
 	if cfg.FileStore.DefaultTTL == "" {
 		cfg.FileStore.DefaultTTL = "24h"
@@ -185,8 +211,28 @@ func (c *Config) Validate() error {
 	if c.Telegram.Mode == "webhook" && c.Telegram.WebhookURL == "" {
 		return fmt.Errorf("telegram.webhook_url is required when telegram.mode=webhook")
 	}
+	switch c.VK.Mode {
+	case "longpoll", "callback":
+	default:
+		return fmt.Errorf("vk.mode must be \"longpoll\" or \"callback\", got %q", c.VK.Mode)
+	}
+	if c.VK.Mode == "callback" && c.VK.CallbackURL == "" {
+		return fmt.Errorf("vk.callback_url is required when vk.mode=callback")
+	}
+	if c.VK.CallbackPath != "" && !strings.HasPrefix(c.VK.CallbackPath, "/") {
+		return fmt.Errorf("vk.callback_path must start with \"/\", got %q", c.VK.CallbackPath)
+	}
 	if c.Discord.ShardID < 0 || c.Discord.ShardID >= c.Discord.ShardCount {
 		return fmt.Errorf("discord.shard_id (%d) must be in range [0, %d)", c.Discord.ShardID, c.Discord.ShardCount)
+	}
+	if (c.Mattermost.URL == "") != (c.Mattermost.Token == "") {
+		return fmt.Errorf("mattermost.url and mattermost.token must be set together")
+	}
+	if (c.Mattermost.ActionsURL == "") != (c.Mattermost.ActionsSecret == "") {
+		return fmt.Errorf("mattermost.actions_url and mattermost.actions_secret must be set together")
+	}
+	if c.Mattermost.ActionsPath != "" && !strings.HasPrefix(c.Mattermost.ActionsPath, "/") {
+		return fmt.Errorf("mattermost.actions_path must start with \"/\", got %q", c.Mattermost.ActionsPath)
 	}
 	return nil
 }

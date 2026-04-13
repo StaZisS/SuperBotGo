@@ -92,9 +92,6 @@ func main() {
 
 	adminMux, authHandler := registerAdminRoutes(cfg, logger, runtime, stores, blobStore, authorizer, stateMgr, spiceClient)
 	tsuAuth := configureTSUAccounts(cfg, stores.userRepo, stores.accountRepo, stores.pool, adminMux, logger)
-	adminServer := newAdminServer(cfg, authHandler, adminMux)
-	startUniversityPuller(bootstrapCtx, cfg, stores.syncSvc, logger)
-	startAdminServer(adminServer, logger, cfg.Admin.Port)
 
 	runtime.senderAPI = plugin.NewSenderAPI(runtime.adapterRegistry, userService)
 
@@ -123,12 +120,15 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	startPubSubSubscriber(ctx, logger, stores, blobStore, runtime, stateMgr)
-
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-	startConfiguredBots(ctx, cfg, logger, fileStore, redisClient, channelMgr, collectCommandNames(runtime.pluginManager), stores.chatRegistry)
+	botStarters := prepareConfiguredBots(cfg, logger, fileStore, redisClient, channelMgr, collectCommandNames(runtime.pluginManager), stores.chatRegistry, adminMux)
+	adminServer := newAdminServer(cfg, authHandler, adminMux)
+	startUniversityPuller(bootstrapCtx, cfg, stores.syncSvc, logger)
+	startAdminServer(adminServer, logger, cfg.Admin.Port)
+	startPubSubSubscriber(ctx, logger, stores, blobStore, runtime, stateMgr)
+	startPreparedBots(ctx, botStarters)
 	startFileStoreCleanup(ctx, logger, fileStore)
 
 	logger.Info("SuperBotGo started, waiting for shutdown signal")
