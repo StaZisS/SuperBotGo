@@ -126,6 +126,8 @@ graph LR
 | **Discord Adapter** | `discord/` | Приём и отправка сообщений через Discord Gateway. Поддержка шардинга |
 | **Dedup Middleware** | `dedup/` | Дедупликация входящих обновлений через Redis SET NX |
 
+Подробно про входящий и исходящий поток, capability matrix и platform-specific особенности: [Канальный слой](/architecture/channels).
+
 ### `internal/state`
 
 | Компонент | Файл | Назначение |
