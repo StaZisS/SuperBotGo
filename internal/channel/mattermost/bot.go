@@ -4,9 +4,12 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -20,27 +23,37 @@ import (
 )
 
 type BotConfig struct {
-	URL           string
-	Token         string
-	ActionsURL    string
-	ActionsPath   string
-	ActionsSecret string
+	URL            string
+	Token          string
+	ActionsURL     string
+	ActionsPath    string
+	ActionsSecret  string
+	CommandURL     string
+	CommandPath    string
+	CommandTrigger string
+	CommandToken   string
 }
 
 type Bot struct {
-	client        *mm.Client4
-	botUserID     string
-	actionsURL    string
-	actionsPath   string
-	actionsSecret string
-	handler       channel.UpdateHandlerFunc
-	joinHandler   channel.ChatJoinHandler
-	fileStore     filestore.FileStore
-	maxFileSize   int64
-	logger        *slog.Logger
-	connected     atomic.Bool
-	lifecycleCtx  context.Context
-	knownChats    sync.Map
+	client         *mm.Client4
+	botUserID      string
+	actionsURL     string
+	actionsPath    string
+	actionsSecret  string
+	commandURL     string
+	commandPath    string
+	commandTrigger string
+	commandToken   string
+	commandNames   []string
+	handler        channel.UpdateHandlerFunc
+	joinHandler    channel.ChatJoinHandler
+	fileStore      filestore.FileStore
+	maxFileSize    int64
+	logger         *slog.Logger
+	connected      atomic.Bool
+	lifecycleCtx   context.Context
+	knownChats     sync.Map
+	commandTokens  sync.Map
 }
 
 const (
@@ -48,6 +61,20 @@ const (
 	actionContextLabelKey  = "sb_label"
 	actionContextSecretKey = "sb_secret"
 )
+
+type slashCommandRequest struct {
+	TeamID      string
+	ChannelID   string
+	UserID      string
+	UserName    string
+	Command     string
+	Text        string
+	Token       string
+	TriggerID   string
+	RootID      string
+	ChannelName string
+	TeamDomain  string
+}
 
 func NewBot(cfg BotConfig, handler channel.UpdateHandlerFunc, joinHandler channel.ChatJoinHandler, fs filestore.FileStore, maxFileSize int64, logger *slog.Logger) (*Bot, error) {
 	if logger == nil {
@@ -69,16 +96,20 @@ func NewBot(cfg BotConfig, handler channel.UpdateHandlerFunc, joinHandler channe
 	}
 
 	return &Bot{
-		client:        client,
-		botUserID:     me.Id,
-		actionsURL:    cfg.ActionsURL,
-		actionsPath:   defaultMattermostActionsPath(cfg.ActionsPath),
-		actionsSecret: cfg.ActionsSecret,
-		handler:       handler,
-		joinHandler:   joinHandler,
-		fileStore:     fs,
-		maxFileSize:   maxFileSize,
-		logger:        logger,
+		client:         client,
+		botUserID:      me.Id,
+		actionsURL:     cfg.ActionsURL,
+		actionsPath:    defaultMattermostActionsPath(cfg.ActionsPath),
+		actionsSecret:  cfg.ActionsSecret,
+		commandURL:     cfg.CommandURL,
+		commandPath:    defaultMattermostCommandPath(cfg.CommandPath),
+		commandTrigger: defaultMattermostCommandTrigger(cfg.CommandTrigger),
+		commandToken:   cfg.CommandToken,
+		handler:        handler,
+		joinHandler:    joinHandler,
+		fileStore:      fs,
+		maxFileSize:    maxFileSize,
+		logger:         logger,
 	}, nil
 }
 
@@ -90,20 +121,52 @@ func (b *Bot) Adapter() *Adapter {
 }
 
 func (b *Bot) RegisterRoutes(mux *http.ServeMux) error {
-	if !b.actionsEnabled() {
-		return nil
-	}
 	if mux == nil {
 		return fmt.Errorf("mattermost: mux is nil")
 	}
 
-	mux.HandleFunc(b.actionsPath, b.handleAction)
+	if b.actionsEnabled() {
+		mux.HandleFunc(b.actionsPath, b.handleAction)
+	}
+	if b.commandsEnabled() {
+		mux.HandleFunc(b.commandPath, b.handleCommand)
+	}
 	return nil
+}
+
+func (b *Bot) RegisterCommands(commands []string) {
+	if len(commands) == 0 {
+		b.commandNames = nil
+		return
+	}
+
+	uniq := make(map[string]struct{}, len(commands))
+	for _, cmd := range commands {
+		cmd = strings.TrimSpace(cmd)
+		if cmd == "" {
+			continue
+		}
+		uniq[cmd] = struct{}{}
+	}
+
+	if len(uniq) == 0 {
+		b.commandNames = nil
+		return
+	}
+
+	b.commandNames = b.commandNames[:0]
+	for cmd := range uniq {
+		b.commandNames = append(b.commandNames, cmd)
+	}
+	sort.Strings(b.commandNames)
 }
 
 func (b *Bot) Start(ctx context.Context) error {
 	b.lifecycleCtx = ctx
 	backoff := time.Second
+	wsURL := websocketURL(b.client.URL)
+
+	b.syncSlashCommands(ctx)
 
 	for {
 		if ctx.Err() != nil {
@@ -111,7 +174,7 @@ func (b *Bot) Start(ctx context.Context) error {
 			return nil
 		}
 
-		ws, err := mm.NewWebSocketClient4(b.client.URL, b.client.AuthToken)
+		ws, err := mm.NewWebSocketClient4(wsURL, b.client.AuthToken)
 		if err != nil {
 			b.connected.Store(false)
 			b.logger.Error("mattermost: websocket connect failed", slog.Any("error", err))
@@ -140,6 +203,137 @@ func (b *Bot) Start(ctx context.Context) error {
 		}
 		backoff = nextBackoff(backoff)
 	}
+}
+
+func (b *Bot) syncSlashCommands(ctx context.Context) {
+	if b.commandURL == "" {
+		return
+	}
+
+	teams, _, err := b.client.GetTeamsForUser(ctx, b.botUserID, "")
+	if err != nil {
+		b.logger.Warn("mattermost: slash command auto-registration failed to list teams",
+			slog.String("trigger", b.commandTrigger),
+			slog.Any("error", err))
+		return
+	}
+
+	if len(teams) == 0 {
+		b.logger.Warn("mattermost: slash command auto-registration skipped because bot is not a member of any teams",
+			slog.String("trigger", b.commandTrigger))
+		return
+	}
+
+	for _, team := range teams {
+		if team == nil || team.Id == "" {
+			continue
+		}
+		b.syncSlashCommandForTeam(ctx, team)
+	}
+}
+
+func (b *Bot) syncSlashCommandForTeam(ctx context.Context, team *mm.Team) {
+	existing, _, err := b.client.ListCommands(ctx, team.Id, true)
+	if err == nil {
+		if cmd := findCommandByTrigger(existing, b.commandTrigger); cmd != nil {
+			if cmd.Token != "" {
+				b.commandTokens.Store(team.Id, cmd.Token)
+			}
+			if cmd.URL != "" && cmd.URL != b.commandURL {
+				b.logger.Warn("mattermost: slash command trigger already exists with a different URL",
+					slog.String("team", team.Name),
+					slog.String("trigger", b.commandTrigger),
+					slog.String("existing_url", cmd.URL),
+					slog.String("configured_url", b.commandURL))
+				return
+			}
+			b.logger.Info("mattermost: slash command already configured",
+				slog.String("team", team.Name),
+				slog.String("trigger", b.commandTrigger))
+			return
+		}
+	} else {
+		b.logger.Warn("mattermost: failed to list existing slash commands",
+			slog.String("team", team.Name),
+			slog.String("trigger", b.commandTrigger),
+			slog.Any("error", err))
+	}
+
+	created, _, err := b.client.CreateCommand(ctx, &mm.Command{
+		TeamId:           team.Id,
+		Trigger:          b.commandTrigger,
+		Method:           mm.CommandMethodPost,
+		URL:              b.commandURL,
+		AutoComplete:     true,
+		AutoCompleteDesc: "Run HITs bot commands",
+		AutoCompleteHint: b.commandAutocompleteHint(),
+		DisplayName:      "HITs",
+		Description:      "Run HITs bot commands",
+	})
+	if err != nil {
+		var appErr *mm.AppError
+		if errors.As(err, &appErr) {
+			b.logger.Warn("mattermost: slash command auto-registration failed",
+				slog.String("team", team.Name),
+				slog.String("trigger", b.commandTrigger),
+				slog.Int("status", appErr.StatusCode),
+				slog.String("error_id", appErr.Id),
+				slog.Any("error", err))
+			return
+		}
+		b.logger.Warn("mattermost: slash command auto-registration failed",
+			slog.String("team", team.Name),
+			slog.String("trigger", b.commandTrigger),
+			slog.Any("error", err))
+		return
+	}
+
+	if created.Token != "" {
+		b.commandTokens.Store(team.Id, created.Token)
+	}
+
+	b.logger.Info("mattermost: slash command registered",
+		slog.String("team", team.Name),
+		slog.String("trigger", b.commandTrigger))
+}
+
+func findCommandByTrigger(commands []*mm.Command, trigger string) *mm.Command {
+	trigger = strings.TrimSpace(strings.TrimPrefix(trigger, "/"))
+	for _, cmd := range commands {
+		if cmd == nil {
+			continue
+		}
+		if strings.EqualFold(cmd.Trigger, trigger) {
+			return cmd
+		}
+	}
+	return nil
+}
+
+func (b *Bot) commandAutocompleteHint() string {
+	if len(b.commandNames) == 0 {
+		return "[start|plugins|resume]"
+	}
+	if len(b.commandNames) <= 4 {
+		return "[" + strings.Join(b.commandNames, "|") + "]"
+	}
+	return "<command>"
+}
+
+func websocketURL(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+
+	switch parsed.Scheme {
+	case "http":
+		parsed.Scheme = "ws"
+	case "https":
+		parsed.Scheme = "wss"
+	}
+
+	return strings.TrimRight(parsed.String(), "/")
 }
 
 func (b *Bot) runLoop(ctx context.Context, ws *mm.WebSocketClient) error {
@@ -180,11 +374,21 @@ func (b *Bot) handleAction(w http.ResponseWriter, r *http.Request) {
 
 	var req mm.PostActionIntegrationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		b.logger.Warn("mattermost: bad action payload", slog.Any("error", err))
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 
+	b.logger.Info("mattermost: action request received",
+		slog.String("user", req.UserId),
+		slog.String("channel", req.ChannelId),
+		slog.String("post_id", req.PostId))
+
 	if !b.validActionSecret(req.Context) {
+		b.logger.Warn("mattermost: action secret mismatch",
+			slog.String("user", req.UserId),
+			slog.String("channel", req.ChannelId),
+			slog.String("post_id", req.PostId))
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -192,6 +396,10 @@ func (b *Bot) handleAction(w http.ResponseWriter, r *http.Request) {
 	value := contextString(req.Context, actionContextValueKey)
 	label := contextString(req.Context, actionContextLabelKey)
 	if value == "" {
+		b.logger.Warn("mattermost: action value missing",
+			slog.String("user", req.UserId),
+			slog.String("channel", req.ChannelId),
+			slog.String("post_id", req.PostId))
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
@@ -199,7 +407,82 @@ func (b *Bot) handleAction(w http.ResponseWriter, r *http.Request) {
 		label = value
 	}
 
-	ctx := r.Context()
+	w.WriteHeader(http.StatusOK)
+
+	go b.processAction(req, value, label)
+}
+
+func (b *Bot) handleCommand(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		b.logger.Warn("mattermost: bad slash command payload", slog.Any("error", err))
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	req := slashCommandRequest{
+		TeamID:      r.FormValue("team_id"),
+		ChannelID:   r.FormValue("channel_id"),
+		UserID:      r.FormValue("user_id"),
+		UserName:    r.FormValue("user_name"),
+		Command:     r.FormValue("command"),
+		Text:        r.FormValue("text"),
+		Token:       commandRequestToken(r),
+		TriggerID:   r.FormValue("trigger_id"),
+		RootID:      r.FormValue("root_id"),
+		ChannelName: r.FormValue("channel_name"),
+		TeamDomain:  r.FormValue("team_domain"),
+	}
+
+	b.logger.Info("mattermost: slash command request received",
+		slog.String("user", req.UserID),
+		slog.String("team", req.TeamID),
+		slog.String("channel", req.ChannelID),
+		slog.String("command", req.Command),
+		slog.String("text", strings.TrimSpace(req.Text)))
+
+	if !b.validCommandToken(req.TeamID, req.Token) {
+		b.logger.Warn("mattermost: slash command token mismatch",
+			slog.String("user", req.UserID),
+			slog.String("team", req.TeamID),
+			slog.String("channel", req.ChannelID))
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	value, ok := b.commandText(req)
+	if !ok {
+		b.logger.Warn("mattermost: slash command payload invalid",
+			slog.String("user", req.UserID),
+			slog.String("team", req.TeamID),
+			slog.String("channel", req.ChannelID),
+			slog.String("command", req.Command),
+			slog.String("text", strings.TrimSpace(req.Text)))
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(mm.CommandResponse{
+		ResponseType: mm.CommandResponseTypeEphemeral,
+	}); err != nil {
+		b.logger.Warn("mattermost: failed to encode slash command ack", slog.Any("error", err))
+	}
+
+	go b.processCommand(req, value)
+}
+
+func (b *Bot) processAction(req mm.PostActionIntegrationRequest, value, label string) {
+	ctx := b.lifecycleCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	b.ensureChatRegistered(ctx, req.ChannelId)
 
 	if err := b.handler(ctx, channel.Update{
@@ -214,15 +497,57 @@ func (b *Bot) handleAction(w http.ResponseWriter, r *http.Request) {
 			slog.String("user", req.UserId),
 			slog.String("channel", req.ChannelId),
 			slog.String("post_id", req.PostId),
+			slog.String("value", value),
+			slog.String("label", label),
 			slog.Any("error", err))
-		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(mm.PostActionIntegrationResponse{}); err != nil {
-		b.logger.Error("mattermost: failed to write action response", slog.Any("error", err))
+	b.logger.Info("mattermost: action handled",
+		slog.String("user", req.UserId),
+		slog.String("channel", req.ChannelId),
+		slog.String("post_id", req.PostId),
+		slog.String("value", value),
+		slog.String("label", label))
+}
+
+func (b *Bot) processCommand(req slashCommandRequest, value string) {
+	ctx := b.lifecycleCtx
+	if ctx == nil {
+		ctx = context.Background()
 	}
+
+	b.ensureChatRegistered(ctx, req.ChannelID)
+
+	updateID := fmt.Sprintf("mm:command:%s:%s", req.UserID, req.TriggerID)
+	if req.TriggerID == "" {
+		updateID = fmt.Sprintf("mm:command:%s:%d", req.UserID, time.Now().UnixNano())
+	}
+
+	if err := b.handler(ctx, channel.Update{
+		ChannelType:      model.ChannelMattermost,
+		PlatformUserID:   model.PlatformUserID(req.UserID),
+		PlatformUpdateID: updateID,
+		Input:            model.TextInput{Text: value},
+		ChatID:           req.ChannelID,
+		Username:         req.UserName,
+	}); err != nil {
+		b.logger.Error("mattermost: error handling slash command",
+			slog.String("user", req.UserID),
+			slog.String("team", req.TeamID),
+			slog.String("channel", req.ChannelID),
+			slog.String("command", req.Command),
+			slog.String("value", value),
+			slog.Any("error", err))
+		return
+	}
+
+	b.logger.Info("mattermost: slash command handled",
+		slog.String("user", req.UserID),
+		slog.String("team", req.TeamID),
+		slog.String("channel", req.ChannelID),
+		slog.String("command", req.Command),
+		slog.String("value", value))
 }
 
 func (b *Bot) handlePostedEvent(ctx context.Context, event *mm.WebSocketEvent) {
@@ -425,12 +750,64 @@ func (b *Bot) actionsEnabled() bool {
 	return b.actionsURL != "" && b.actionsSecret != ""
 }
 
+func (b *Bot) commandsEnabled() bool {
+	return b.commandURL != "" || b.commandToken != ""
+}
+
 func (b *Bot) validActionSecret(ctx map[string]any) bool {
 	if b.actionsSecret == "" {
 		return false
 	}
 	secret := contextString(ctx, actionContextSecretKey)
 	return subtle.ConstantTimeCompare([]byte(secret), []byte(b.actionsSecret)) == 1
+}
+
+func (b *Bot) validCommandToken(teamID, token string) bool {
+	expected := b.commandTokenForTeam(teamID)
+	if expected == "" || token == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(token), []byte(expected)) == 1
+}
+
+func (b *Bot) commandTokenForTeam(teamID string) string {
+	if teamID != "" {
+		if token, ok := b.commandTokens.Load(teamID); ok {
+			if value, ok := token.(string); ok && value != "" {
+				return value
+			}
+		}
+	}
+	return b.commandToken
+}
+
+func (b *Bot) commandText(req slashCommandRequest) (string, bool) {
+	command := strings.TrimSpace(strings.TrimPrefix(req.Command, "/"))
+	if b.commandTrigger != "" && !strings.EqualFold(command, b.commandTrigger) {
+		return "", false
+	}
+
+	text := strings.TrimSpace(req.Text)
+	if text == "" {
+		return "/start", true
+	}
+	if strings.HasPrefix(text, "/") {
+		return text, true
+	}
+	return "/" + text, true
+}
+
+func commandRequestToken(r *http.Request) string {
+	if token := strings.TrimSpace(r.FormValue("token")); token != "" {
+		return token
+	}
+
+	const prefix = "Token "
+	auth := strings.TrimSpace(r.Header.Get("Authorization"))
+	if strings.HasPrefix(auth, prefix) {
+		return strings.TrimSpace(strings.TrimPrefix(auth, prefix))
+	}
+	return ""
 }
 
 func contextString(values map[string]any, key string) string {
@@ -458,4 +835,19 @@ func defaultMattermostActionsPath(path string) string {
 		return "/mattermost/actions"
 	}
 	return path
+}
+
+func defaultMattermostCommandPath(path string) string {
+	if path == "" {
+		return "/mattermost/command"
+	}
+	return path
+}
+
+func defaultMattermostCommandTrigger(trigger string) string {
+	trigger = strings.TrimSpace(strings.TrimPrefix(trigger, "/"))
+	if trigger == "" {
+		return "hits"
+	}
+	return trigger
 }
