@@ -61,6 +61,7 @@ func (l *Loader) UnloadPlugin(ctx context.Context, pluginID string) error {
 	if l.triggerRegistry != nil {
 		l.triggerRegistry.UnregisterTriggers(pluginID)
 	}
+	l.unregisterPluginRegistry(pluginID)
 
 	l.drainPlugin(lp, pluginID)
 
@@ -155,10 +156,18 @@ func (l *Loader) Close(ctx context.Context) error {
 		if sqlStore := l.hostAPI.SQLStore(); sqlStore != nil {
 			sqlStore.UnregisterPlugin(id)
 		}
+		l.unregisterPluginRegistry(id)
 	}
 
 	if l.metrics != nil {
 		l.metrics.LoadedPluginsGauge.Set(0)
 	}
 	return firstErr
+}
+
+func (l *Loader) unregisterPluginRegistry(pluginID string) {
+	if l.registry == nil {
+		return
+	}
+	l.registry.Remove(pluginID)
 }

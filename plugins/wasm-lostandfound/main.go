@@ -71,22 +71,15 @@ func handleAdd(ctx *wasmplugin.EventContext) error {
 	description := ctx.Param("description")
 	location := ctx.Param("location")
 
-	// Сохраняем все прикреплённые фото.
 	var photoIDs []string
 	if ctx.HasFiles() {
 		for _, f := range ctx.Files() {
-			data, err := ctx.FileReadAll(f.ID)
-			if err != nil {
-				ctx.LogError("add: read photo: " + err.Error())
-				continue
-			}
-			stored, err := ctx.FileStore(f.Name, f.MIMEType, f.FileType, data)
-			if err != nil {
-				ctx.LogError("add: store photo: " + err.Error())
-				continue
-			}
-			photoIDs = append(photoIDs, stored.ID)
+			photoIDs = append(photoIDs, f.ID)
 		}
+	}
+	if len(photoIDs) == 0 {
+		ctx.Reply(wasmplugin.NewMessage(tr("photo_missing")))
+		return nil
 	}
 
 	db, err := openDB()
@@ -156,7 +149,7 @@ func handleList(ctx *wasmplugin.EventContext) error {
 		}
 		text += fmt.Sprintf(tr("item_line"), item.ID, item.Title, loc) + "\n"
 	}
-	text += "\n/detail — " + tr("item_detail_header")
+	text += "\n/detail — " + tr("enter_item_id")
 
 	ctx.Reply(wasmplugin.NewMessage(text))
 	return nil

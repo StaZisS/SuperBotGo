@@ -259,11 +259,34 @@ func (b *Bot) buildInput(ctx context.Context, msg vkobject.MessagesMessage) (mod
 		return model.FileInput{Caption: msg.Text, Files: refs}, true
 	}
 
+	if isVKStartButtonMessage(msg) {
+		return model.TextInput{Text: "/start"}, true
+	}
+
 	if strings.TrimSpace(msg.Text) == "" {
 		return nil, false
 	}
 
 	return model.TextInput{Text: msg.Text}, true
+}
+
+func isVKStartButtonMessage(msg vkobject.MessagesMessage) bool {
+	if msg.PeerID != msg.FromID {
+		return false
+	}
+	if msg.ConversationMessageID != 1 {
+		return false
+	}
+	if strings.TrimSpace(msg.Payload) != "" {
+		return false
+	}
+
+	switch strings.ToLower(strings.TrimSpace(msg.Text)) {
+	case "начать", "start":
+		return true
+	default:
+		return false
+	}
 }
 
 func (b *Bot) collectFiles(ctx context.Context, attachments []vkobject.MessagesMessageAttachment) []model.FileRef {
