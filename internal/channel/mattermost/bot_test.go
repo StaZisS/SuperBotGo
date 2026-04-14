@@ -1,131 +1,126 @@
 package mattermost
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
-	"strings"
 	"testing"
 	"time"
 
 	"SuperBotGo/internal/channel"
 	"SuperBotGo/internal/model"
+
+	mm "github.com/mattermost/mattermost/server/public/model"
 )
 
-func TestHandleCommandDispatchesSlashCommand(t *testing.T) {
+func TestHandleActionDispatchesCallback(t *testing.T) {
 	updates := make(chan channel.Update, 1)
 	bot := &Bot{
-		commandTrigger: "hits",
-		commandToken:   "secret",
-		logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		actionsSecret: "secret",
+		logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 		handler: func(ctx context.Context, update channel.Update) error {
 			updates <- update
 			return nil
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/mattermost/command", strings.NewReader(validCommandForm(url.Values{
-		"team_id":    []string{"team-1"},
-		"channel_id": []string{"channel-1"},
-		"user_id":    []string{"user-1"},
-		"user_name":  []string{"alice"},
-		"command":    []string{"/hits"},
-		"text":       []string{"plugins"},
-		"token":      []string{"secret"},
-		"trigger_id": []string{"trigger-1"},
-	})))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req := httptest.NewRequest(http.MethodPost, "/mattermost/actions", actionPayload(t, mm.PostActionIntegrationRequest{
+		UserId:    "user-1",
+		UserName:  "alice",
+		ChannelId: "channel-1",
+		PostId:    "post-1",
+		TriggerId: "trigger-1",
+		Context: map[string]any{
+			actionContextSecretKey: "secret",
+			actionContextValueKey:  "/plugins",
+			actionContextLabelKey:  "Plugins",
+		},
+	}))
 	rec := httptest.NewRecorder()
 
-	bot.handleCommand(rec, req)
+	bot.handleAction(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
-	if !strings.Contains(rec.Body.String(), `"response_type":"ephemeral"`) {
-		t.Fatalf("response body = %q, want ephemeral ack", rec.Body.String())
-	}
 
 	update := waitForUpdate(t, updates)
-	text, ok := update.Input.(model.TextInput)
+	callback, ok := update.Input.(model.CallbackInput)
 	if !ok {
-		t.Fatalf("input type = %T, want model.TextInput", update.Input)
+		t.Fatalf("input type = %T, want model.CallbackInput", update.Input)
 	}
-	if text.Text != "/plugins" {
-		t.Fatalf("text = %q, want /plugins", text.Text)
+	if callback.Data != "/plugins" {
+		t.Fatalf("callback data = %q, want /plugins", callback.Data)
 	}
-	if update.ChatID != "channel-1" {
-		t.Fatalf("chat id = %q, want channel-1", update.ChatID)
+	if callback.Label != "Plugins" {
+		t.Fatalf("callback label = %q, want Plugins", callback.Label)
 	}
-	if update.Username != "alice" {
-		t.Fatalf("username = %q, want alice", update.Username)
+	if update.PlatformUpdateID != "mm:action:post-1:trigger-1" {
+		t.Fatalf("update id = %q, want mm:action:post-1:trigger-1", update.PlatformUpdateID)
 	}
 }
 
-func TestHandleCommandDefaultsEmptyTextToStart(t *testing.T) {
+func TestHandleActionDefaultsEmptyLabelToValue(t *testing.T) {
 	updates := make(chan channel.Update, 1)
 	bot := &Bot{
-		commandTrigger: "hits",
-		commandToken:   "secret",
-		logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		actionsSecret: "secret",
+		logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 		handler: func(ctx context.Context, update channel.Update) error {
 			updates <- update
 			return nil
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/mattermost/command", strings.NewReader(validCommandForm(url.Values{
-		"team_id":    []string{"team-1"},
-		"channel_id": []string{"channel-1"},
-		"user_id":    []string{"user-1"},
-		"command":    []string{"/hits"},
-		"text":       []string{""},
-		"token":      []string{"secret"},
-		"trigger_id": []string{"trigger-1"},
-	})))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req := httptest.NewRequest(http.MethodPost, "/mattermost/actions", actionPayload(t, mm.PostActionIntegrationRequest{
+		UserId:    "user-1",
+		ChannelId: "channel-1",
+		PostId:    "post-1",
+		Context: map[string]any{
+			actionContextSecretKey: "secret",
+			actionContextValueKey:  "next",
+		},
+	}))
 	rec := httptest.NewRecorder()
 
-	bot.handleCommand(rec, req)
+	bot.handleAction(rec, req)
 
 	update := waitForUpdate(t, updates)
-	text, ok := update.Input.(model.TextInput)
+	callback, ok := update.Input.(model.CallbackInput)
 	if !ok {
-		t.Fatalf("input type = %T, want model.TextInput", update.Input)
+		t.Fatalf("input type = %T, want model.CallbackInput", update.Input)
 	}
-	if text.Text != "/start" {
-		t.Fatalf("text = %q, want /start", text.Text)
+	if callback.Label != "next" {
+		t.Fatalf("callback label = %q, want next", callback.Label)
 	}
 }
 
-func TestHandleCommandRejectsInvalidToken(t *testing.T) {
+func TestHandleActionRejectsInvalidSecret(t *testing.T) {
 	called := make(chan struct{}, 1)
 	bot := &Bot{
-		commandTrigger: "hits",
-		commandToken:   "secret",
-		logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		actionsSecret: "secret",
+		logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 		handler: func(ctx context.Context, update channel.Update) error {
 			called <- struct{}{}
 			return nil
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/mattermost/command", strings.NewReader(validCommandForm(url.Values{
-		"team_id":    []string{"team-1"},
-		"channel_id": []string{"channel-1"},
-		"user_id":    []string{"user-1"},
-		"command":    []string{"/hits"},
-		"text":       []string{"plugins"},
-		"token":      []string{"wrong"},
-		"trigger_id": []string{"trigger-1"},
-	})))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req := httptest.NewRequest(http.MethodPost, "/mattermost/actions", actionPayload(t, mm.PostActionIntegrationRequest{
+		UserId:    "user-1",
+		ChannelId: "channel-1",
+		PostId:    "post-1",
+		Context: map[string]any{
+			actionContextSecretKey: "wrong",
+			actionContextValueKey:  "next",
+		},
+	}))
 	rec := httptest.NewRecorder()
 
-	bot.handleCommand(rec, req)
+	bot.handleAction(rec, req)
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
@@ -138,6 +133,16 @@ func TestHandleCommandRejectsInvalidToken(t *testing.T) {
 	}
 }
 
+func actionPayload(t *testing.T, req mm.PostActionIntegrationRequest) *bytes.Reader {
+	t.Helper()
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal action request: %v", err)
+	}
+	return bytes.NewReader(body)
+}
+
 func waitForUpdate(t *testing.T, updates <-chan channel.Update) channel.Update {
 	t.Helper()
 
@@ -148,14 +153,4 @@ func waitForUpdate(t *testing.T, updates <-chan channel.Update) channel.Update {
 		t.Fatal("timed out waiting for update")
 		return channel.Update{}
 	}
-}
-
-func validCommandForm(values url.Values) string {
-	if values.Get("team_domain") == "" {
-		values.Set("team_domain", "test-team")
-	}
-	if values.Get("channel_name") == "" {
-		values.Set("channel_name", "town-square")
-	}
-	return values.Encode()
 }

@@ -28,14 +28,6 @@ func TestValidateRejectsInvalidCallbackPaths(t *testing.T) {
 	if err == nil || err.Error() != "mattermost.actions_path must start with \"/\", got \"mattermost/actions\"" {
 		t.Fatalf("Validate() error = %v, want mattermost.actions_path validation error", err)
 	}
-
-	cfg = validConfig()
-	cfg.Mattermost.CommandPath = "mattermost/command"
-
-	err = cfg.Validate()
-	if err == nil || err.Error() != "mattermost.command_path must start with \"/\", got \"mattermost/command\"" {
-		t.Fatalf("Validate() error = %v, want mattermost.command_path validation error", err)
-	}
 }
 
 func TestValidateMattermostActionsRequireSecret(t *testing.T) {
@@ -58,31 +50,9 @@ func TestValidateAcceptsInteractiveChannelConfig(t *testing.T) {
 	cfg.Mattermost.ActionsURL = "https://bot.example.com/mattermost/actions"
 	cfg.Mattermost.ActionsPath = "/mattermost/actions"
 	cfg.Mattermost.ActionsSecret = "secret"
-	cfg.Mattermost.CommandURL = "https://bot.example.com/mattermost/command"
-	cfg.Mattermost.CommandPath = "/mattermost/command"
-	cfg.Mattermost.CommandTrigger = "hits"
-	cfg.Mattermost.CommandToken = "token"
 
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v, want nil", err)
-	}
-}
-
-func TestValidateRejectsInvalidMattermostCommandTrigger(t *testing.T) {
-	cfg := validConfig()
-	cfg.Mattermost.CommandTrigger = "/hits"
-
-	err := cfg.Validate()
-	if err == nil || err.Error() != "mattermost.command_trigger must not start with \"/\", got \"/hits\"" {
-		t.Fatalf("Validate() error = %v, want command_trigger leading slash validation error", err)
-	}
-
-	cfg = validConfig()
-	cfg.Mattermost.CommandTrigger = "hits bot"
-
-	err = cfg.Validate()
-	if err == nil || err.Error() != "mattermost.command_trigger must not contain whitespace, got \"hits bot\"" {
-		t.Fatalf("Validate() error = %v, want command_trigger whitespace validation error", err)
 	}
 }
 
@@ -99,9 +69,7 @@ func validConfig() Config {
 			CallbackPath: "/vk/callback",
 		},
 		Mattermost: MattermostConfig{
-			ActionsPath:    "/mattermost/actions",
-			CommandPath:    "/mattermost/command",
-			CommandTrigger: "hits",
+			ActionsPath: "/mattermost/actions",
 		},
 	}
 }

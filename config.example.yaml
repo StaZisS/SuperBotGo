@@ -55,10 +55,6 @@ mattermost:
   # actions_url: ""            # public URL for interactive button callbacks, e.g. "https://bot.example.com/mattermost/actions"
   actions_path: "/mattermost/actions" # local HTTP path handled by SuperBotGo
   # actions_secret: ""         # shared secret embedded into interactive action callbacks
-  # command_url: ""            # URL Mattermost should call for /hits, e.g. "https://bot.example.com/mattermost/command"
-  command_path: "/mattermost/command" # local HTTP path handled by SuperBotGo
-  command_trigger: "hits"      # slash command trigger users type as /hits
-  # command_token: ""          # Mattermost slash command token for manual setup; optional if auto-registration succeeds
 
 filestore:
   default_ttl: "24h"

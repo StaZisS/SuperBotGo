@@ -584,15 +584,11 @@ func prepareConfiguredBots(
 	logger.Info("starting Mattermost bot", slog.String("url", cfg.Mattermost.URL))
 	mmHandler := channel.Chain(manager.OnUpdate, dedupMw)
 	mmBot, err := mattermost.NewBot(mattermost.BotConfig{
-		URL:            cfg.Mattermost.URL,
-		Token:          cfg.Mattermost.Token,
-		ActionsURL:     cfg.Mattermost.ActionsURL,
-		ActionsPath:    cfg.Mattermost.ActionsPath,
-		ActionsSecret:  cfg.Mattermost.ActionsSecret,
-		CommandURL:     cfg.Mattermost.CommandURL,
-		CommandPath:    cfg.Mattermost.CommandPath,
-		CommandTrigger: cfg.Mattermost.CommandTrigger,
-		CommandToken:   cfg.Mattermost.CommandToken,
+		URL:           cfg.Mattermost.URL,
+		Token:         cfg.Mattermost.Token,
+		ActionsURL:    cfg.Mattermost.ActionsURL,
+		ActionsPath:   cfg.Mattermost.ActionsPath,
+		ActionsSecret: cfg.Mattermost.ActionsSecret,
 	}, mmHandler, joinHandler, fileStore, cfg.FileStore.MaxFileSize, logger)
 	if err != nil {
 		logger.Error("failed to create Mattermost bot", slog.Any("error", err))

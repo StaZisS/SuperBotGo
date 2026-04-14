@@ -330,6 +330,72 @@ func TestOnUpdate_TextInput_ProcessesViaStateManager(t *testing.T) {
 	}
 }
 
+func TestOnUpdate_MattermostPlainCommand_ResolvesAndRoutes(t *testing.T) {
+	mgr, deps := newTestManager()
+
+	def := &state.CommandDefinition{Name: "start"}
+	deps.plugins.ResolveCommandFn = func(input string) (string, *state.CommandDefinition, []model.CommandCandidate) {
+		if input == "start" {
+			return "core", def, nil
+		}
+		return "", nil, nil
+	}
+
+	var started bool
+	deps.state.StartCommandFn = func(_ context.Context, _ model.GlobalUserID, _ string, pluginID string, commandName string, _ string) (*StateResult, error) {
+		started = true
+		if pluginID != "core" {
+			t.Fatalf("expected pluginID %q, got %q", "core", pluginID)
+		}
+		if commandName != "start" {
+			t.Fatalf("expected commandName %q, got %q", "start", commandName)
+		}
+		return &StateResult{Message: model.NewTextMessage("ok")}, nil
+	}
+
+	err := mgr.OnUpdate(context.Background(), Update{
+		ChannelType:    model.ChannelMattermost,
+		PlatformUserID: "user123",
+		Input:          model.TextInput{Text: "start"},
+		ChatID:         "chat42",
+		Username:       "testuser",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !started {
+		t.Fatal("expected StartCommand to be called")
+	}
+}
+
+func TestOnUpdate_MattermostPlainText_RemainsInput(t *testing.T) {
+	mgr, deps := newTestManager()
+
+	deps.plugins.ResolveCommandFn = func(input string) (string, *state.CommandDefinition, []model.CommandCandidate) {
+		return "", nil, nil
+	}
+
+	var gotText string
+	deps.state.ProcessInputFn = func(_ context.Context, _ model.GlobalUserID, _ string, input model.UserInput, _ string) (*StateResult, error) {
+		gotText = input.TextValue()
+		return &StateResult{}, nil
+	}
+
+	err := mgr.OnUpdate(context.Background(), Update{
+		ChannelType:    model.ChannelMattermost,
+		PlatformUserID: "user123",
+		Input:          model.TextInput{Text: "hello bot"},
+		ChatID:         "chat42",
+		Username:       "testuser",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotText != "hello bot" {
+		t.Fatalf("expected plain text input, got %q", gotText)
+	}
+}
+
 func TestOnUpdate_UnknownCommand_NoError(t *testing.T) {
 	mgr, deps := newTestManager()
 

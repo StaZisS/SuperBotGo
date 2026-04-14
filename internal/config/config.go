@@ -99,15 +99,11 @@ type VKConfig struct {
 }
 
 type MattermostConfig struct {
-	URL            string `koanf:"url"`
-	Token          string `koanf:"token"`
-	ActionsURL     string `koanf:"actions_url"`
-	ActionsPath    string `koanf:"actions_path"`
-	ActionsSecret  string `koanf:"actions_secret"`
-	CommandURL     string `koanf:"command_url"`
-	CommandPath    string `koanf:"command_path"`
-	CommandTrigger string `koanf:"command_trigger"`
-	CommandToken   string `koanf:"command_token"`
+	URL           string `koanf:"url"`
+	Token         string `koanf:"token"`
+	ActionsURL    string `koanf:"actions_url"`
+	ActionsPath   string `koanf:"actions_path"`
+	ActionsSecret string `koanf:"actions_secret"`
 }
 
 type FileStoreConfig struct {
@@ -180,12 +176,6 @@ func Load() (*Config, error) {
 	if cfg.Mattermost.ActionsPath == "" {
 		cfg.Mattermost.ActionsPath = "/mattermost/actions"
 	}
-	if cfg.Mattermost.CommandPath == "" {
-		cfg.Mattermost.CommandPath = "/mattermost/command"
-	}
-	if cfg.Mattermost.CommandTrigger == "" {
-		cfg.Mattermost.CommandTrigger = "hits"
-	}
 	if cfg.FileStore.DefaultTTL == "" {
 		cfg.FileStore.DefaultTTL = "24h"
 	}
@@ -243,15 +233,6 @@ func (c *Config) Validate() error {
 	}
 	if c.Mattermost.ActionsPath != "" && !strings.HasPrefix(c.Mattermost.ActionsPath, "/") {
 		return fmt.Errorf("mattermost.actions_path must start with \"/\", got %q", c.Mattermost.ActionsPath)
-	}
-	if c.Mattermost.CommandPath != "" && !strings.HasPrefix(c.Mattermost.CommandPath, "/") {
-		return fmt.Errorf("mattermost.command_path must start with \"/\", got %q", c.Mattermost.CommandPath)
-	}
-	if strings.HasPrefix(c.Mattermost.CommandTrigger, "/") {
-		return fmt.Errorf("mattermost.command_trigger must not start with \"/\", got %q", c.Mattermost.CommandTrigger)
-	}
-	if strings.ContainsAny(c.Mattermost.CommandTrigger, " \t\r\n") {
-		return fmt.Errorf("mattermost.command_trigger must not contain whitespace, got %q", c.Mattermost.CommandTrigger)
 	}
 	return nil
 }

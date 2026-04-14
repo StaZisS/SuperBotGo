@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 
 	"SuperBotGo/internal/errs"
 	"SuperBotGo/internal/i18n"
@@ -121,10 +122,36 @@ func (m *ChannelManager) processUpdate(
 	chatID string,
 	locale string,
 ) error {
+	input = m.normalizeInput(channelType, input)
+
 	if input.IsCommand() {
 		return m.handleCommand(ctx, user.ID, channelType, input, chatID, locale)
 	}
 	return m.handleInput(ctx, user.ID, channelType, input, chatID, locale)
+}
+
+func (m *ChannelManager) normalizeInput(channelType model.ChannelType, input model.UserInput) model.UserInput {
+	if channelType != model.ChannelMattermost || input == nil || input.IsCommand() {
+		return input
+	}
+
+	text, ok := input.(model.TextInput)
+	if !ok {
+		return input
+	}
+
+	trimmed := strings.TrimSpace(text.Text)
+	if trimmed == "" || strings.ContainsAny(trimmed, " \t\r\n") {
+		return input
+	}
+
+	_, def, candidates := m.plugins.ResolveCommand(trimmed)
+	if def == nil && len(candidates) == 0 {
+		return input
+	}
+
+	text.Text = "/" + trimmed
+	return text
 }
 
 func (m *ChannelManager) handleCommand(
