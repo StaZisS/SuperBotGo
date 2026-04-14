@@ -1,10 +1,60 @@
 package vk
 
 import (
+	"strings"
 	"testing"
 
 	"SuperBotGo/internal/model"
 )
+
+func TestVKRenderer_RenderStyledText(t *testing.T) {
+	renderer := NewRenderer()
+	msg := model.Message{
+		Blocks: []model.ContentBlock{
+			model.TextBlock{Text: "Header", Style: model.StyleHeader},
+			model.TextBlock{Text: "Subheader", Style: model.StyleSubheader},
+			model.TextBlock{Text: "line 1\nline 2", Style: model.StyleQuote},
+			model.TextBlock{Text: "echo hi", Style: model.StyleCode},
+		},
+	}
+
+	rendered := renderer.Render(msg)
+	want := strings.Join([]string{
+		"*Header*",
+		"_Subheader_",
+		"> line 1",
+		"> line 2",
+		"`echo hi`",
+	}, "\n")
+
+	if rendered.Text != want {
+		t.Fatalf("Render().Text = %q, want %q", rendered.Text, want)
+	}
+}
+
+func TestVKRenderer_RenderMultilineCode(t *testing.T) {
+	renderer := NewRenderer()
+	msg := model.NewStyledTextMessage("first()\nsecond()", model.StyleCode)
+
+	rendered := renderer.Render(msg)
+	want := "```\nfirst()\nsecond()\n```"
+	if rendered.Text != want {
+		t.Fatalf("Render().Text = %q, want %q", rendered.Text, want)
+	}
+}
+
+func TestVKRenderer_RenderTruncatesToVKLimit(t *testing.T) {
+	renderer := NewRenderer()
+	msg := model.NewTextMessage(strings.Repeat("а", vkMaxMessageLength+10))
+
+	rendered := renderer.Render(msg)
+	if got := runeCount(rendered.Text); got != vkMaxMessageLength {
+		t.Fatalf("Render().Text length = %d, want %d", got, vkMaxMessageLength)
+	}
+	if !strings.HasSuffix(rendered.Text, "...") {
+		t.Fatalf("Render().Text = %q, want suffix %q", rendered.Text[len(rendered.Text)-6:], "...")
+	}
+}
 
 func TestVKButtonLabel_StripsDescriptionWhenLabelTooLong(t *testing.T) {
 	opt := model.Option{

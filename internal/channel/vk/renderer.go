@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	vkMaxMessageLength = 4096
+	vkMaxMessageLength = 9000
 	vkMaxButtonLabel   = 40
 	vkPayloadKey       = "sb"
 	maxKeyboardButtons = 10
@@ -39,13 +39,13 @@ type formatter struct{}
 func (formatter) FormatText(b model.TextBlock) string {
 	switch b.Style {
 	case model.StyleHeader:
-		return strings.ToUpper(b.Text)
+		return wrapStyledLines(b.Text, "*", "*")
 	case model.StyleSubheader:
-		return fmt.Sprintf("• %s", b.Text)
+		return wrapStyledLines(b.Text, "_", "_")
 	case model.StyleCode:
-		return fmt.Sprintf("`%s`", b.Text)
+		return formatVKCode(b.Text)
 	case model.StyleQuote:
-		return fmt.Sprintf("> %s", b.Text)
+		return prefixLines(b.Text, "> ")
 	default:
 		return b.Text
 	}
@@ -201,4 +201,41 @@ func truncateRunes(s string, limit int) string {
 
 func runeCount(s string) int {
 	return len([]rune(s))
+}
+
+func wrapStyledLines(text, prefix, suffix string) string {
+	if text == "" {
+		return ""
+	}
+
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		if line == "" {
+			continue
+		}
+		lines[i] = prefix + line + suffix
+	}
+	return strings.Join(lines, "\n")
+}
+
+func prefixLines(text, prefix string) string {
+	if text == "" {
+		return ""
+	}
+
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		lines[i] = prefix + line
+	}
+	return strings.Join(lines, "\n")
+}
+
+func formatVKCode(text string) string {
+	if text == "" {
+		return ""
+	}
+	if strings.Contains(text, "\n") {
+		return fmt.Sprintf("```\n%s\n```", text)
+	}
+	return fmt.Sprintf("`%s`", text)
 }
