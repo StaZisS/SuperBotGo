@@ -264,11 +264,11 @@ func TestOnUpdate_TextCommand_ResolvesAndRoutes(t *testing.T) {
 		return "", nil, nil
 	}
 
-	routed := false
+	var routed []model.Event
 	deps.router.RouteEventFn = func(_ context.Context, event model.Event) (*model.EventResponse, error) {
-		routed = true
-		if event.PluginID != "pluginA" {
-			t.Errorf("expected pluginID %q, got %q", "pluginA", event.PluginID)
+		routed = append(routed, event)
+		if len(routed) == 1 && event.PluginID != "pluginA" {
+			t.Errorf("expected first pluginID %q, got %q", "pluginA", event.PluginID)
 		}
 		return &model.EventResponse{}, nil
 	}
@@ -287,8 +287,14 @@ func TestOnUpdate_TextCommand_ResolvesAndRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !routed {
+	if len(routed) == 0 {
 		t.Error("expected event to be routed")
+	}
+	if len(routed) < 2 {
+		t.Fatalf("expected command route and plugin menu route, got %d event(s)", len(routed))
+	}
+	if routed[1].PluginID != "core" {
+		t.Errorf("expected follow-up pluginID %q, got %q", "core", routed[1].PluginID)
 	}
 }
 
@@ -528,11 +534,11 @@ func TestHandleInput_ActiveDialog_Completes_RoutesCommand(t *testing.T) {
 		}, nil
 	}
 
-	routed := false
+	var routed []model.Event
 	deps.router.RouteEventFn = func(_ context.Context, event model.Event) (*model.EventResponse, error) {
-		routed = true
-		if event.PluginID != "pluginA" {
-			t.Errorf("expected pluginID %q, got %q", "pluginA", event.PluginID)
+		routed = append(routed, event)
+		if len(routed) == 1 && event.PluginID != "pluginA" {
+			t.Errorf("expected first pluginID %q, got %q", "pluginA", event.PluginID)
 		}
 		return &model.EventResponse{}, nil
 	}
@@ -541,8 +547,11 @@ func TestHandleInput_ActiveDialog_Completes_RoutesCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !routed {
+	if len(routed) == 0 {
 		t.Error("expected completed dialog to route event")
+	}
+	if len(routed) < 2 {
+		t.Fatalf("expected command route and plugin menu route, got %d event(s)", len(routed))
 	}
 }
 
@@ -934,11 +943,9 @@ func TestHandleInput_Direct_EmptyPluginID_FallsBackToRegistry(t *testing.T) {
 		return ""
 	}
 
-	routed := false
-	var routedPluginID string
+	var routed []model.Event
 	deps.router.RouteEventFn = func(_ context.Context, e model.Event) (*model.EventResponse, error) {
-		routed = true
-		routedPluginID = e.PluginID
+		routed = append(routed, e)
 		return &model.EventResponse{}, nil
 	}
 
@@ -946,11 +953,155 @@ func TestHandleInput_Direct_EmptyPluginID_FallsBackToRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !routed {
+	if len(routed) == 0 {
 		t.Error("expected event to be routed")
 	}
-	if routedPluginID != "pluginFallback" {
-		t.Errorf("expected fallback pluginID %q, got %q", "pluginFallback", routedPluginID)
+	if routed[0].PluginID != "pluginFallback" {
+		t.Errorf("expected fallback pluginID %q, got %q", "pluginFallback", routed[0].PluginID)
+	}
+}
+
+func TestDispatchCompletedCommand_AutoReturnsPluginMenu(t *testing.T) {
+	mgr, deps := newTestManager()
+
+	var routed []model.Event
+	deps.router.RouteEventFn = func(_ context.Context, event model.Event) (*model.EventResponse, error) {
+		routed = append(routed, event)
+		return &model.EventResponse{}, nil
+	}
+
+	err := mgr.dispatchCompletedCommand(context.Background(), completedCommand{
+		userID:      1,
+		channelType: model.ChannelTelegram,
+		chatID:      "chat1",
+		pluginID:    "pluginA",
+		commandName: "deploy",
+		params:      model.OptionMap{"env": "prod"},
+		locale:      "en",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(routed) != 2 {
+		t.Fatalf("expected 2 routed events, got %d", len(routed))
+	}
+	if routed[0].PluginID != "pluginA" {
+		t.Fatalf("first routed pluginID = %q, want %q", routed[0].PluginID, "pluginA")
+	}
+	if routed[1].PluginID != "core" {
+		t.Fatalf("second routed pluginID = %q, want %q", routed[1].PluginID, "core")
+	}
+
+	msg, err := routed[1].Messenger()
+	if err != nil {
+		t.Fatalf("parse follow-up event: %v", err)
+	}
+	if msg.CommandName != "plugins" {
+		t.Fatalf("follow-up command = %q, want %q", msg.CommandName, "plugins")
+	}
+	if got := msg.Params.Get("plugin"); got != "pluginA" {
+		t.Fatalf("follow-up plugin param = %q, want %q", got, "pluginA")
+	}
+}
+
+func TestDispatchCompletedCommand_SkipsPluginMenuForPreservedDialogCommand(t *testing.T) {
+	mgr, deps := newTestManager()
+
+	deps.state.IsPreservesDialogFn = func(pluginID, commandName string) bool {
+		return pluginID == "core" && commandName == "resume"
+	}
+
+	var routed []model.Event
+	deps.router.RouteEventFn = func(_ context.Context, event model.Event) (*model.EventResponse, error) {
+		routed = append(routed, event)
+		return &model.EventResponse{}, nil
+	}
+
+	err := mgr.dispatchCompletedCommand(context.Background(), completedCommand{
+		userID:      1,
+		channelType: model.ChannelTelegram,
+		chatID:      "chat1",
+		pluginID:    "core",
+		commandName: "resume",
+		locale:      "en",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(routed) != 1 {
+		t.Fatalf("expected only the original command to be routed, got %d event(s)", len(routed))
+	}
+}
+
+func TestDispatchCompletedCommand_IgnoresPluginMenuFailure(t *testing.T) {
+	mgr, deps := newTestManager()
+
+	callCount := 0
+	deps.router.RouteEventFn = func(_ context.Context, event model.Event) (*model.EventResponse, error) {
+		callCount++
+		if callCount == 2 && event.PluginID == "core" {
+			return nil, errors.New("menu send failed")
+		}
+		return &model.EventResponse{}, nil
+	}
+
+	err := mgr.dispatchCompletedCommand(context.Background(), completedCommand{
+		userID:      1,
+		channelType: model.ChannelTelegram,
+		chatID:      "chat1",
+		pluginID:    "pluginA",
+		commandName: "run",
+		locale:      "en",
+	})
+	if err != nil {
+		t.Fatalf("expected menu failure to be ignored, got: %v", err)
+	}
+	if callCount != 2 {
+		t.Fatalf("expected original command and menu follow-up to be attempted, got %d call(s)", callCount)
+	}
+}
+
+func TestOnUpdate_PluginError_ReturnsPluginMenu(t *testing.T) {
+	mgr, deps := newTestManager()
+
+	def := &state.CommandDefinition{Name: "fail"}
+	deps.plugins.ResolveCommandFn = func(_ string) (string, *state.CommandDefinition, []model.CommandCandidate) {
+		return "pluginA", def, nil
+	}
+	deps.state.StartCommandFn = func(_ context.Context, _ model.GlobalUserID, _ string, _ string, _ string, _ string) (*StateResult, error) {
+		return &StateResult{
+			PluginID:    "pluginA",
+			CommandName: "fail",
+			IsComplete:  true,
+		}, nil
+	}
+
+	var routed []model.Event
+	deps.router.RouteEventFn = func(_ context.Context, event model.Event) (*model.EventResponse, error) {
+		routed = append(routed, event)
+		if event.PluginID == "pluginA" {
+			return &model.EventResponse{Error: "plugin crashed"}, nil
+		}
+		return &model.EventResponse{}, nil
+	}
+
+	err := mgr.OnUpdate(context.Background(), makeUpdate("/fail"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	msgs := deps.adapter.chatMessages()
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 error message, got %d", len(msgs))
+	}
+	if len(routed) != 2 {
+		t.Fatalf("expected failed command route and plugin menu route, got %d event(s)", len(routed))
+	}
+	if routed[0].PluginID != "pluginA" {
+		t.Fatalf("first routed pluginID = %q, want %q", routed[0].PluginID, "pluginA")
+	}
+	if routed[1].PluginID != "core" {
+		t.Fatalf("second routed pluginID = %q, want %q", routed[1].PluginID, "core")
 	}
 }
 

@@ -233,9 +233,22 @@ type completedCommand struct {
 	files       []model.FileRef
 }
 
+type completedCommandError struct {
+	cmd completedCommand
+	err error
+}
+
+func (e *completedCommandError) Error() string {
+	return e.err.Error()
+}
+
+func (e *completedCommandError) Unwrap() error {
+	return e.err
+}
+
 func (m *ChannelManager) dispatchCompletedCommand(ctx context.Context, cmd completedCommand) error {
 	m.recordFocus(cmd.userID, cmd.pluginID)
-	return m.routeCommand(ctx, cmd.pluginID, model.CommandRequest{
+	if err := m.routeCommand(ctx, cmd.pluginID, model.CommandRequest{
 		UserID:      cmd.userID,
 		ChannelType: cmd.channelType,
 		ChatID:      cmd.chatID,
@@ -244,7 +257,12 @@ func (m *ChannelManager) dispatchCompletedCommand(ctx context.Context, cmd compl
 		Params:      cmd.params,
 		Locale:      cmd.locale,
 		Files:       cmd.files,
-	})
+	}); err != nil {
+		return &completedCommandError{cmd: cmd, err: err}
+	}
+
+	m.tryReturnToPluginMenu(ctx, cmd)
+	return nil
 }
 
 func (m *ChannelManager) resultPluginID(result *StateResult) string {
@@ -253,6 +271,48 @@ func (m *ChannelManager) resultPluginID(result *StateResult) string {
 	}
 	// Fallback for dialogs started before the PluginID field existed.
 	return m.plugins.GetPluginIDByCommand(result.CommandName)
+}
+
+func (m *ChannelManager) tryReturnToPluginMenu(ctx context.Context, cmd completedCommand) {
+	if !m.shouldReturnToPluginMenu(cmd) {
+		return
+	}
+
+	err := m.routeCommand(ctx, "core", model.CommandRequest{
+		UserID:      cmd.userID,
+		ChannelType: cmd.channelType,
+		ChatID:      cmd.chatID,
+		PluginID:    "core",
+		CommandName: "plugins",
+		Params:      model.OptionMap{"plugin": cmd.pluginID},
+		Locale:      cmd.locale,
+	})
+	if err != nil {
+		m.logger.Warn("channel: auto-return to plugin menu failed",
+			"plugin_id", cmd.pluginID,
+			"command", cmd.commandName,
+			"error", err)
+	}
+}
+
+func (m *ChannelManager) shouldReturnToPluginMenu(cmd completedCommand) bool {
+	if cmd.pluginID == "" {
+		return false
+	}
+	if m.state.IsPreservesDialog(cmd.pluginID, cmd.commandName) {
+		return false
+	}
+
+	switch {
+	case cmd.pluginID == "core" && cmd.commandName == "start":
+		return false
+	case cmd.pluginID == "core" && cmd.commandName == "plugins":
+		return false
+	case cmd.pluginID == "core" && cmd.commandName == "resume":
+		return false
+	default:
+		return true
+	}
 }
 
 func (m *ChannelManager) shouldIgnoreInputError(err error, input model.UserInput) bool {
@@ -341,6 +401,8 @@ func (m *ChannelManager) routeCommand(ctx context.Context, pluginID string, req 
 }
 
 func (m *ChannelManager) handleError(ctx context.Context, channelType model.ChannelType, chatID string, userID model.GlobalUserID, err error) {
+	defer m.tryReturnToPluginMenuFromError(ctx, err)
+
 	var appErr *errs.AppError
 	if errors.As(err, &appErr) {
 		switch appErr.Severity {
@@ -375,6 +437,14 @@ func (m *ChannelManager) handleError(ctx context.Context, channelType model.Chan
 		slog.Int64("user_id", int64(userID)),
 		slog.Any("error", err))
 	m.sendErrorReply(ctx, channelType, chatID, userID, "An error occurred. Please try again.", err)
+}
+
+func (m *ChannelManager) tryReturnToPluginMenuFromError(ctx context.Context, err error) {
+	var cmdErr *completedCommandError
+	if !errors.As(err, &cmdErr) {
+		return
+	}
+	m.tryReturnToPluginMenu(ctx, cmdErr.cmd)
 }
 
 func (m *ChannelManager) sendErrorReply(ctx context.Context, channelType model.ChannelType, chatID string, userID model.GlobalUserID, msg string, originalErr error) {
