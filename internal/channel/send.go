@@ -26,7 +26,7 @@ type SilentSender interface {
 	SendToChatSilent(ctx context.Context, chatID string, msg model.Message, silent bool) error
 }
 
-func withRetry(ctx context.Context, fn func() error) error {
+func withRetry(ctx context.Context, fn func() error, onRetry func()) error {
 	var lastErr error
 	for attempt := range maxRetries {
 		lastErr = fn()
@@ -41,6 +41,9 @@ func withRetry(ctx context.Context, fn func() error) error {
 		}
 
 		delay := backoffDelay(attempt)
+		if onRetry != nil {
+			onRetry()
+		}
 		slog.Warn("send failed, retrying",
 			slog.Int("attempt", attempt+1),
 			slog.Duration("delay", delay),

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"SuperBotGo/internal/metrics"
 	"SuperBotGo/internal/model"
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 
@@ -33,6 +34,7 @@ type CronScheduler struct {
 	entries map[string][]cronEntry
 	router  *Router
 	redis   *redis.Client
+	metrics *metrics.Metrics
 
 	running sync.Map
 }
@@ -49,6 +51,12 @@ func (cs *CronScheduler) SetRedis(rc *redis.Client) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	cs.redis = rc
+}
+
+func (cs *CronScheduler) SetMetrics(metricSet *metrics.Metrics) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	cs.metrics = metricSet
 }
 
 func (cs *CronScheduler) AddSchedule(pluginID, triggerName, schedule string) error {
@@ -128,6 +136,7 @@ func (cs *CronScheduler) tryLock(pluginID, triggerName string, fireTime time.Tim
 func (cs *CronScheduler) fire(pluginID, triggerName string) {
 	runKey := cronRunKey(pluginID, triggerName)
 	if _, alreadyRunning := cs.running.LoadOrStore(runKey, struct{}{}); alreadyRunning {
+		cs.incTrigger(pluginID, triggerName, "skipped_running")
 		slog.Warn(fmt.Sprintf("skipping cron trigger %s: previous execution still running", triggerName),
 			"plugin", pluginID,
 			"trigger", triggerName,
@@ -139,6 +148,7 @@ func (cs *CronScheduler) fire(pluginID, triggerName string) {
 	now := time.Now()
 
 	if !cs.tryLock(pluginID, triggerName, now) {
+		cs.incTrigger(pluginID, triggerName, "skipped_locked")
 		slog.Debug("cron: skipped (another instance holds the lock)",
 			"plugin", pluginID,
 			"trigger", triggerName,
@@ -151,6 +161,7 @@ func (cs *CronScheduler) fire(pluginID, triggerName string) {
 		FireTime:     now.UnixMilli(),
 	})
 	if err != nil {
+		cs.incTrigger(pluginID, triggerName, "marshal_error")
 		slog.Error("cron: marshal trigger data failed",
 			"plugin", pluginID,
 			"trigger", triggerName,
@@ -174,6 +185,7 @@ func (cs *CronScheduler) fire(pluginID, triggerName string) {
 
 	resp, err := cs.router.RouteEvent(ctx, event)
 	if err != nil {
+		cs.incTrigger(pluginID, triggerName, "dispatch_error")
 		slog.Error("cron: dispatch failed",
 			"plugin", pluginID,
 			"trigger", triggerName,
@@ -182,10 +194,23 @@ func (cs *CronScheduler) fire(pluginID, triggerName string) {
 		return
 	}
 	if resp != nil && resp.Error != "" {
+		cs.incTrigger(pluginID, triggerName, "plugin_error")
 		slog.Error("cron: plugin returned error",
 			"plugin", pluginID,
 			"trigger", triggerName,
 			"error", resp.Error,
 		)
+		return
 	}
+	cs.incTrigger(pluginID, triggerName, "ok")
+}
+
+func (cs *CronScheduler) incTrigger(pluginID, triggerName, result string) {
+	cs.mu.Lock()
+	metricSet := cs.metrics
+	cs.mu.Unlock()
+	if metricSet == nil {
+		return
+	}
+	metricSet.CronTriggerTotal.WithLabelValues(pluginID, triggerName, result).Inc()
 }

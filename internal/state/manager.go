@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"SuperBotGo/internal/metrics"
 	"SuperBotGo/internal/model"
 	"SuperBotGo/internal/state/storage"
 )
@@ -15,6 +16,7 @@ type Manager struct {
 	commands map[string]*CommandDefinition
 	handlers map[string]StateHandler
 	mu       sync.RWMutex
+	metrics  *metrics.Metrics
 }
 
 func NewManager(store storage.DialogStorage) *Manager {
@@ -23,6 +25,10 @@ func NewManager(store storage.DialogStorage) *Manager {
 		commands: make(map[string]*CommandDefinition),
 		handlers: make(map[string]StateHandler),
 	}
+}
+
+func (m *Manager) SetMetrics(metricSet *metrics.Metrics) {
+	m.metrics = metricSet
 }
 
 // fqKey builds a fully-qualified map key: "pluginID.commandName".
@@ -99,6 +105,7 @@ func (m *Manager) StartCommand(ctx context.Context, userID model.GlobalUserID, c
 	if err := m.storage.Save(ctx, userID, ds); err != nil {
 		return model.Message{}, fmt.Errorf("saving state: %w", err)
 	}
+	m.incDialogTransition(pluginID, commandName, "started")
 
 	return msg, nil
 }
@@ -140,6 +147,7 @@ func (m *Manager) ProcessInput(ctx context.Context, userID model.GlobalUserID, c
 		if delErr := m.storage.Delete(ctx, userID); delErr != nil {
 			return model.Message{}, nil, fmt.Errorf("deleting state: %w", delErr)
 		}
+		m.incDialogTransition(ds.PluginID, ds.CommandName, "completed")
 		cmdReq := &model.CommandRequest{
 			UserID:      userID,
 			PluginID:    ds.PluginID,
@@ -156,6 +164,7 @@ func (m *Manager) ProcessInput(ctx context.Context, userID model.GlobalUserID, c
 	if err := m.storage.Save(ctx, userID, persistedDS); err != nil {
 		return model.Message{}, nil, fmt.Errorf("saving state: %w", err)
 	}
+	m.incDialogTransition(ds.PluginID, ds.CommandName, "continued")
 
 	return msg, nil, nil
 }
@@ -166,7 +175,26 @@ func (m *Manager) HasActiveDialog(ctx context.Context, userID model.GlobalUserID
 }
 
 func (m *Manager) CancelCommand(ctx context.Context, userID model.GlobalUserID) error {
-	return m.storage.Delete(ctx, userID)
+	var (
+		pluginID string
+		command  string
+	)
+
+	ds, err := m.storage.Load(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if ds != nil {
+		pluginID = ds.PluginID
+		command = ds.CommandName
+	}
+	if err := m.storage.Delete(ctx, userID); err != nil {
+		return err
+	}
+	if ds != nil {
+		m.incDialogTransition(pluginID, command, "cancelled")
+	}
+	return nil
 }
 
 func (m *Manager) RelocateDialog(ctx context.Context, userID model.GlobalUserID, chatID string) error {
@@ -215,4 +243,11 @@ func (m *Manager) GetCurrentStepMessage(ctx context.Context, userID model.Global
 
 	msg := handler.BuildStepMessage(state, locale)
 	return &msg, ds.CommandName, nil
+}
+
+func (m *Manager) incDialogTransition(pluginID, commandName, event string) {
+	if m.metrics == nil {
+		return
+	}
+	m.metrics.DialogTransitionsTotal.WithLabelValues(pluginID, commandName, event).Inc()
 }

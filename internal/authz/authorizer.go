@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"SuperBotGo/internal/metrics"
 	"golang.org/x/sync/errgroup"
 
 	v1 "github.com/authzed/authzed-go/proto/authzed/api/v1"
@@ -37,6 +38,7 @@ type Authorizer struct {
 	logger       *slog.Logger
 	subjectCache *TTLCache[model.GlobalUserID, *SubjectContext]
 	policyCache  *TTLCache[commandPolicyKey, commandPolicyValue]
+	metrics      *metrics.Metrics
 }
 
 // NewAuthorizer создает новый авторизатор с клиентом SpiceDB
@@ -69,6 +71,10 @@ func NewAuthorizerWithTTL(store Store, client *authzed.Client, logger *slog.Logg
 	}
 }
 
+func (a *Authorizer) SetMetrics(metricSet *metrics.Metrics) {
+	a.metrics = metricSet
+}
+
 func (a *Authorizer) CheckCommand(
 	ctx context.Context,
 	userID model.GlobalUserID,
@@ -76,13 +82,24 @@ func (a *Authorizer) CheckCommand(
 	commandName string,
 	requirements *model.RoleRequirements,
 ) (bool, error) {
+	start := time.Now()
+	result := "allow"
+	defer func() {
+		if a.metrics == nil {
+			return
+		}
+		a.metrics.AuthzCheckDuration.WithLabelValues(pluginID, commandName, result).Observe(time.Since(start).Seconds())
+	}()
+
 	// 1. Проверка требований к ролям через SpiceDB
 	if requirements != nil {
 		ok, err := a.checkRolesSpice(ctx, userID, requirements)
 		if err != nil {
+			result = "error"
 			return false, err
 		}
 		if !ok {
+			result = "deny"
 			return false, nil
 		}
 	}
@@ -94,23 +111,29 @@ func (a *Authorizer) CheckCommand(
 
 	enabled, policyExpr, found, err := a.getCommandPolicy(ctx, pluginID, commandName)
 	if err != nil {
+		result = "error"
 		return false, err
 	}
 	if !found {
 		return true, nil
 	}
 	if !enabled {
+		result = "deny"
 		return false, nil
 	}
 
 	if policyExpr != "" {
 		ok, evalErr := a.EvalPolicy(ctx, policyExpr, userID)
 		if evalErr != nil {
+			result = "error"
 			a.logger.Warn("policy expression error",
 				slog.String("plugin", pluginID),
 				slog.String("command", commandName),
 				slog.Any("error", evalErr))
 			return false, nil
+		}
+		if !ok {
+			result = "deny"
 		}
 		return ok, nil
 	}
@@ -165,8 +188,10 @@ func (a *Authorizer) getCommandPolicy(ctx context.Context, pluginID, commandName
 
 	if a.policyCache != nil {
 		if cached, ok := a.policyCache.Get(key); ok {
+			a.incAuthzCache("policy", "hit")
 			return cached.enabled, cached.policyExpr, cached.found, nil
 		}
+		a.incAuthzCache("policy", "miss")
 	}
 
 	enabled, policyExpr, found, err := a.store.GetCommandPolicy(ctx, pluginID, commandName)
@@ -257,8 +282,10 @@ func (a *Authorizer) checkPermission(ctx context.Context, objectType, objectID, 
 func (a *Authorizer) buildSubjectContext(ctx context.Context, userID model.GlobalUserID) (*SubjectContext, error) {
 	if a.subjectCache != nil {
 		if cached, ok := a.subjectCache.Get(userID); ok {
+			a.incAuthzCache("subject", "hit")
 			return cached, nil
 		}
+		a.incAuthzCache("subject", "miss")
 	}
 
 	sc := &SubjectContext{
@@ -368,4 +395,11 @@ func (a *Authorizer) lookupMemberGroups(ctx context.Context, userID model.Global
 		groups = append(groups, resp.ResourceObjectId)
 	}
 	return groups, nil
+}
+
+func (a *Authorizer) incAuthzCache(cacheName, result string) {
+	if a.metrics == nil {
+		return
+	}
+	a.metrics.AuthzCacheTotal.WithLabelValues(cacheName, result).Inc()
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"SuperBotGo/internal/channel"
+	"SuperBotGo/internal/metrics"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -20,7 +21,7 @@ type Config struct {
 	Prefix string
 }
 
-func Middleware(client *redis.Client, cfg Config, logger *slog.Logger) channel.UpdateMiddleware {
+func Middleware(client *redis.Client, cfg Config, logger *slog.Logger, metricSet *metrics.Metrics) channel.UpdateMiddleware {
 	if cfg.TTL == 0 {
 		cfg.TTL = defaultTTL
 	}
@@ -38,17 +39,26 @@ func Middleware(client *redis.Client, cfg Config, logger *slog.Logger) channel.U
 
 			ok, err := client.SetNX(ctx, key, "1", cfg.TTL).Result()
 			if err != nil {
+				if metricSet != nil {
+					metricSet.DedupChecksTotal.WithLabelValues(string(u.ChannelType), "redis_error").Inc()
+				}
 				logger.Warn("dedup: redis error, processing anyway",
 					slog.String("update_id", u.PlatformUpdateID),
 					slog.Any("error", err))
 				return next(ctx, u)
 			}
 			if !ok {
+				if metricSet != nil {
+					metricSet.DedupChecksTotal.WithLabelValues(string(u.ChannelType), "duplicate").Inc()
+				}
 				logger.Debug("dedup: duplicate update skipped",
 					slog.String("update_id", u.PlatformUpdateID))
 				return nil
 			}
 
+			if metricSet != nil {
+				metricSet.DedupChecksTotal.WithLabelValues(string(u.ChannelType), "new").Inc()
+			}
 			return next(ctx, u)
 		}
 	}

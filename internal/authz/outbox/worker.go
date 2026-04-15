@@ -8,6 +8,7 @@ import (
 	"math"
 	"time"
 
+	"SuperBotGo/internal/metrics"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"SuperBotGo/internal/authz/tuples"
@@ -26,6 +27,7 @@ type Worker struct {
 	logger       *slog.Logger
 	batchSize    int
 	pollInterval time.Duration
+	metrics      *metrics.Metrics
 }
 
 func NewWorker(pool *pgxpool.Pool, writer *tuples.Writer, logger *slog.Logger) *Worker {
@@ -36,6 +38,10 @@ func NewWorker(pool *pgxpool.Pool, writer *tuples.Writer, logger *slog.Logger) *
 		batchSize:    defaultBatchSize,
 		pollInterval: defaultPollInterval,
 	}
+}
+
+func (w *Worker) SetMetrics(metricSet *metrics.Metrics) {
+	w.metrics = metricSet
 }
 
 // Run starts the processing loop. Blocks until ctx is cancelled.
@@ -51,6 +57,7 @@ func (w *Worker) Run(ctx context.Context) error {
 		return fmt.Errorf("listen: %w", err)
 	}
 	w.logger.Info("authz outbox worker started")
+	w.refreshPending(ctx)
 
 	// Process any pending entries on startup.
 	w.processBatch(ctx)
@@ -82,6 +89,7 @@ type outboxRow struct {
 }
 
 func (w *Worker) processBatch(ctx context.Context) {
+	defer w.refreshPending(ctx)
 	for {
 		n, err := w.processOnce(ctx)
 		if err != nil {
@@ -135,6 +143,7 @@ func (w *Worker) processOnce(ctx context.Context) (int, error) {
 
 	for _, r := range batch {
 		if err := w.dispatch(ctx, r); err != nil {
+			w.incProcessed(r.Operation, "error")
 			w.logger.Warn("outbox dispatch failed",
 				slog.Int64("id", r.ID),
 				slog.String("op", r.Operation),
@@ -154,9 +163,10 @@ func (w *Worker) processOnce(ctx context.Context) (int, error) {
 			continue
 		}
 
+		w.incProcessed(r.Operation, "ok")
 		if _, err := tx.Exec(ctx, `
-			UPDATE authz_outbox SET processed_at = now() WHERE id = $1
-		`, r.ID); err != nil {
+				UPDATE authz_outbox SET processed_at = now() WHERE id = $1
+			`, r.ID); err != nil {
 			return 0, fmt.Errorf("mark processed %d: %w", r.ID, err)
 		}
 	}
@@ -206,4 +216,23 @@ func PendingCount(ctx context.Context, pool *pgxpool.Pool) (int64, error) {
 	var count int64
 	err := pool.QueryRow(ctx, `SELECT count(*) FROM authz_outbox WHERE processed_at IS NULL`).Scan(&count)
 	return count, err
+}
+
+func (w *Worker) refreshPending(ctx context.Context) {
+	if w.metrics == nil {
+		return
+	}
+	count, err := PendingCount(ctx, w.pool)
+	if err != nil {
+		w.logger.Warn("outbox pending count failed", slog.Any("error", err))
+		return
+	}
+	w.metrics.AuthzOutboxPending.Set(float64(count))
+}
+
+func (w *Worker) incProcessed(operation, result string) {
+	if w.metrics == nil {
+		return
+	}
+	w.metrics.AuthzOutboxProcessedTotal.WithLabelValues(operation, result).Inc()
 }

@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
+	"SuperBotGo/internal/metrics"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -17,10 +19,15 @@ type Bus struct {
 	pool       *pgxpool.Pool
 	connString string
 	instanceID string
+	metrics    *metrics.Metrics
 }
 
 func NewBus(pool *pgxpool.Pool, connString string, instanceID string) *Bus {
 	return &Bus{pool: pool, connString: connString, instanceID: instanceID}
+}
+
+func (b *Bus) SetMetrics(metricSet *metrics.Metrics) {
+	b.metrics = metricSet
 }
 
 func (b *Bus) InstanceID() string {
@@ -43,6 +50,7 @@ func (b *Bus) Subscribe(ctx context.Context, handler func(AdminEvent)) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
+			b.incReconnect(reconnectReason(err))
 			slog.Error("pubsub: listener disconnected, reconnecting in 3s", "error", err)
 			select {
 			case <-ctx.Done():
@@ -50,6 +58,30 @@ func (b *Bus) Subscribe(ctx context.Context, handler func(AdminEvent)) error {
 			case <-time.After(3 * time.Second):
 			}
 		}
+	}
+}
+
+func (b *Bus) incReconnect(reason string) {
+	if b.metrics == nil {
+		return
+	}
+	b.metrics.PubSubListenerReconnectTotal.WithLabelValues(reason).Inc()
+}
+
+func reconnectReason(err error) string {
+	if err == nil {
+		return "unknown"
+	}
+	msg := err.Error()
+	switch {
+	case strings.HasPrefix(msg, "connect:"):
+		return "connect"
+	case strings.HasPrefix(msg, "listen:"):
+		return "listen"
+	case strings.HasPrefix(msg, "wait:"):
+		return "wait"
+	default:
+		return "unknown"
 	}
 }
 

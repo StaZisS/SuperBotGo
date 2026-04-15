@@ -239,7 +239,7 @@ func TestWithRetry_SuccessFirstAttempt(t *testing.T) {
 	err := withRetry(context.Background(), func() error {
 		calls++
 		return nil
-	})
+	}, nil)
 
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
@@ -256,7 +256,7 @@ func TestWithRetry_NonTransientReturnsImmediately(t *testing.T) {
 	err := withRetry(context.Background(), func() error {
 		calls++
 		return nonTransient
-	})
+	}, nil)
 
 	if !errors.Is(err, nonTransient) {
 		t.Fatalf("expected %v, got %v", nonTransient, err)
@@ -276,7 +276,7 @@ func TestWithRetry_ContextCancelledBeforeRetry(t *testing.T) {
 	err := withRetry(ctx, func() error {
 		calls++
 		return transientErr
-	})
+	}, nil)
 
 	// The first call will execute and return a transient error.
 	// Then the select should pick up the cancelled context.
@@ -312,7 +312,7 @@ func TestWithRetry_ContextDeadlineExceeded(t *testing.T) {
 	err := withRetry(ctx, func() error {
 		calls++
 		return errors.New("timeout on server")
-	})
+	}, nil)
 
 	if calls < 1 {
 		t.Fatal("expected fn called at least once")
@@ -336,7 +336,7 @@ func TestWithRetry_TransientThenSuccess(t *testing.T) {
 			return errors.New("429 rate limited")
 		}
 		return nil
-	})
+	}, nil)
 
 	if err != nil {
 		t.Fatalf("expected nil error after retry, got %v", err)
@@ -357,7 +357,7 @@ func TestWithRetry_AllAttemptsFailTransient(t *testing.T) {
 	err := withRetry(context.Background(), func() error {
 		calls++
 		return transientErr
-	})
+	}, nil)
 
 	if !errors.Is(err, transientErr) {
 		t.Fatalf("expected %v, got %v", transientErr, err)

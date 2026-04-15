@@ -131,6 +131,7 @@ func newRuntimeServices(ctx context.Context, cfg *config.Config, logger *slog.Lo
 		pluginManager:   plugin.NewManager(),
 		metrics:         metrics.New(),
 	}
+	services.adapterRegistry.SetMetrics(services.metrics)
 
 	rt, err := wasmrt.NewRuntime(ctx, wasmrt.Config{
 		CacheDir:                cfg.Admin.ModulesDir + "/.cache",
@@ -166,7 +167,9 @@ func newRuntimeServices(ctx context.Context, cfg *config.Config, logger *slog.Lo
 	services.wasmLoader.SetTriggerRegistry(services.triggerRegistry)
 
 	services.triggerRouter = trigger.NewRouter(services.triggerRegistry, services.pluginManager)
+	services.triggerRouter.SetMetrics(services.metrics)
 	services.cronScheduler = trigger.NewCronScheduler(services.triggerRouter)
+	services.cronScheduler.SetMetrics(services.metrics)
 	services.triggerRegistry.SetCronScheduler(services.cronScheduler)
 
 	return services, nil
@@ -251,7 +254,7 @@ func newPostgresServices(ctx context.Context, cfg *config.Config, logger *slog.L
 	return services, nil
 }
 
-func configureSpiceDB(ctx context.Context, cfg *config.Config, services *postgresServices, logger *slog.Logger) (*authzed.Client, error) {
+func configureSpiceDB(ctx context.Context, cfg *config.Config, services *postgresServices, metricSet *metrics.Metrics, logger *slog.Logger) (*authzed.Client, error) {
 	if cfg.SpiceDB.Endpoint == "" {
 		logger.Warn("SpiceDB endpoint not configured, authorization may not work correctly")
 		return nil, nil
@@ -278,6 +281,7 @@ func configureSpiceDB(ctx context.Context, cfg *config.Config, services *postgre
 
 	tupleWriter := tuples.NewWriter(client)
 	outboxWorker := outbox.NewWorker(services.pool, tupleWriter, logger)
+	outboxWorker.SetMetrics(metricSet)
 	go func() {
 		if err := outboxWorker.Run(ctx); err != nil && ctx.Err() == nil {
 			logger.Error("authz outbox worker stopped", slog.Any("error", err))
@@ -377,11 +381,15 @@ func registerAdminRoutes(
 	return adminMux, authHandler
 }
 
-func newAdminServer(cfg *config.Config, authHandler *adminapi.AuthHandler, mux *http.ServeMux) *http.Server {
+func newAdminServer(cfg *config.Config, authHandler *adminapi.AuthHandler, mux *http.ServeMux, metricSet *metrics.Metrics) *http.Server {
 	authMiddleware := adminapi.NewAdminAuthMiddleware(authHandler)
+	handler := authMiddleware.Wrap(mux)
+	if metricSet != nil {
+		handler = metricSet.InstrumentHTTP(handler)
+	}
 	return &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Admin.Port),
-		Handler:      authMiddleware.Wrap(mux),
+		Handler:      handler,
 		ReadTimeout:  httpReadTimeout,
 		WriteTimeout: httpWriteTimeout,
 		IdleTimeout:  httpIdleTimeout,
@@ -489,12 +497,13 @@ func prepareConfiguredBots(
 	fileStore filestore.FileStore,
 	redisClient *redis.Client,
 	manager *channel.ChannelManager,
+	metricSet *metrics.Metrics,
 	commandNames []string,
 	chatRegistry chat.Registry,
 	mux *http.ServeMux,
 ) []botStarter {
 	joinHandler := newChatJoinHandler(chatRegistry, logger)
-	dedupMw := dedup.Middleware(redisClient, dedup.Config{}, logger)
+	dedupMw := dedup.Middleware(redisClient, dedup.Config{}, logger, metricSet)
 	var starters []botStarter
 
 	if cfg.Telegram.Token != "" {

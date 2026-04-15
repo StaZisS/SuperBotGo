@@ -2,15 +2,21 @@ package channel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
+	"time"
 
+	"SuperBotGo/internal/metrics"
 	"SuperBotGo/internal/model"
 )
+
+var ErrNoAdapter = errors.New("no adapter registered for channel type")
 
 type AdapterRegistry struct {
 	mu       sync.RWMutex
 	adapters map[model.ChannelType]ChannelAdapter
+	metrics  *metrics.Metrics
 }
 
 func NewAdapterRegistry() *AdapterRegistry {
@@ -31,10 +37,16 @@ func (r *AdapterRegistry) Get(channelType model.ChannelType) ChannelAdapter {
 	return r.adapters[channelType]
 }
 
+func (r *AdapterRegistry) SetMetrics(m *metrics.Metrics) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.metrics = m
+}
+
 func (r *AdapterRegistry) mustGet(channelType model.ChannelType) (ChannelAdapter, error) {
 	adapter := r.Get(channelType)
 	if adapter == nil {
-		return nil, fmt.Errorf("no adapter registered for channel type: %s", channelType)
+		return nil, fmt.Errorf("%w: %s", ErrNoAdapter, channelType)
 	}
 	return adapter, nil
 }
@@ -48,24 +60,36 @@ func (r *AdapterRegistry) IsRegistered(channelType model.ChannelType) bool {
 
 // SendToChat dispatches a message to the appropriate adapter with retry on transient errors.
 func (r *AdapterRegistry) SendToChat(ctx context.Context, channelType model.ChannelType, chatID string, msg model.Message) error {
+	start := time.Now()
 	adapter, err := r.mustGet(channelType)
 	if err != nil {
+		r.observeSend(channelType, "chat", classifySendResult(err), time.Since(start))
 		return err
 	}
-	return withRetry(ctx, func() error {
+	err = withRetry(ctx, func() error {
 		return adapter.SendToChat(ctx, chatID, msg)
+	}, func() {
+		r.incSendRetry(channelType, "chat")
 	})
+	r.observeSend(channelType, "chat", classifySendResult(err), time.Since(start))
+	return err
 }
 
 // SendToUser dispatches a message to the appropriate adapter with retry on transient errors.
 func (r *AdapterRegistry) SendToUser(ctx context.Context, channelType model.ChannelType, platformUserID model.PlatformUserID, msg model.Message) error {
+	start := time.Now()
 	adapter, err := r.mustGet(channelType)
 	if err != nil {
+		r.observeSend(channelType, "user", classifySendResult(err), time.Since(start))
 		return err
 	}
-	return withRetry(ctx, func() error {
+	err = withRetry(ctx, func() error {
 		return adapter.SendToUser(ctx, platformUserID, msg)
+	}, func() {
+		r.incSendRetry(channelType, "user")
 	})
+	r.observeSend(channelType, "user", classifySendResult(err), time.Since(start))
+	return err
 }
 
 // sendWithOpts applies SendOptions (silent mode, mention stripping) and dispatches
@@ -81,33 +105,82 @@ func sendWithOpts(ctx context.Context, adapter ChannelAdapter, msg model.Message
 			}
 		}
 		return normalSend(msg)
-	})
+	}, nil)
 }
 
 // SendToChatWithOpts dispatches a message applying SendOptions (silent mode, mention stripping)
 // with retry on transient errors.
 func (r *AdapterRegistry) SendToChatWithOpts(ctx context.Context, channelType model.ChannelType, chatID string, msg model.Message, opts model.SendOptions) error {
+	start := time.Now()
 	adapter, err := r.mustGet(channelType)
 	if err != nil {
+		r.observeSend(channelType, "chat", classifySendResult(err), time.Since(start))
 		return err
 	}
-	return sendWithOpts(ctx, adapter, msg, opts,
-		func(m model.Message) error { return adapter.SendToChat(ctx, chatID, m) },
-		func(m model.Message) error { return adapter.(SilentSender).SendToChatSilent(ctx, chatID, m, true) },
-	)
+	err = withRetry(ctx, func() error {
+		if opts.StripMentions {
+			msg = model.StripMentionBlocks(msg)
+		}
+		if opts.Silent {
+			if _, ok := adapter.(SilentSender); ok {
+				return adapter.(SilentSender).SendToChatSilent(ctx, chatID, msg, true)
+			}
+		}
+		return adapter.SendToChat(ctx, chatID, msg)
+	}, func() {
+		r.incSendRetry(channelType, "chat")
+	})
+	r.observeSend(channelType, "chat", classifySendResult(err), time.Since(start))
+	return err
 }
 
 // SendToUserWithOpts dispatches a message applying SendOptions (silent mode, mention stripping)
 // with retry on transient errors.
 func (r *AdapterRegistry) SendToUserWithOpts(ctx context.Context, channelType model.ChannelType, platformUserID model.PlatformUserID, msg model.Message, opts model.SendOptions) error {
+	start := time.Now()
 	adapter, err := r.mustGet(channelType)
 	if err != nil {
+		r.observeSend(channelType, "user", classifySendResult(err), time.Since(start))
 		return err
 	}
-	return sendWithOpts(ctx, adapter, msg, opts,
-		func(m model.Message) error { return adapter.SendToUser(ctx, platformUserID, m) },
-		func(m model.Message) error {
-			return adapter.(SilentSender).SendToUserSilent(ctx, platformUserID, m, true)
-		},
-	)
+	err = withRetry(ctx, func() error {
+		if opts.StripMentions {
+			msg = model.StripMentionBlocks(msg)
+		}
+		if opts.Silent {
+			if _, ok := adapter.(SilentSender); ok {
+				return adapter.(SilentSender).SendToUserSilent(ctx, platformUserID, msg, true)
+			}
+		}
+		return adapter.SendToUser(ctx, platformUserID, msg)
+	}, func() {
+		r.incSendRetry(channelType, "user")
+	})
+	r.observeSend(channelType, "user", classifySendResult(err), time.Since(start))
+	return err
+}
+
+func (r *AdapterRegistry) observeSend(channelType model.ChannelType, target, result string, dur time.Duration) {
+	if r.metrics == nil {
+		return
+	}
+	r.metrics.MessageSendDuration.WithLabelValues(string(channelType), target, result).Observe(dur.Seconds())
+}
+
+func (r *AdapterRegistry) incSendRetry(channelType model.ChannelType, target string) {
+	if r.metrics == nil {
+		return
+	}
+	r.metrics.MessageSendRetriesTotal.WithLabelValues(string(channelType), target).Inc()
+}
+
+func classifySendResult(err error) string {
+	switch {
+	case err == nil:
+		return "ok"
+	case errors.Is(err, ErrNoAdapter):
+		return "no_adapter"
+	default:
+		return "error"
+	}
 }

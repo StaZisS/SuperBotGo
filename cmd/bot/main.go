@@ -70,6 +70,7 @@ func main() {
 		logger.Error("failed to initialise PostgreSQL services", slog.Any("error", err))
 		os.Exit(1)
 	}
+	stores.adminBus.SetMetrics(runtime.metrics)
 
 	userService := user.NewService(stores.userRepo, stores.accountRepo)
 	studentResolver := university.NewPgStudentResolver(stores.pool)
@@ -77,18 +78,21 @@ func main() {
 		notification.NewNotifyAPI(runtime.adapterRegistry, userService, stores.notifPrefsRepo, studentResolver),
 	))
 
-	spiceClient, err := configureSpiceDB(bootstrapCtx, cfg, stores, logger)
+	spiceClient, err := configureSpiceDB(bootstrapCtx, cfg, stores, runtime.metrics, logger)
 	if err != nil {
 		logger.Error("failed to initialise SpiceDB", slog.Any("error", err))
 		os.Exit(1)
 	}
 
 	authorizer := authz.NewAuthorizer(stores.authzStore, spiceClient, logger, stores.universityProvider)
+	authorizer.SetMetrics(runtime.metrics)
 	autoloadPlugins(bootstrapCtx, stores, blobStore, runtime, logger)
 
 	dialogStore := storage.NewRedisStorage(redisClient)
+	dialogStore.SetMetrics(runtime.metrics)
 	logger.Info("using Redis dialog storage")
 	stateMgr := state.NewManager(dialogStore)
+	stateMgr.SetMetrics(runtime.metrics)
 
 	adminMux, authHandler := registerAdminRoutes(cfg, logger, runtime, stores, blobStore, authorizer, stateMgr, spiceClient)
 	tsuAuth := configureTSUAccounts(cfg, stores.userRepo, stores.accountRepo, stores.pool, adminMux, logger)
@@ -116,6 +120,7 @@ func main() {
 		focusTracker,
 		logger,
 	)
+	channelMgr.SetMetrics(runtime.metrics)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -123,8 +128,8 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-	botStarters := prepareConfiguredBots(cfg, logger, fileStore, redisClient, channelMgr, collectCommandNames(runtime.pluginManager), stores.chatRegistry, adminMux)
-	adminServer := newAdminServer(cfg, authHandler, adminMux)
+	botStarters := prepareConfiguredBots(cfg, logger, fileStore, redisClient, channelMgr, runtime.metrics, collectCommandNames(runtime.pluginManager), stores.chatRegistry, adminMux)
+	adminServer := newAdminServer(cfg, authHandler, adminMux, runtime.metrics)
 	startUniversityPuller(bootstrapCtx, cfg, stores.syncSvc, logger)
 	startAdminServer(adminServer, logger, cfg.Admin.Port)
 	startPubSubSubscriber(ctx, logger, stores, blobStore, runtime, stateMgr)

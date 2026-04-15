@@ -7,10 +7,12 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"time"
 
 	"SuperBotGo/internal/errs"
 	"SuperBotGo/internal/i18n"
 	"SuperBotGo/internal/locale"
+	"SuperBotGo/internal/metrics"
 	"SuperBotGo/internal/model"
 	"SuperBotGo/internal/state"
 )
@@ -66,6 +68,7 @@ type ChannelManager struct {
 	adapters    *AdapterRegistry
 	focus       FocusTracker
 	logger      *slog.Logger
+	metrics     *metrics.Metrics
 }
 
 func NewChannelManager(
@@ -97,9 +100,27 @@ func (m *ChannelManager) RegisterAdapter(adapter ChannelAdapter) {
 	m.adapters.Register(adapter)
 }
 
+func (m *ChannelManager) SetMetrics(metricSet *metrics.Metrics) {
+	m.metrics = metricSet
+}
+
 func (m *ChannelManager) OnUpdate(ctx context.Context, u Update) error {
+	start := time.Now()
+	result := "ok"
+	defer func() {
+		if m.metrics == nil {
+			return
+		}
+		m.metrics.ChannelUpdateDuration.WithLabelValues(
+			string(u.ChannelType),
+			updateInputType(u.Input),
+			result,
+		).Observe(time.Since(start).Seconds())
+	}()
+
 	user, err := m.userService.FindOrCreateUser(ctx, u.ChannelType, u.PlatformUserID, u.Username)
 	if err != nil {
+		result = "user_lookup_error"
 		return err
 	}
 
@@ -109,6 +130,7 @@ func (m *ChannelManager) OnUpdate(ctx context.Context, u Update) error {
 	}
 
 	if err := m.processUpdate(ctx, user, u.ChannelType, u.Input, u.ChatID, loc); err != nil {
+		result = classifyUpdateResult(err)
 		m.handleError(ctx, u.ChannelType, u.ChatID, user.ID, err)
 	}
 	return nil
@@ -168,12 +190,14 @@ func (m *ChannelManager) handleCommand(
 
 	// Ambiguous alias — send disambiguation message.
 	if len(candidates) > 0 {
+		m.incCommandExecution(channelType, pluginID, rawName, "ambiguous")
 		msg := m.buildDisambiguationMessage(userID, candidates, loc)
 		return m.adapters.SendToChat(ctx, channelType, chatID, msg)
 	}
 
 	// Not found.
 	if def == nil {
+		m.incCommandExecution(channelType, pluginID, rawName, "not_found")
 		return errs.NewSilentError(errs.ErrCommandNotFound, rawName)
 	}
 
@@ -184,6 +208,7 @@ func (m *ChannelManager) handleCommand(
 		return err
 	}
 	if !ok {
+		m.incCommandExecution(channelType, pluginID, commandName, "denied")
 		return m.adapters.SendToChat(ctx, channelType, chatID,
 			model.NewTextMessage(i18n.Get("error.access_denied", loc)))
 	}
@@ -274,6 +299,11 @@ func (e *completedCommandError) Unwrap() error {
 }
 
 func (m *ChannelManager) dispatchCompletedCommand(ctx context.Context, cmd completedCommand) error {
+	result := "ok"
+	defer func() {
+		m.incCommandExecution(cmd.channelType, cmd.pluginID, cmd.commandName, result)
+	}()
+
 	m.recordFocus(cmd.userID, cmd.pluginID)
 	if err := m.routeCommand(ctx, cmd.pluginID, model.CommandRequest{
 		UserID:      cmd.userID,
@@ -285,6 +315,7 @@ func (m *ChannelManager) dispatchCompletedCommand(ctx context.Context, cmd compl
 		Locale:      cmd.locale,
 		Files:       cmd.files,
 	}); err != nil {
+		result = "dispatch_error"
 		return &completedCommandError{cmd: cmd, err: err}
 	}
 
@@ -490,4 +521,44 @@ func extractFiles(input model.UserInput) []model.FileRef {
 		return fi.Files
 	}
 	return nil
+}
+
+func (m *ChannelManager) incCommandExecution(channelType model.ChannelType, pluginID, commandName, result string) {
+	if m.metrics == nil {
+		return
+	}
+	m.metrics.CommandExecutionsTotal.WithLabelValues(
+		string(channelType),
+		pluginID,
+		commandName,
+		result,
+	).Inc()
+}
+
+func updateInputType(input model.UserInput) string {
+	switch input.(type) {
+	case model.TextInput:
+		return "text"
+	case model.CallbackInput:
+		return "callback"
+	case model.FileInput:
+		return "file"
+	default:
+		return "unknown"
+	}
+}
+
+func classifyUpdateResult(err error) string {
+	var appErr *errs.AppError
+	if errors.As(err, &appErr) {
+		switch appErr.Severity {
+		case errs.SeverityUser:
+			return "user_error"
+		case errs.SeveritySilent:
+			return "silent"
+		case errs.SeverityInternal:
+			return "internal_error"
+		}
+	}
+	return "internal_error"
 }
