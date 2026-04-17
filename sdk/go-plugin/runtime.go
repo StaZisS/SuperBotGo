@@ -12,7 +12,7 @@ import (
 //	func main() { wasmplugin.Run(myPlugin) }
 //
 // Run reads PLUGIN_ACTION from the environment and dispatches to the
-// appropriate handler (meta / configure / handle_event / step_callback).
+// appropriate handler (meta / configure / reconfigure / handle_event / handle_rpc / step_callback).
 func Run(p Plugin) {
 	action := os.Getenv("PLUGIN_ACTION")
 	switch action {
@@ -20,8 +20,12 @@ func Run(p Plugin) {
 		handleMeta(p)
 	case "configure":
 		handleConfigure(p)
+	case "reconfigure":
+		handleReconfigure(p)
 	case "handle_event":
 		handleEvent(p)
+	case "handle_rpc":
+		handleRPC(p)
 	case "step_callback":
 		handleStepCallback(p)
 	case "migrate":
@@ -33,10 +37,11 @@ func Run(p Plugin) {
 
 func handleMeta(p Plugin) {
 	meta := pluginMeta{
-		ID:         p.ID,
-		Name:       p.Name,
-		Version:    p.Version,
-		SDKVersion: ProtocolVersion,
+		ID:                  p.ID,
+		Name:                p.Name,
+		Version:             p.Version,
+		SDKVersion:          ProtocolVersion,
+		SupportsReconfigure: p.OnReconfigure != nil,
 	}
 
 	var dbFields []DatabaseField
@@ -50,10 +55,9 @@ func handleMeta(p Plugin) {
 		}
 	}
 
-	configSchema := p.Config.withDatabases(dbFields)
-	if !configSchema.IsEmpty() {
-		data, _ := json.Marshal(configSchema)
-		meta.ConfigSchema = json.RawMessage(data)
+	configSchema, err := buildConfigSchema(p.Config.withDatabases(dbFields), p.Requirements)
+	if err == nil && len(configSchema) > 0 {
+		meta.ConfigSchema = configSchema
 	}
 
 	for _, t := range p.Triggers {
@@ -91,6 +95,16 @@ func handleMeta(p Plugin) {
 		meta.Requirements = append(meta.Requirements, rd)
 	}
 
+	for _, method := range p.RPCMethods {
+		if method.Name == "" || method.Handler == nil {
+			continue
+		}
+		meta.RPCMethods = append(meta.RPCMethods, rpcMethodDef{
+			Name:        method.Name,
+			Description: method.Description,
+		})
+	}
+
 	for _, m := range p.Migrations {
 		meta.Migrations = append(meta.Migrations, migrationDef{
 			Version:     m.Version,
@@ -102,6 +116,115 @@ func handleMeta(p Plugin) {
 
 	data, _ := json.Marshal(meta)
 	os.Stdout.Write(data)
+}
+
+func buildConfigSchema(base ConfigSchema, requirements []Requirement) (json.RawMessage, error) {
+	hasHTTPConfig := false
+	for _, req := range requirements {
+		if req.Type == "http" && !req.Config.IsEmpty() {
+			hasHTTPConfig = true
+			break
+		}
+	}
+	if base.IsEmpty() && !hasHTTPConfig {
+		return nil, nil
+	}
+
+	var schema map[string]interface{}
+	if !base.IsEmpty() {
+		data, err := json.Marshal(base)
+		if err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(data, &schema); err != nil {
+			return nil, err
+		}
+	} else {
+		schema = map[string]interface{}{
+			"type":       "object",
+			"properties": map[string]interface{}{},
+		}
+	}
+
+	httpProps := make(map[string]interface{})
+	httpRequired := make([]string, 0)
+	for _, req := range requirements {
+		if req.Type != "http" || req.Config.IsEmpty() {
+			continue
+		}
+		name := req.Name
+		if name == "" {
+			name = "default"
+		}
+		data, err := json.Marshal(req.Config)
+		if err != nil {
+			return nil, err
+		}
+		var reqSchema map[string]interface{}
+		if err := json.Unmarshal(data, &reqSchema); err != nil {
+			return nil, err
+		}
+		httpProps[name] = reqSchema
+		httpRequired = append(httpRequired, name)
+	}
+
+	if len(httpProps) > 0 {
+		properties := ensureObjectProperties(schema)
+		requirementsObj := ensureNestedObject(properties, "requirements")
+		requirementsProps := ensureObjectProperties(requirementsObj)
+		requirementsProps["http"] = map[string]interface{}{
+			"type":       "object",
+			"properties": httpProps,
+			"required":   httpRequired,
+		}
+		appendRequired(requirementsObj, "http")
+		appendRequired(schema, "requirements")
+	}
+
+	if len(schema) == 0 {
+		return nil, nil
+	}
+
+	data, err := json.Marshal(schema)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(data), nil
+}
+
+func ensureObjectProperties(schema map[string]interface{}) map[string]interface{} {
+	props, ok := schema["properties"].(map[string]interface{})
+	if ok {
+		return props
+	}
+	props = make(map[string]interface{})
+	schema["properties"] = props
+	return props
+}
+
+func ensureNestedObject(properties map[string]interface{}, key string) map[string]interface{} {
+	if existing, ok := properties[key].(map[string]interface{}); ok {
+		if _, hasType := existing["type"]; !hasType {
+			existing["type"] = "object"
+		}
+		return existing
+	}
+	obj := map[string]interface{}{
+		"type":       "object",
+		"properties": map[string]interface{}{},
+	}
+	properties[key] = obj
+	return obj
+}
+
+func appendRequired(schema map[string]interface{}, field string) {
+	required, _ := schema["required"].([]interface{})
+	for _, item := range required {
+		if s, ok := item.(string); ok && s == field {
+			return
+		}
+	}
+	schema["required"] = append(required, field)
 }
 
 func handleConfigure(p Plugin) {
@@ -117,6 +240,80 @@ func handleConfigure(p Plugin) {
 			return
 		}
 	}
+}
+
+func handleReconfigure(p Plugin) {
+	data, _ := io.ReadAll(os.Stdin)
+
+	var req reconfigureRequest
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &req); err != nil {
+			writeEventResponse(eventResponseJSON{Error: "failed to parse reconfigure request: " + err.Error()})
+			return
+		}
+	}
+
+	if len(req.Config) > 0 {
+		_ = json.Unmarshal(req.Config, &configStore)
+	} else {
+		configStore = nil
+	}
+
+	if p.OnReconfigure != nil {
+		if err := p.OnReconfigure(req.PreviousConfig, req.Config); err != nil {
+			writeEventResponse(eventResponseJSON{Error: err.Error()})
+			return
+		}
+	}
+}
+
+func handleRPC(p Plugin) {
+	data, _ := io.ReadAll(os.Stdin)
+
+	var req rpcRequest
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &req); err != nil {
+			writeRPCResponse(rpcResponse{Status: "error", Error: "failed to parse rpc request: " + err.Error()})
+			return
+		}
+	}
+
+	var cfg map[string]interface{}
+	if raw := os.Getenv("PLUGIN_CONFIG"); raw != "" {
+		_ = json.Unmarshal([]byte(raw), &cfg)
+	}
+
+	var handler RPCHandler
+	for _, method := range p.RPCMethods {
+		if method.Name == req.Method {
+			handler = method.Handler
+			break
+		}
+	}
+	if handler == nil {
+		writeRPCResponse(rpcResponse{Status: "error", Error: "unknown rpc method: " + req.Method})
+		return
+	}
+
+	ctx := &RPCContext{
+		Caller: req.Caller,
+		Method: req.Method,
+		Params: req.Params,
+		config: cfg,
+	}
+
+	result, err := handler(ctx)
+	if err != nil {
+		writeRPCResponse(rpcResponse{Status: "error", Error: err.Error(), Logs: ctx.logs})
+		return
+	}
+
+	writeRPCResponse(rpcResponse{Status: "ok", Result: result, Logs: ctx.logs})
+}
+
+func writeRPCResponse(v rpcResponse) {
+	data, _ := json.Marshal(v)
+	os.Stdout.Write(data)
 }
 
 func handleMigrate(p Plugin) {

@@ -132,6 +132,8 @@ wasmplugin.NewStep("age").
 
 `ValidateFunc` получает [CallbackContext](#callbackcontext) с полем `Input` - текст, введённый пользователем. Возвращает `true`, если ввод корректен.
 
+Если callback не выполнился из-за ошибки рантайма, host трактует результат как `false`: ввод не будет silently принят.
+
 ::: info Приоритет
 Если заданы оба варианта, `ValidateFunc` имеет приоритет над `Validate` (regex).
 :::
@@ -189,6 +191,8 @@ wasmplugin.NewStep("city").
 | `HasMore` | `bool` | Если `true`, хост покажет кнопку «Далее» |
 
 Поле `ctx.Page` содержит номер текущей страницы (начиная с 0).
+
+Если pagination callback не выполнился, host показывает controlled fallback message вместо пустого списка.
 
 ## Ветвление {#branching}
 
@@ -262,6 +266,8 @@ wasmplugin.ConditionalBranch(
 - **`Otherwise(nodes...)`** - ветка по умолчанию
 
 Условия проверяются сверху вниз. Выполняется первая сработавшая ветка.
+
+Если callback-условие не выполнилось, host трактует его как `false`.
 
 ## Условия {#conditions}
 

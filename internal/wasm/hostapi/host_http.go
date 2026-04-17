@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -49,10 +48,11 @@ func isBlockedHost(rawURL string) bool {
 }
 
 type httpRequestPayload struct {
-	Method  string            `msgpack:"method"`
-	URL     string            `msgpack:"url"`
-	Headers map[string]string `msgpack:"headers,omitempty"`
-	Body    string            `msgpack:"body,omitempty"`
+	Requirement string            `msgpack:"requirement,omitempty"`
+	Method      string            `msgpack:"method"`
+	URL         string            `msgpack:"url"`
+	Headers     map[string]string `msgpack:"headers,omitempty"`
+	Body        string            `msgpack:"body,omitempty"`
 }
 
 type httpResponsePayload struct {
@@ -90,6 +90,22 @@ func (h *HostAPI) httpRequestFunc() api.GoModuleFunc {
 			return
 		}
 
+		method := normalizeHTTPRequestMethod(payload.Method)
+		payload.Method = method
+		policy := HTTPPolicy{}
+
+		if h.httpPolicyEnabled {
+			policy, err = h.HTTPPolicy(pluginID, payload.Requirement)
+			if err != nil {
+				returnError(ctx, mod, stack, err)
+				return
+			}
+			if err := enforceHTTPRequestPolicy(policy, method, payload.URL, int64(len(payload.Body))); err != nil {
+				returnError(ctx, mod, stack, err)
+				return
+			}
+		}
+
 		if isBlockedHost(payload.URL) {
 			returnError(ctx, mod, stack, fmt.Errorf("requests to internal/private addresses are not allowed"))
 			return
@@ -97,11 +113,6 @@ func (h *HostAPI) httpRequestFunc() api.GoModuleFunc {
 
 		reqCtx, cancel := context.WithTimeout(ctx, contextAwareTimeout(ctx, wasmHTTPMaxTimeout))
 		defer cancel()
-
-		method := payload.Method
-		if method == "" {
-			method = http.MethodGet
-		}
 
 		var body io.Reader
 		if payload.Body != "" {
@@ -125,9 +136,15 @@ func (h *HostAPI) httpRequestFunc() api.GoModuleFunc {
 		}
 		defer resp.Body.Close()
 
-		respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		responseLimit := defaultHTTPResponseLimit
+		if h.httpPolicyEnabled {
+			responseLimit = responseBodyReadLimit(policy)
+		}
+
+		respBody, err := readHTTPResponseBody(resp.Body, responseLimit)
 		if err != nil {
-			slog.Warn("wasm: http response body read truncated", "plugin", pluginID, "error", err)
+			returnError(ctx, mod, stack, fmt.Errorf("http response body: %w", err))
+			return
 		}
 
 		headers := make(map[string]string)

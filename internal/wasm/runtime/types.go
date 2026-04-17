@@ -4,20 +4,46 @@ import "encoding/json"
 
 type PluginIDKey struct{}
 
-const MaxSupportedSDKVersion = 1
+const MaxSupportedSDKVersion = 2
 
 const ActionMigrate = "migrate"
+const ActionReconfigure = "reconfigure"
+const ActionHandleRPC = "handle_rpc"
 
 type PluginMeta struct {
-	ID           string           `json:"id"`
-	Name         string           `json:"name"`
-	Version      string           `json:"version"`
-	SDKVersion   int              `json:"sdk_version"`
-	Triggers     []TriggerDef     `json:"triggers,omitempty"`
-	Requirements []RequirementDef `json:"requirements,omitempty"`
-	ConfigSchema json.RawMessage  `json:"config_schema,omitempty"`
-	Dependencies []DependencyDef  `json:"dependencies,omitempty"`
-	Migrations   []MigrationDef   `json:"migrations,omitempty"`
+	ID                  string           `json:"id"`
+	Name                string           `json:"name"`
+	Version             string           `json:"version"`
+	SDKVersion          int              `json:"sdk_version"`
+	SupportsReconfigure bool             `json:"supports_reconfigure,omitempty"`
+	RPCMethods          []RPCMethodDef   `json:"rpc_methods,omitempty"`
+	Triggers            []TriggerDef     `json:"triggers,omitempty"`
+	Requirements        []RequirementDef `json:"requirements,omitempty"`
+	ConfigSchema        json.RawMessage  `json:"config_schema,omitempty"`
+	Dependencies        []DependencyDef  `json:"dependencies,omitempty"`
+	Migrations          []MigrationDef   `json:"migrations,omitempty"`
+}
+
+type ReconfigureRequest struct {
+	PreviousConfig json.RawMessage `json:"previous_config,omitempty"`
+	Config         json.RawMessage `json:"config,omitempty"`
+}
+
+type RPCMethodDef struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+type RPCRequest struct {
+	Caller string `json:"caller,omitempty"`
+	Method string `json:"method"`
+	Params []byte `json:"params,omitempty"`
+}
+
+type RPCResponse struct {
+	Status string `json:"status"`
+	Result []byte `json:"result,omitempty"`
+	Error  string `json:"error,omitempty"`
 }
 
 type DependencyDef struct {

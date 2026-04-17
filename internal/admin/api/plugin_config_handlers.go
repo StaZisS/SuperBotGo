@@ -3,9 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-	"time"
 
-	"SuperBotGo/internal/pubsub"
 	"SuperBotGo/internal/wasm/adapter"
 )
 
@@ -19,31 +17,12 @@ func (h *AdminHandler) handleUpdateConfig(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	record, err := h.store.GetPlugin(r.Context(), pluginID)
+	result, err := h.lifecycle.UpdateConfig(r.Context(), pluginID, body.Config)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "plugin not found")
-		return
-	}
-
-	if err := h.loader.ValidateConfig(pluginID, body.Config); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-
-	record.ConfigJSON = body.Config
-	record.UpdatedAt = time.Now()
-	if err := h.store.SavePlugin(r.Context(), record); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to update plugin record")
-		return
-	}
-
-	if wp, ok := h.loader.GetPlugin(pluginID); ok {
-		wp.SetConfig(body.Config)
-	}
-
-	h.publish(r.Context(), pubsub.EventConfigChanged, pluginID)
-
-	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": result.Status})
 }
 
 func (h *AdminHandler) handleValidateConfig(w http.ResponseWriter, r *http.Request) {
@@ -56,7 +35,7 @@ func (h *AdminHandler) handleValidateConfig(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if err := h.loader.ValidateConfig(pluginID, body.Config); err != nil {
+	if err := h.lifecycle.ValidateConfig(r.Context(), pluginID, body.Config); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -98,11 +77,16 @@ func (h *AdminHandler) handleListPlugins(w http.ResponseWriter, r *http.Request)
 
 	for _, rec := range records {
 		if _, active := allPlugins[rec.ID]; !active {
-			result = append(result, pluginInfo{
+			info := pluginInfo{
 				ID:     rec.ID,
 				Type:   "wasm",
 				Status: "disabled",
-			})
+			}
+			if meta, err := h.store.GetPluginMetadata(r.Context(), rec.ID); err == nil {
+				info.Name = meta.Name
+				info.Version = meta.Version
+			}
+			result = append(result, info)
 		}
 	}
 
@@ -147,6 +131,16 @@ func (h *AdminHandler) handleGetPlugin(w http.ResponseWriter, r *http.Request) {
 		resp["updated_at"] = record.UpdatedAt
 		if !record.Enabled {
 			resp["status"] = "disabled"
+			if meta, err := h.store.GetPluginMetadata(r.Context(), pluginID); err == nil {
+				resp["name"] = meta.Name
+				resp["version"] = meta.Version
+				if len(meta.MetaJSON) > 0 {
+					var parsedMeta map[string]any
+					if json.Unmarshal(meta.MetaJSON, &parsedMeta) == nil {
+						resp["meta"] = parsedMeta
+					}
+				}
+			}
 		}
 	}
 

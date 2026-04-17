@@ -9,9 +9,10 @@ import (
 )
 
 type FilePluginStore struct {
-	mu   sync.RWMutex
-	path string
-	data map[string]PluginRecord
+	mu       sync.RWMutex
+	path     string
+	data     map[string]PluginRecord
+	metadata map[string]PluginMetadataRecord
 }
 
 func (s *FilePluginStore) SavePlugin(_ context.Context, record PluginRecord) error {
@@ -51,12 +52,50 @@ func (s *FilePluginStore) DeletePlugin(_ context.Context, id string) error {
 	return s.flush()
 }
 
-func (s *FilePluginStore) flush() error {
-	records := make([]PluginRecord, 0, len(s.data))
-	for _, r := range s.data {
-		records = append(records, r)
+func (s *FilePluginStore) SavePluginMetadata(_ context.Context, record PluginMetadataRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.metadata == nil {
+		s.metadata = make(map[string]PluginMetadataRecord)
 	}
-	raw, err := json.MarshalIndent(records, "", "  ")
+	s.metadata[record.PluginID] = record
+	return s.flush()
+}
+
+func (s *FilePluginStore) GetPluginMetadata(_ context.Context, id string) (PluginMetadataRecord, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	rec, ok := s.metadata[id]
+	if !ok {
+		return PluginMetadataRecord{}, fmt.Errorf("plugin metadata %q not found", id)
+	}
+	return rec, nil
+}
+
+func (s *FilePluginStore) DeletePluginMetadata(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.metadata[id]; !ok {
+		return fmt.Errorf("plugin metadata %q not found", id)
+	}
+	delete(s.metadata, id)
+	return s.flush()
+}
+
+func (s *FilePluginStore) flush() error {
+	var payload struct {
+		Plugins  []PluginRecord         `json:"plugins"`
+		Metadata []PluginMetadataRecord `json:"metadata,omitempty"`
+	}
+	payload.Plugins = make([]PluginRecord, 0, len(s.data))
+	for _, r := range s.data {
+		payload.Plugins = append(payload.Plugins, r)
+	}
+	payload.Metadata = make([]PluginMetadataRecord, 0, len(s.metadata))
+	for _, r := range s.metadata {
+		payload.Metadata = append(payload.Metadata, r)
+	}
+	raw, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal plugins: %w", err)
 	}

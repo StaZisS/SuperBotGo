@@ -3,6 +3,7 @@
 package wasmplugin
 
 import (
+	"encoding/json"
 	"fmt"
 	"unsafe"
 
@@ -74,10 +75,11 @@ func stripPrefix(data []byte) []byte {
 }
 
 type httpRequestPayload struct {
-	Method  string            `msgpack:"method"`
-	URL     string            `msgpack:"url"`
-	Headers map[string]string `msgpack:"headers,omitempty"`
-	Body    string            `msgpack:"body,omitempty"`
+	Requirement string            `msgpack:"requirement,omitempty"`
+	Method      string            `msgpack:"method"`
+	URL         string            `msgpack:"url"`
+	Headers     map[string]string `msgpack:"headers,omitempty"`
+	Body        string            `msgpack:"body,omitempty"`
 }
 
 // HTTPResponse is the response from an HTTP request.
@@ -89,11 +91,21 @@ type HTTPResponse struct {
 
 // HTTPRequest makes an HTTP request through the host.
 func HTTPRequest(method, url string, headers map[string]string, body string) (*HTTPResponse, error) {
+	return HTTPRequestFor("default", method, url, headers, body)
+}
+
+// HTTPRequestFor makes an HTTP request through the host using a named HTTP
+// requirement. Plugins with multiple HTTP requirements must use this helper.
+func HTTPRequestFor(requirement, method, url string, headers map[string]string, body string) (*HTTPResponse, error) {
+	if requirement == "" {
+		requirement = "default"
+	}
 	payload := httpRequestPayload{
-		Method:  method,
-		URL:     url,
-		Headers: headers,
-		Body:    body,
+		Requirement: requirement,
+		Method:      method,
+		URL:         url,
+		Headers:     headers,
+		Body:        body,
 	}
 	var resp HTTPResponse
 	if err := callHostWithResult(_httpRequest, payload, &resp); err != nil {
@@ -136,6 +148,16 @@ func CallPlugin(target, method string, params interface{}) ([]byte, error) {
 	return callHost(_callPlugin, payload)
 }
 
+// CallPluginRaw calls another plugin through the host with pre-encoded msgpack params.
+func CallPluginRaw(target, method string, rawParams []byte) ([]byte, error) {
+	payload := callPluginPayload{
+		Target: target,
+		Method: method,
+		Params: rawParams,
+	}
+	return callHost(_callPlugin, payload)
+}
+
 type publishEventPayload struct {
 	Topic   string `msgpack:"topic"`
 	Payload []byte `msgpack:"payload"`
@@ -143,13 +165,38 @@ type publishEventPayload struct {
 
 // PublishEvent publishes an event through the host event bus.
 func PublishEvent(topic string, payload interface{}) error {
-	rawPayload, err := msgpack.Marshal(payload)
+	rawPayload, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("marshal event payload: %w", err)
+		return fmt.Errorf("marshal event payload as json: %w", err)
 	}
 	p := publishEventPayload{
 		Topic:   topic,
 		Payload: rawPayload,
+	}
+	raw, err := callHost(_publishEvent, p)
+	if err != nil {
+		return err
+	}
+	if raw != nil {
+		data := stripPrefix(raw)
+		var errResp struct {
+			Error string `msgpack:"error"`
+		}
+		if msgpack.Unmarshal(data, &errResp) == nil && errResp.Error != "" {
+			return fmt.Errorf("host: %s", errResp.Error)
+		}
+	}
+	return nil
+}
+
+// PublishEventRawJSON publishes an event with an already-encoded JSON payload.
+func PublishEventRawJSON(topic string, payload []byte) error {
+	if !json.Valid(payload) {
+		return fmt.Errorf("event payload must be valid json")
+	}
+	p := publishEventPayload{
+		Topic:   topic,
+		Payload: payload,
 	}
 	raw, err := callHost(_publishEvent, p)
 	if err != nil {

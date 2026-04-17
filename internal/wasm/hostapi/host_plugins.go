@@ -2,11 +2,13 @@ package hostapi
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
+	"SuperBotGo/internal/metrics"
 	"SuperBotGo/internal/wasm/eventbus"
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 
@@ -96,11 +98,13 @@ func (h *HostAPI) callPluginFunc() api.GoModuleFunc {
 
 		perm := fmt.Sprintf("plugins:call:%s", payload.Target)
 		if err := h.perms.CheckPermission(pluginID, perm); err != nil {
+			recordPluginRPCMetric(h.metrics, pluginID, payload.Target, payload.Method, "permission_denied")
 			returnError(ctx, mod, stack, err)
 			return
 		}
 
 		if h.deps.PluginRegistry == nil {
+			recordPluginRPCMetric(h.metrics, pluginID, payload.Target, payload.Method, "disabled")
 			returnError(ctx, mod, stack, errDepNotAvailable("PluginRegistry"))
 			return
 		}
@@ -112,6 +116,7 @@ func (h *HostAPI) callPluginFunc() api.GoModuleFunc {
 		}
 
 		if err := checkCallCycle(chain, payload.Target); err != nil {
+			recordPluginRPCMetric(h.metrics, pluginID, payload.Target, payload.Method, "cycle_blocked")
 			slog.Warn("inter-plugin cycle blocked",
 				"trace_id", traceID,
 				"caller", pluginID,
@@ -124,6 +129,7 @@ func (h *HostAPI) callPluginFunc() api.GoModuleFunc {
 
 		depth := callDepthFromContext(ctx)
 		if depth >= MaxCallDepth {
+			recordPluginRPCMetric(h.metrics, pluginID, payload.Target, payload.Method, "depth_exceeded")
 			slog.Warn("inter-plugin call depth exceeded",
 				"trace_id", traceID,
 				"caller", pluginID,
@@ -149,6 +155,7 @@ func (h *HostAPI) callPluginFunc() api.GoModuleFunc {
 
 		result, err := h.deps.PluginRegistry.CallPlugin(callCtx, payload.Target, payload.Method, payload.Params)
 		if err != nil {
+			recordPluginRPCMetric(h.metrics, pluginID, payload.Target, payload.Method, "error")
 			if callCtx.Err() == context.DeadlineExceeded {
 				err = fmt.Errorf("call_plugin %q.%s timed out after %s", payload.Target, payload.Method, wasmCallPluginMaxTimeout)
 			} else {
@@ -160,11 +167,20 @@ func (h *HostAPI) callPluginFunc() api.GoModuleFunc {
 
 		offset2, length2, err := writeModMemory(ctx, mod, result)
 		if err != nil {
+			recordPluginRPCMetric(h.metrics, pluginID, payload.Target, payload.Method, "error")
 			returnError(ctx, mod, stack, err)
 			return
 		}
+		recordPluginRPCMetric(h.metrics, pluginID, payload.Target, payload.Method, "ok")
 		stack[0] = uint64(offset2)<<32 | uint64(length2)
 	}
+}
+
+func recordPluginRPCMetric(metricSet *metrics.Metrics, pluginID, target, method, status string) {
+	if metricSet == nil || metricSet.PluginRPCTotal == nil {
+		return
+	}
+	metricSet.PluginRPCTotal.WithLabelValues(pluginID, target, method, status).Inc()
 }
 
 func (h *HostAPI) publishEventFunc() api.GoModuleFunc {
@@ -188,6 +204,10 @@ func (h *HostAPI) publishEventFunc() api.GoModuleFunc {
 		var payload publishEventPayload
 		if err := msgpack.Unmarshal(data, &payload); err != nil {
 			returnError(ctx, mod, stack, err)
+			return
+		}
+		if !json.Valid(payload.Payload) {
+			returnError(ctx, mod, stack, fmt.Errorf("publish event %q: payload must be valid JSON", payload.Topic))
 			return
 		}
 

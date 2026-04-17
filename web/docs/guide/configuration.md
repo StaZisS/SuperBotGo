@@ -27,6 +27,7 @@ wasmplugin.Plugin{
 | Конструктор | JSON Schema тип | Описание |
 |---|---|---|
 | `String(key, desc)` | `"string"` | Строковое значение |
+| `StringArray(key, desc)` | `"array"` of `"string"` | Массив строк |
 | `Integer(key, desc)` | `"integer"` | Целое число |
 | `Number(key, desc)` | `"number"` | Число с плавающей точкой |
 | `Bool(key, desc)` | `"boolean"` | Булево значение |
@@ -35,7 +36,12 @@ wasmplugin.Plugin{
 Каждый конструктор принимает `key` (ключ для доступа из кода) и `desc` (описание, отображаемое в UI). `Enum` дополнительно принимает список допустимых значений.
 
 ::: warning Зарезервированные ключи
-Ключ `"databases"` зарезервирован SDK — он автоматически формируется из `Database()` requirements. Попытка использовать его в `ConfigFields` вызовет panic при инициализации плагина.
+Ключи `"databases"` и `"requirements"` зарезервированы SDK:
+
+- `databases` автоматически формируется из `Database()` requirements
+- `requirements` используется для requirement-driven config, например `requirements.http.<name>`
+
+Попытка использовать их в `ConfigFields` вызовет panic при инициализации плагина.
 :::
 
 ## Модификаторы {#modifiers}
@@ -115,9 +121,45 @@ wasmplugin.NewStep("mode").
 
 Сигнатура та же: `ctx.Config(key, fallback) string`.
 
+## Requirement-driven config {#requirements-config}
+
+Для некоторых requirement types конфигурация живёт не в корне plugin config, а в reserved namespace `requirements`.
+
+Сейчас хост реально применяет это для `http` requirement.
+
+### HTTP policy schema
+
+```go
+Requirements: []wasmplugin.Requirement{
+    wasmplugin.HTTP("Запросы к GitHub API").
+        Name("github").
+        WithConfig(wasmplugin.HTTPPolicyConfig()).
+        Build(),
+}
+```
+
+В admin UI это сохранится как часть обычного plugin config:
+
+```json
+{
+  "requirements": {
+    "http": {
+      "github": {
+        "allowed_hosts": ["api.github.com"],
+        "allowed_methods": ["GET"],
+        "max_request_body_bytes": 0,
+        "max_response_body_bytes": 1048576
+      }
+    }
+  }
+}
+```
+
+Если имя requirement не задано, используется `default`.
+
 ## Callback при конфигурации (OnConfigure) {#on-configure}
 
-`OnConfigure` вызывается при установке или обновлении конфигурации администратором. Используйте для дополнительной валидации или подготовки данных:
+`OnConfigure` вызывается при первичной загрузке/активации плагина. Используйте для дополнительной валидации или подготовки данных:
 
 ```go
 import "encoding/json"
@@ -143,3 +185,23 @@ wasmplugin.Plugin{
 - Аргумент `config` - сырой JSON с полями конфигурации.
 - Если функция возвращает ошибку, конфигурация **отклоняется** и не сохраняется.
 - Если `OnConfigure` не задан, конфигурация сохраняется без дополнительных проверок (только валидация по схеме).
+
+## Обновление конфигурации без reload {#reconfigure}
+
+Если плагин реализует `OnReconfigure`, host использует отдельный action `reconfigure` вместо повторного `configure`:
+
+```go
+OnReconfigure: func(previousConfig, nextConfig []byte) error {
+    // Сравнить старое и новое состояние, обновить внешние подключения,
+    // прогреть кеш, проверить инварианты.
+    return nil
+},
+```
+
+Семантика такая:
+
+1. Host валидирует новый config по schema.
+2. Вызывает `OnReconfigure(previous, next)`.
+3. Только после успешного apply сохраняет новый config.
+
+Если `OnReconfigure` не реализован, host делает controlled reload того же wasm-бинаря с новым config.

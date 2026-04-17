@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { api, PluginDetail as PluginDetailType, PluginMeta } from '@/api/client'
+import { api, PluginDetail as PluginDetailType, PluginUpdatePreviewResponse } from '@/api/client'
 import {
   ArrowLeft,
   Settings,
@@ -12,7 +12,6 @@ import {
   Lock,
   Copy,
   Package,
-  TriangleAlert,
   Clock,
   Globe,
   Zap,
@@ -20,6 +19,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import PluginStatusBadge from '@/components/PluginStatusBadge'
+import PluginUpdatePreview from '@/components/PluginUpdatePreview'
 import WasmUploader from '@/components/WasmUploader'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -51,7 +51,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { compareVersions, formatDate, getErrorMessage } from '@/lib/utils'
+import { formatDate, getErrorMessage } from '@/lib/utils'
 
 function describeCron(expr: string): string {
   const parts = expr.trim().split(/\s+/)
@@ -157,10 +157,10 @@ export default function PluginDetail() {
   const [plugin, setPlugin] = useState<PluginDetailType | null>(null)
   const [loading, setLoading] = useState(true)
   const [showUpdate, setShowUpdate] = useState(false)
+  const [showUpdatePreview, setShowUpdatePreview] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
-  const [updateMeta, setUpdateMeta] = useState<PluginMeta | null>(null)
+  const [updatePreview, setUpdatePreview] = useState<PluginUpdatePreviewResponse | null>(null)
   const [updateFile, setUpdateFile] = useState<File | null>(null)
-  const [showVersionConfirm, setShowVersionConfirm] = useState(false)
 
   const load = useCallback(() => {
     if (!id) return
@@ -213,24 +213,20 @@ export default function PluginDetail() {
     }
   }
 
+  const resetUpdateSelection = () => {
+    setUpdatePreview(null)
+    setUpdateFile(null)
+  }
+
   const handleUpdateFile = async (file: File) => {
     if (!id) return
     setActionLoading(true)
     try {
-      const meta = await api.uploadPlugin(file)
+      const preview = await api.previewPluginUpdate(id, file)
       setUpdateFile(file)
-      setUpdateMeta(meta)
-
-      const currentVersion = plugin?.version
-      if (currentVersion) {
-        const cmp = compareVersions(meta.version, currentVersion)
-        if (cmp <= 0) {
-          setShowVersionConfirm(true)
-          return
-        }
-      }
-
-      await doUpdate(file)
+      setUpdatePreview(preview)
+      setShowUpdate(false)
+      setShowUpdatePreview(true)
     } catch (e: unknown) {
       toast.error(getErrorMessage(e))
     } finally {
@@ -245,8 +241,8 @@ export default function PluginDetail() {
       await api.updatePlugin(id, file)
       toast.success('Плагин обновлён')
       setShowUpdate(false)
-      setUpdateMeta(null)
-      setUpdateFile(null)
+      setShowUpdatePreview(false)
+      resetUpdateSelection()
       load()
     } catch (e: unknown) {
       toast.error(getErrorMessage(e))
@@ -522,13 +518,13 @@ export default function PluginDetail() {
               </Button>
 
               {/* Update .wasm dialog */}
-              <Dialog open={showUpdate} onOpenChange={(open) => {
-                setShowUpdate(open)
-                if (!open) {
-                  setUpdateMeta(null)
-                  setUpdateFile(null)
-                }
-              }}>
+              <Dialog
+                open={showUpdate}
+                onOpenChange={(open) => {
+                  if (actionLoading) return
+                  setShowUpdate(open)
+                }}
+              >
                 <DialogTrigger asChild>
                   <Button variant="outline" size="sm">
                     <Upload className="mr-1.5 h-4 w-4" />
@@ -540,52 +536,28 @@ export default function PluginDetail() {
                     <DialogTitle>Загрузить новый .wasm</DialogTitle>
                     <DialogDescription>
                       Выберите файл .wasm для обновления плагина{' '}
-                      <strong>{plugin.name || plugin.id}</strong>.
+                      <strong>{plugin.name || plugin.id}</strong>. Перед применением
+                      покажем сравнение изменений.
                     </DialogDescription>
                   </DialogHeader>
                   <WasmUploader onFile={handleUpdateFile} loading={actionLoading} />
                 </DialogContent>
               </Dialog>
 
-              {/* Version conflict confirmation */}
-              <AlertDialog open={showVersionConfirm} onOpenChange={setShowVersionConfirm}>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle className="flex items-center gap-2">
-                      <TriangleAlert className="h-5 w-5 text-amber-500" />
-                      {updateMeta && plugin.version && compareVersions(updateMeta.version, plugin.version) === 0
-                        ? 'Такая версия уже установлена'
-                        : 'Откат на старую версию'}
-                    </AlertDialogTitle>
-                    <AlertDialogDescription>
-                      {updateMeta && plugin.version && compareVersions(updateMeta.version, plugin.version) === 0 ? (
-                        <>
-                          Плагин <strong>{plugin.name || plugin.id}</strong> версии{' '}
-                          <strong>v{plugin.version}</strong> уже установлен.
-                          Вы уверены, что хотите переустановить ту же версию?
-                        </>
-                      ) : (
-                        <>
-                          Сейчас установлена версия <strong>v{plugin.version}</strong>,
-                          а вы загружаете более старую — <strong>v{updateMeta?.version}</strong>.
-                          Продолжить?
-                        </>
-                      )}
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Отмена</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={() => {
-                        setShowVersionConfirm(false)
-                        if (updateFile) doUpdate(updateFile)
-                      }}
-                    >
-                      Всё равно обновить
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              {updatePreview && (
+                <PluginUpdatePreview
+                  open={showUpdatePreview}
+                  loading={actionLoading}
+                  preview={updatePreview}
+                  onCancel={() => {
+                    setShowUpdatePreview(false)
+                    resetUpdateSelection()
+                  }}
+                  onConfirm={() => {
+                    if (updateFile) doUpdate(updateFile)
+                  }}
+                />
+              )}
 
               {/* Delete alert dialog */}
               <AlertDialog>

@@ -15,6 +15,16 @@ type Metrics struct {
 	PluginReloadTotal    *prometheus.CounterVec
 	PluginReloadDuration *prometheus.HistogramVec
 
+	PluginLifecycleTotal    *prometheus.CounterVec
+	PluginLifecycleDuration *prometheus.HistogramVec
+
+	PluginReconfigureTotal    *prometheus.CounterVec
+	PluginReconfigureDuration *prometheus.HistogramVec
+
+	PluginRPCTotal *prometheus.CounterVec
+
+	PluginEventDeliveryTotal *prometheus.CounterVec
+
 	HTTPTriggerTotal    *prometheus.CounterVec
 	HTTPTriggerDuration *prometheus.HistogramVec
 
@@ -91,6 +101,38 @@ func New() *Metrics {
 			Help:    "Duration of plugin reload operations",
 			Buckets: []float64{.01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
 		}, []string{"plugin_id"}),
+
+		PluginLifecycleTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "plugin_lifecycle_total",
+			Help: "Total number of plugin lifecycle operations",
+		}, []string{"plugin_id", "action", "status"}),
+
+		PluginLifecycleDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "plugin_lifecycle_duration_seconds",
+			Help:    "Duration of plugin lifecycle operations",
+			Buckets: []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
+		}, []string{"plugin_id", "action"}),
+
+		PluginReconfigureTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "plugin_reconfigure_total",
+			Help: "Total number of plugin reconfigure attempts",
+		}, []string{"plugin_id", "status"}),
+
+		PluginReconfigureDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "plugin_reconfigure_duration_seconds",
+			Help:    "Duration of plugin reconfigure operations",
+			Buckets: []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
+		}, []string{"plugin_id"}),
+
+		PluginRPCTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "plugin_rpc_total",
+			Help: "Total number of plugin RPC calls",
+		}, []string{"plugin_id", "target", "method", "status"}),
+
+		PluginEventDeliveryTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "plugin_event_delivery_total",
+			Help: "Total number of plugin event deliveries by backend and status",
+		}, []string{"backend", "status"}),
 
 		HTTPTriggerTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "http_trigger_requests_total",
@@ -199,6 +241,12 @@ func New() *Metrics {
 		m.PluginHostCallDuration,
 		m.PluginReloadTotal,
 		m.PluginReloadDuration,
+		m.PluginLifecycleTotal,
+		m.PluginLifecycleDuration,
+		m.PluginReconfigureTotal,
+		m.PluginReconfigureDuration,
+		m.PluginRPCTotal,
+		m.PluginEventDeliveryTotal,
 		m.HTTPTriggerTotal,
 		m.HTTPTriggerDuration,
 		m.ChannelUpdateDuration,

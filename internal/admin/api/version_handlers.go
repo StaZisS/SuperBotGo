@@ -1,15 +1,9 @@
 package api
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
-	"time"
-
-	"SuperBotGo/internal/pubsub"
 )
 
 func (h *AdminHandler) handleListVersions(w http.ResponseWriter, r *http.Request) {
@@ -54,77 +48,17 @@ func (h *AdminHandler) handleRollback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	record, err := h.store.GetPlugin(r.Context(), pluginID)
+	result, err := h.lifecycle.Rollback(r.Context(), pluginID, versionID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "plugin not found")
+		slog.Error("admin: failed to rollback plugin", "id", pluginID, "version_id", versionID, "error", err)
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
-	ver, err := h.versions.GetVersion(r.Context(), versionID)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "version not found")
-		return
-	}
-
-	if ver.PluginID != pluginID {
-		writeError(w, http.StatusBadRequest, "version does not belong to this plugin")
-		return
-	}
-
-	rc, err := h.blobs.Get(r.Context(), ver.WasmKey)
-	if err != nil {
-		slog.Error("admin: rollback blob not found", "key", ver.WasmKey, "error", err)
-		writeError(w, http.StatusInternalServerError, "wasm binary for this version is no longer available")
-		return
-	}
-	wasmBytes, err := io.ReadAll(rc)
-	rc.Close()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to read wasm blob")
-		return
-	}
-
-	hash := sha256.Sum256(wasmBytes)
-	actualHash := hex.EncodeToString(hash[:])
-	if actualHash != ver.WasmHash {
-		slog.Warn("admin: rollback hash mismatch", "expected", ver.WasmHash, "actual", actualHash)
-		writeError(w, http.StatusInternalServerError, "wasm binary integrity check failed")
-		return
-	}
-
-	oldTriggers := collectConfigurableTriggers(h.manager, pluginID)
-
-	if err := h.loader.ReloadPluginFromBytes(r.Context(), pluginID, wasmBytes, ver.ConfigJSON); err != nil {
-		slog.Error("admin: failed to reload plugin on rollback", "id", pluginID, "error", err)
-		writeError(w, http.StatusInternalServerError, "failed to load plugin from version")
-		return
-	}
-
-	record.WasmKey = ver.WasmKey
-	record.WasmHash = ver.WasmHash
-	record.ConfigJSON = ver.ConfigJSON
-	record.Enabled = true
-	record.UpdatedAt = time.Now()
-	if err := h.store.SavePlugin(r.Context(), record); err != nil {
-		slog.Error("admin: failed to save plugin record after rollback", "error", err)
-		writeError(w, http.StatusInternalServerError, "failed to save plugin record")
-		return
-	}
-
-	h.manager.Remove(pluginID)
-	if wp, ok := h.loader.GetPlugin(pluginID); ok {
-		h.manager.Register(wp)
-		h.syncTriggersOnUpdate(r.Context(), pluginID, oldTriggers, wp)
-
-		// Permissions are auto-derived from requirements during reload.
-	}
-
-	h.publish(r.Context(), pubsub.EventPluginUpdated, pluginID)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"status":     "rolled_back",
-		"version":    ver.Version,
-		"version_id": ver.ID,
+		"status":     result.Status,
+		"version":    result.Version,
+		"version_id": versionID,
 	})
 }
 

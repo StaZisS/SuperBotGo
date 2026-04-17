@@ -21,6 +21,7 @@ interface SchemaProperty {
   properties?: Record<string, SchemaProperty>
   items?: SchemaProperty
   required?: string[]
+  sensitive?: boolean
 }
 
 interface Schema extends SchemaProperty {
@@ -110,6 +111,7 @@ export default function JsonSchemaForm({ schema, value, onChange, readOnly, erro
           readOnly={readOnly}
           onChange={(v) => onChange({ ...value, [key]: v })}
           error={errors?.[key]}
+          errors={errors}
         />
       ))}
     </div>
@@ -124,6 +126,7 @@ function FieldRenderer({
   readOnly,
   onChange,
   error,
+  errors,
 }: {
   name: string
   prop: SchemaProperty
@@ -132,6 +135,7 @@ function FieldRenderer({
   readOnly?: boolean
   onChange: (v: unknown) => void
   error?: string
+  errors?: Record<string, string>
 }) {
   const fieldId = `field-${name}`
 
@@ -222,6 +226,7 @@ function FieldRenderer({
             value={(value as Record<string, unknown>) ?? {}}
             onChange={(v) => onChange(v)}
             readOnly={readOnly}
+            errors={collectNestedErrors(name, errors)}
           />
         </CardContent>
       </Card>
@@ -242,7 +247,7 @@ function FieldRenderer({
   }
 
   const isSensitive =
-    /secret|password|token|api_key|apikey/i.test(name)
+    !!prop.sensitive || /secret|password|token|api_key|apikey/i.test(name)
 
   return (
     <div>
@@ -259,6 +264,24 @@ function FieldRenderer({
       {errorHint}
     </div>
   )
+}
+
+function collectNestedErrors(
+  prefix: string,
+  errors?: Record<string, string>,
+): Record<string, string> | undefined {
+  if (!errors) {
+    return undefined
+  }
+  const nested: Record<string, string> = {}
+  const prefixWithDot = `${prefix}.`
+  for (const [key, value] of Object.entries(errors)) {
+    if (!key.startsWith(prefixWithDot)) {
+      continue
+    }
+    nested[key.slice(prefixWithDot.length)] = value
+  }
+  return Object.keys(nested).length > 0 ? nested : undefined
 }
 
 function ArrayStringField({

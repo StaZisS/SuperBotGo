@@ -9,6 +9,7 @@ type CommandNode interface {
 type OptionsPage struct {
 	Options []model.Option
 	HasMore bool
+	Error   string
 }
 
 type PaginationConfig struct {
@@ -19,11 +20,13 @@ type PaginationConfig struct {
 }
 
 type StepNode struct {
-	ParamName      string
-	MessageBuilder func(ctx StepContext) model.Message
-	Validate       func(model.UserInput) bool
-	Condition      func(model.OptionMap) bool
-	Pagination     *PaginationConfig
+	ParamName            string
+	MessageBuilder       func(ctx StepContext) model.Message
+	Validate             func(model.UserInput) bool
+	ValidateWithContext  func(ctx StepContext, input model.UserInput) bool
+	Condition            func(model.OptionMap) bool
+	ConditionWithContext func(ctx StepContext) bool
+	Pagination           *PaginationConfig
 }
 
 func (StepNode) commandNode() {}
@@ -37,8 +40,9 @@ type BranchNode struct {
 func (BranchNode) commandNode() {}
 
 type ConditionalCase struct {
-	Predicate func(model.OptionMap) bool
-	Nodes     []CommandNode
+	Predicate            func(model.OptionMap) bool
+	PredicateWithContext func(ctx StepContext) bool
+	Nodes                []CommandNode
 }
 
 type ConditionalBranchNode struct {
@@ -56,35 +60,39 @@ type CommandDefinition struct {
 	PreservesDialog bool
 }
 
-func (cd *CommandDefinition) ResolveActiveSteps(params model.OptionMap) []StepNode {
-	return flattenNodes(cd.Nodes, params)
+func (cd *CommandDefinition) ResolveActiveSteps(ctx StepContext) []StepNode {
+	return flattenNodes(cd.Nodes, ctx)
 }
 
-func (cd *CommandDefinition) CurrentStep(params model.OptionMap) *StepNode {
-	steps := cd.ResolveActiveSteps(params)
+func (cd *CommandDefinition) CurrentStep(ctx StepContext) *StepNode {
+	steps := cd.ResolveActiveSteps(ctx)
 	for i := range steps {
-		if _, exists := params[steps[i].ParamName]; !exists {
+		if _, exists := ctx.Params[steps[i].ParamName]; !exists {
 			return &steps[i]
 		}
 	}
 	return nil
 }
 
-func (cd *CommandDefinition) IsComplete(params model.OptionMap) bool {
-	return cd.CurrentStep(params) == nil
+func (cd *CommandDefinition) IsComplete(ctx StepContext) bool {
+	return cd.CurrentStep(ctx) == nil
 }
 
-func flattenNodes(nodes []CommandNode, params model.OptionMap) []StepNode {
+func flattenNodes(nodes []CommandNode, ctx StepContext) []StepNode {
 	var result []StepNode
 	for _, node := range nodes {
 		switch n := node.(type) {
 		case StepNode:
-
-			if n.Condition == nil || n.Condition(params) {
+			switch {
+			case n.ConditionWithContext != nil:
+				if n.ConditionWithContext(ctx) {
+					result = append(result, n)
+				}
+			case n.Condition == nil || n.Condition(ctx.Params):
 				result = append(result, n)
 			}
 		case BranchNode:
-			value, exists := params[n.OnParam]
+			value, exists := ctx.Params[n.OnParam]
 			var branch []CommandNode
 			if exists {
 				if caseNodes, ok := n.Cases[value]; ok {
@@ -96,13 +104,23 @@ func flattenNodes(nodes []CommandNode, params model.OptionMap) []StepNode {
 				branch = n.Default
 			}
 			if branch != nil {
-				result = append(result, flattenNodes(branch, params)...)
+				result = append(result, flattenNodes(branch, ctx)...)
 			}
 		case ConditionalBranchNode:
 			var matched []CommandNode
 			for _, c := range n.Cases {
-				if c.Predicate(params) {
+				matchedCase := false
+				switch {
+				case c.PredicateWithContext != nil:
+					if c.PredicateWithContext(ctx) {
+						matched = c.Nodes
+						matchedCase = true
+					}
+				case c.Predicate != nil && c.Predicate(ctx.Params):
 					matched = c.Nodes
+					matchedCase = true
+				}
+				if matchedCase {
 					break
 				}
 			}
@@ -110,7 +128,7 @@ func flattenNodes(nodes []CommandNode, params model.OptionMap) []StepNode {
 				matched = n.Default
 			}
 			if matched != nil {
-				result = append(result, flattenNodes(matched, params)...)
+				result = append(result, flattenNodes(matched, ctx)...)
 			}
 		}
 	}

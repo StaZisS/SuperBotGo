@@ -5,7 +5,8 @@ import "encoding/json"
 // reservedConfigKeys are keys managed by the SDK and must not be used in
 // plugin-defined ConfigFields.
 var reservedConfigKeys = map[string]bool{
-	"databases": true,
+	"databases":    true,
+	"requirements": true,
 }
 
 // ConfigSchema is a type-safe JSON Schema built via ConfigFields / Field helpers.
@@ -21,16 +22,17 @@ type fieldDef struct {
 }
 
 type schemaProperty struct {
-	Type        string      `json:"type"`
-	Description string      `json:"description,omitempty"`
-	Default     interface{} `json:"default,omitempty"`
-	Enum        []string    `json:"enum,omitempty"`
-	Minimum     *float64    `json:"minimum,omitempty"`
-	Maximum     *float64    `json:"maximum,omitempty"`
-	MinLength   *int        `json:"minLength,omitempty"`
-	MaxLength   *int        `json:"maxLength,omitempty"`
-	Pattern     string      `json:"pattern,omitempty"`
-	Sensitive   bool        `json:"-"` // hint for UI: render as password
+	Type        string          `json:"type"`
+	Description string          `json:"description,omitempty"`
+	Default     interface{}     `json:"default,omitempty"`
+	Enum        []string        `json:"enum,omitempty"`
+	Minimum     *float64        `json:"minimum,omitempty"`
+	Maximum     *float64        `json:"maximum,omitempty"`
+	MinLength   *int            `json:"minLength,omitempty"`
+	MaxLength   *int            `json:"maxLength,omitempty"`
+	Pattern     string          `json:"pattern,omitempty"`
+	Sensitive   bool            `json:"sensitive,omitempty"` // hint for UI: render as password
+	Items       *schemaProperty `json:"items,omitempty"`
 }
 
 // DatabaseField describes a named database connection that the admin must
@@ -44,32 +46,7 @@ type DatabaseField struct {
 func (s ConfigSchema) MarshalJSON() ([]byte, error) {
 	props := make(map[string]interface{}, len(s.fields)+1)
 	for _, f := range s.fields {
-		p := map[string]interface{}{"type": f.prop.Type}
-		if f.prop.Description != "" {
-			p["description"] = f.prop.Description
-		}
-		if f.prop.Default != nil {
-			p["default"] = f.prop.Default
-		}
-		if len(f.prop.Enum) > 0 {
-			p["enum"] = f.prop.Enum
-		}
-		if f.prop.Minimum != nil {
-			p["minimum"] = *f.prop.Minimum
-		}
-		if f.prop.Maximum != nil {
-			p["maximum"] = *f.prop.Maximum
-		}
-		if f.prop.MinLength != nil {
-			p["minLength"] = *f.prop.MinLength
-		}
-		if f.prop.MaxLength != nil {
-			p["maxLength"] = *f.prop.MaxLength
-		}
-		if f.prop.Pattern != "" {
-			p["pattern"] = f.prop.Pattern
-		}
-		props[f.key] = p
+		props[f.key] = f.prop.toMap()
 	}
 
 	if len(s.databases) > 0 {
@@ -98,6 +75,41 @@ func (s ConfigSchema) MarshalJSON() ([]byte, error) {
 		schema["required"] = s.required
 	}
 	return json.Marshal(schema)
+}
+
+func (p schemaProperty) toMap() map[string]interface{} {
+	result := map[string]interface{}{"type": p.Type}
+	if p.Description != "" {
+		result["description"] = p.Description
+	}
+	if p.Default != nil {
+		result["default"] = p.Default
+	}
+	if len(p.Enum) > 0 {
+		result["enum"] = p.Enum
+	}
+	if p.Minimum != nil {
+		result["minimum"] = *p.Minimum
+	}
+	if p.Maximum != nil {
+		result["maximum"] = *p.Maximum
+	}
+	if p.MinLength != nil {
+		result["minLength"] = *p.MinLength
+	}
+	if p.MaxLength != nil {
+		result["maxLength"] = *p.MaxLength
+	}
+	if p.Pattern != "" {
+		result["pattern"] = p.Pattern
+	}
+	if p.Sensitive {
+		result["sensitive"] = true
+	}
+	if p.Items != nil {
+		result["items"] = p.Items.toMap()
+	}
+	return result
 }
 
 // IsEmpty returns true if no fields and no databases are defined.
@@ -153,6 +165,18 @@ func Integer(key, description string) Field {
 // Bool creates a boolean config field.
 func Bool(key, description string) Field {
 	return Field{key: key, prop: schemaProperty{Type: "boolean", Description: description}}
+}
+
+// StringArray creates an array-of-strings config field.
+func StringArray(key, description string) Field {
+	return Field{
+		key: key,
+		prop: schemaProperty{
+			Type:        "array",
+			Description: description,
+			Items:       &schemaProperty{Type: "string"},
+		},
+	}
 }
 
 // Enum creates a string field with a fixed set of allowed values.

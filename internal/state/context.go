@@ -1,10 +1,15 @@
 package state
 
-import "SuperBotGo/internal/model"
+import (
+	"context"
+
+	"SuperBotGo/internal/model"
+)
 
 type StepContext struct {
-	UserID model.GlobalUserID
-	Locale string
-	Params model.OptionMap
-	Page   int
+	Context context.Context
+	UserID  model.GlobalUserID
+	Locale  string
+	Params  model.OptionMap
+	Page    int
 }

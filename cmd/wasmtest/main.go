@@ -195,10 +195,13 @@ func run() error {
 var validActions = map[string]string{
 	"meta":           "meta",
 	"configure":      "configure",
+	"reconfigure":    "reconfigure",
 	"handle":         "handle_command",
 	"handle_command": "handle_command",
 	"handle_event":   "handle_event",
 	"event":          "handle_event",
+	"handle_rpc":     "handle_rpc",
+	"rpc":            "handle_rpc",
 	"step_callback":  "step_callback",
 	"callback":       "step_callback",
 	"migrate":        "migrate",
@@ -762,8 +765,10 @@ func printUsage() {
 Actions:
   meta             Show plugin metadata
   configure        Send configuration JSON to the plugin
+  reconfigure      Send a reconfigure request with previous/new config JSON
   handle           Send a handle_command request (alias: handle_command)
   handle_event     Send a handle_event request (alias: event)
+  handle_rpc       Send a handle_rpc request (alias: rpc)
   step_callback    Send a step_callback request (alias: callback)
   migrate          Run the migrate action
 

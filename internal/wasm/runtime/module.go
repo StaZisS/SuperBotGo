@@ -201,6 +201,63 @@ func (cm *CompiledModule) CallConfigure(ctx context.Context, configJSON []byte) 
 	return nil
 }
 
+func (cm *CompiledModule) CallReconfigure(ctx context.Context, previousConfigJSON, configJSON []byte) error {
+	input, err := json.Marshal(ReconfigureRequest{
+		PreviousConfig: previousConfigJSON,
+		Config:         configJSON,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal reconfigure input: %w", err)
+	}
+
+	data, err := cm.RunAction(ctx, ActionReconfigure, input)
+	if err != nil {
+		return fmt.Errorf("call reconfigure: %w", err)
+	}
+
+	if len(data) > 0 {
+		var errResp struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(data, &errResp) == nil && errResp.Error != "" {
+			return fmt.Errorf("reconfigure error: %s", errResp.Error)
+		}
+	}
+
+	return nil
+}
+
+func (cm *CompiledModule) CallRPC(ctx context.Context, caller, method string, params []byte, configJSON []byte) ([]byte, error) {
+	input, err := json.Marshal(RPCRequest{
+		Caller: caller,
+		Method: method,
+		Params: params,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal rpc input: %w", err)
+	}
+
+	data, err := cm.RunActionWithConfig(ctx, ActionHandleRPC, input, configJSON)
+	if err != nil {
+		return nil, fmt.Errorf("call handle_rpc: %w", err)
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("empty rpc response")
+	}
+
+	var resp RPCResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("unmarshal rpc response: %w", err)
+	}
+	if resp.Status == "error" {
+		if resp.Error == "" {
+			resp.Error = "rpc call failed"
+		}
+		return nil, fmt.Errorf("%s", resp.Error)
+	}
+	return resp.Result, nil
+}
+
 func (cm *CompiledModule) CallMigrate(ctx context.Context, oldVersion, newVersion string) error {
 	input, err := json.Marshal(struct {
 		OldVersion string `json:"old_version"`

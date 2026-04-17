@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	appmetrics "SuperBotGo/internal/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -29,6 +30,12 @@ type Config struct {
 	Backoff []time.Duration
 
 	DLQMaxSize int
+
+	PollInterval time.Duration
+
+	LeaseDuration time.Duration
+
+	BatchSize int
 }
 
 func (c *Config) withDefaults() Config {
@@ -46,6 +53,15 @@ func (c *Config) withDefaults() Config {
 	if out.DLQMaxSize <= 0 {
 		out.DLQMaxSize = 1000
 	}
+	if out.PollInterval <= 0 {
+		out.PollInterval = 500 * time.Millisecond
+	}
+	if out.LeaseDuration <= 0 {
+		out.LeaseDuration = 30 * time.Second
+	}
+	if out.BatchSize <= 0 {
+		out.BatchSize = 16
+	}
 	return out
 }
 
@@ -60,6 +76,10 @@ func pluginIDFromContext(ctx context.Context) string {
 		return id
 	}
 	return ""
+}
+
+func SourcePluginIDFromContext(ctx context.Context) string {
+	return pluginIDFromContext(ctx)
 }
 
 type Metrics struct {
@@ -80,6 +100,7 @@ func NewMetrics() *Metrics {
 type Bus struct {
 	cfg     Config
 	metrics *Metrics
+	appm    *appmetrics.Metrics
 
 	mu       sync.RWMutex
 	handlers []Handler
@@ -102,6 +123,10 @@ func New(cfg *Config, m *Metrics) *Bus {
 	}
 }
 
+func (b *Bus) SetAppMetrics(m *appmetrics.Metrics) {
+	b.appm = m
+}
+
 func (b *Bus) Subscribe(h Handler) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -116,6 +141,7 @@ func (b *Bus) Publish(ctx context.Context, topic string, payload []byte) error {
 
 	if len(handlers) == 0 {
 		b.incMetric(topic, "delivered")
+		b.incAppMetric("memory", "no_subscribers")
 		return nil
 	}
 
@@ -129,6 +155,7 @@ func (b *Bus) Publish(ctx context.Context, topic string, payload []byte) error {
 			}
 			b.addToDLQ(topic, payload, pluginID, err)
 			b.incMetric(topic, "dead_lettered")
+			b.incAppMetric("memory", "dead_lettered")
 			slog.Error("event delivery exhausted retries, moved to DLQ",
 				"topic", topic,
 				"handler_index", i,
@@ -137,6 +164,7 @@ func (b *Bus) Publish(ctx context.Context, topic string, payload []byte) error {
 			)
 		} else {
 			b.incMetric(topic, "delivered")
+			b.incAppMetric("memory", "delivered")
 		}
 	}
 
@@ -151,6 +179,7 @@ func (b *Bus) deliverWithRetry(ctx context.Context, h Handler, topic string, pay
 		if attempt > 0 {
 			delay := b.backoffDelay(attempt - 1)
 			b.incMetric(topic, "retrying")
+			b.incAppMetric("memory", "retrying")
 			slog.Info("retrying event delivery",
 				"topic", topic,
 				"attempt", attempt+1,
@@ -258,5 +287,11 @@ func (b *Bus) PurgeDLQ() int {
 func (b *Bus) incMetric(topic, status string) {
 	if b.metrics != nil {
 		b.metrics.PublishTotal.WithLabelValues(topic, status).Inc()
+	}
+}
+
+func (b *Bus) incAppMetric(backend, status string) {
+	if b.appm != nil {
+		b.appm.PluginEventDeliveryTotal.WithLabelValues(backend, status).Inc()
 	}
 }

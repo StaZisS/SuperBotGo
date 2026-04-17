@@ -111,4 +111,87 @@ func (s *PgPluginStore) DeletePlugin(ctx context.Context, id string) error {
 	return nil
 }
 
+func (s *PgPluginStore) SavePluginMetadata(ctx context.Context, record PluginMetadataRecord) error {
+	metaJSON := json.RawMessage("null")
+	if len(record.MetaJSON) > 0 {
+		metaJSON = record.MetaJSON
+	}
+	configSchema := json.RawMessage("null")
+	if len(record.ConfigSchema) > 0 {
+		configSchema = record.ConfigSchema
+	}
+	requirements := json.RawMessage("null")
+	if len(record.Requirements) > 0 {
+		requirements = record.Requirements
+	}
+	triggers := json.RawMessage("null")
+	if len(record.Triggers) > 0 {
+		triggers = record.Triggers
+	}
+
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO wasm_plugin_metadata (
+			plugin_id, name, version, sdk_version, meta_json, config_schema, requirements, triggers, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		ON CONFLICT (plugin_id) DO UPDATE SET
+			name          = EXCLUDED.name,
+			version       = EXCLUDED.version,
+			sdk_version   = EXCLUDED.sdk_version,
+			meta_json     = EXCLUDED.meta_json,
+			config_schema = EXCLUDED.config_schema,
+			requirements  = EXCLUDED.requirements,
+			triggers      = EXCLUDED.triggers,
+			updated_at    = EXCLUDED.updated_at
+	`,
+		record.PluginID,
+		record.Name,
+		record.Version,
+		record.SDKVersion,
+		metaJSON,
+		configSchema,
+		requirements,
+		triggers,
+		record.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert plugin metadata %q: %w", record.PluginID, err)
+	}
+	return nil
+}
+
+func (s *PgPluginStore) GetPluginMetadata(ctx context.Context, id string) (PluginMetadataRecord, error) {
+	var rec PluginMetadataRecord
+	err := s.pool.QueryRow(ctx, `
+		SELECT plugin_id, name, version, sdk_version, meta_json, config_schema, requirements, triggers, updated_at
+		FROM wasm_plugin_metadata
+		WHERE plugin_id = $1
+	`, id).Scan(
+		&rec.PluginID,
+		&rec.Name,
+		&rec.Version,
+		&rec.SDKVersion,
+		&rec.MetaJSON,
+		&rec.ConfigSchema,
+		&rec.Requirements,
+		&rec.Triggers,
+		&rec.UpdatedAt,
+	)
+	if err != nil {
+		return PluginMetadataRecord{}, fmt.Errorf("get plugin metadata %q: %w", id, err)
+	}
+	return rec, nil
+}
+
+func (s *PgPluginStore) DeletePluginMetadata(ctx context.Context, id string) error {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM wasm_plugin_metadata WHERE plugin_id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete plugin metadata %q: %w", id, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("plugin metadata %q not found", id)
+	}
+	return nil
+}
+
 var _ PluginStore = (*PgPluginStore)(nil)

@@ -2,6 +2,8 @@
 
 Плагины обмениваются данными через шину событий (pub/sub). Один плагин публикует событие в топик, другие подписываются и получают данные.
 
+Payload события в текущем контракте всегда хранится как JSON. `PublishEvent()` маршалит значение в JSON автоматически, а подписчик получает этот JSON в `ctx.Event.Payload`.
+
 ## Подписка на события
 
 ```go
@@ -10,9 +12,15 @@ wasmplugin.Trigger{
     Type:  wasmplugin.TriggerEvent,
     Topic: "orders.created",
     Handler: func(ctx *wasmplugin.EventContext) error {
-        topic := ctx.Event.Topic      // "orders.created"
+        topic := ctx.Event.Topic       // "orders.created"
         source := ctx.Event.Source     // ID плагина-отправителя
-        payload := ctx.Event.Payload   // []byte с данными
+
+        var payload struct {
+            OrderID int64 `json:"order_id"`
+        }
+        if err := json.Unmarshal(ctx.Event.Payload, &payload); err != nil {
+            return err
+        }
 
         ctx.Log("Получен заказ от " + source)
         return nil
@@ -31,6 +39,12 @@ err := wasmplugin.PublishEvent("orders.created", map[string]interface{}{
 })
 ```
 
+Если payload уже сериализован, можно использовать:
+
+```go
+err := wasmplugin.PublishEventRawJSON("orders.created", rawJSON)
+```
+
 Для публикации требуется объявить требование `EventsReq`:
 
 ```go
@@ -44,7 +58,7 @@ Requirements: []wasmplugin.Requirement{
 | Поле | Тип | Описание |
 |---|---|---|
 | `Topic` | `string` | Топик события |
-| `Payload` | `[]byte` | Данные события (произвольный формат) |
+| `Payload` | `[]byte` | JSON payload события |
 | `Source` | `string` | ID плагина, опубликовавшего событие |
 
 ## Пример: связка двух плагинов
@@ -75,3 +89,11 @@ wasmplugin.Trigger{
     },
 }
 ```
+
+## Гарантии доставки
+
+- Доставка at-least-once. Обработчики должны быть идемпотентными.
+- `memory` backend работает внутри одного процесса.
+- `postgres` backend даёт cluster-wide durable delivery, retry и DLQ.
+
+Если включён backend PostgreSQL, событие сначала попадает в очередь `wasm_event_queue`, затем доставляется подписчикам worker-процессом.

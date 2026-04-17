@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"strings"
+	"sync"
 
 	"SuperBotGo/internal/model"
 	"SuperBotGo/internal/plugin"
@@ -21,6 +23,7 @@ type MessageSendFunc func(ctx context.Context, channelType model.ChannelType, ch
 type WasmPlugin struct {
 	compiled    *wasmrt.CompiledModule
 	meta        wasmrt.PluginMeta
+	configMu    sync.RWMutex
 	config      json.RawMessage
 	messageSend MessageSendFunc
 }
@@ -85,8 +88,8 @@ func (wp *WasmPlugin) stepNodeDefToStepNode(nd wasmrt.NodeDef) state.StepNode {
 	}
 
 	node.MessageBuilder = wp.buildStepMessage(nd.Blocks)
-	node.Validate = wp.buildStepValidator(nd)
-	node.Condition = wp.buildStepCondition(nd)
+	node.ValidateWithContext = wp.buildStepValidator(nd)
+	node.ConditionWithContext = wp.buildStepCondition(nd)
 	node.Pagination = wp.buildStepPagination(nd)
 
 	return node
@@ -112,10 +115,19 @@ func (wp *WasmPlugin) condBranchNodeDefToCondBranchNode(nd wasmrt.NodeDef) state
 		predicate := wp.conditionalPredicate(cc.Condition, cc.ConditionFn)
 
 		if predicate != nil {
-			cbn.Cases = append(cbn.Cases, state.ConditionalCase{
-				Predicate: predicate,
-				Nodes:     wp.commandNodes(cc.Nodes),
-			})
+			ccase := state.ConditionalCase{
+				Predicate: func(params model.OptionMap) bool {
+					return predicate(params)
+				},
+				Nodes: wp.commandNodes(cc.Nodes),
+			}
+			if cc.ConditionFn != "" {
+				callbackName := cc.ConditionFn
+				ccase.PredicateWithContext = func(ctx state.StepContext) bool {
+					return wp.callConditionCallback(ctx, callbackName, ctx.Params)
+				}
+			}
+			cbn.Cases = append(cbn.Cases, ccase)
 		}
 	}
 	if len(nd.Default) > 0 {
@@ -165,18 +177,18 @@ func (wp *WasmPlugin) renderStepBlock(block wasmrt.BlockDef, ctx state.StepConte
 	}
 }
 
-func (wp *WasmPlugin) buildStepValidator(nd wasmrt.NodeDef) func(model.UserInput) bool {
+func (wp *WasmPlugin) buildStepValidator(nd wasmrt.NodeDef) func(state.StepContext, model.UserInput) bool {
 	if nd.ValidateFn != "" {
 		cbName := nd.ValidateFn
-		return func(input model.UserInput) bool {
-			return wp.callValidateCallback(cbName, input.TextValue())
+		return func(ctx state.StepContext, input model.UserInput) bool {
+			return wp.callValidateCallback(ctx, cbName, input.TextValue())
 		}
 	}
 	if nd.Validation == "" {
 		return nil
 	}
 	pattern := nd.Validation
-	return func(input model.UserInput) bool {
+	return func(_ state.StepContext, input model.UserInput) bool {
 		re, err := regexp.Compile(pattern)
 		if err != nil {
 			slog.Warn("wasm: invalid validation regex", "pattern", pattern, "error", err)
@@ -186,19 +198,19 @@ func (wp *WasmPlugin) buildStepValidator(nd wasmrt.NodeDef) func(model.UserInput
 	}
 }
 
-func (wp *WasmPlugin) buildStepCondition(nd wasmrt.NodeDef) func(model.OptionMap) bool {
+func (wp *WasmPlugin) buildStepCondition(nd wasmrt.NodeDef) func(state.StepContext) bool {
 	if nd.ConditionFn != "" {
 		cbName := nd.ConditionFn
-		return func(params model.OptionMap) bool {
-			return wp.callConditionCallback(cbName, params)
+		return func(ctx state.StepContext) bool {
+			return wp.callConditionCallback(ctx, cbName, ctx.Params)
 		}
 	}
 	if nd.VisibleWhen == nil {
 		return nil
 	}
 	cond := nd.VisibleWhen
-	return func(params model.OptionMap) bool {
-		return evalCondition(cond, params)
+	return func(ctx state.StepContext) bool {
+		return evalCondition(cond, ctx.Params)
 	}
 }
 
@@ -221,7 +233,7 @@ func (wp *WasmPlugin) buildStepPagination(nd wasmrt.NodeDef) *state.PaginationCo
 func (wp *WasmPlugin) conditionalPredicate(cond *wasmrt.ConditionDef, callbackName string) func(model.OptionMap) bool {
 	if callbackName != "" {
 		return func(params model.OptionMap) bool {
-			return wp.callConditionCallback(callbackName, params)
+			return wp.callConditionCallback(state.StepContext{Params: params}, callbackName, params)
 		}
 	}
 	if cond == nil {
@@ -233,13 +245,16 @@ func (wp *WasmPlugin) conditionalPredicate(cond *wasmrt.ConditionDef, callbackNa
 }
 
 // callStepCallback is the shared call/unmarshal path for all wasm step callbacks.
-func (wp *WasmPlugin) callStepCallback(cbName string, req wasmrt.StepCallbackRequest) (*wasmrt.StepCallbackResponse, error) {
+func (wp *WasmPlugin) callStepCallback(ctx context.Context, cbName string, req wasmrt.StepCallbackRequest) (*wasmrt.StepCallbackResponse, error) {
 	req.Callback = cbName
 	reqJSON, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
-	result, err := wp.compiled.CallStepCallback(context.Background(), reqJSON, wp.config)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	result, err := wp.compiled.CallStepCallback(ctx, reqJSON, wp.Config())
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +278,7 @@ func convertOptions(defs []wasmrt.OptionDef, locale string) []model.Option {
 }
 
 func (wp *WasmPlugin) callOptionsCallback(cbName string, ctx state.StepContext) []model.Option {
-	resp, err := wp.callStepCallback(cbName, wasmrt.StepCallbackRequest{
+	resp, err := wp.callStepCallback(ctx.Context, cbName, wasmrt.StepCallbackRequest{
 		UserID: int64(ctx.UserID),
 		Locale: ctx.Locale,
 		Params: ctx.Params,
@@ -275,32 +290,43 @@ func (wp *WasmPlugin) callOptionsCallback(cbName string, ctx state.StepContext) 
 	return convertOptions(resp.Options, ctx.Locale)
 }
 
-func (wp *WasmPlugin) callValidateCallback(cbName string, inputText string) bool {
-	resp, err := wp.callStepCallback(cbName, wasmrt.StepCallbackRequest{Input: inputText})
+func (wp *WasmPlugin) callValidateCallback(ctx state.StepContext, cbName string, inputText string) bool {
+	resp, err := wp.callStepCallback(ctx.Context, cbName, wasmrt.StepCallbackRequest{
+		UserID: int64(ctx.UserID),
+		Locale: ctx.Locale,
+		Params: ctx.Params,
+		Input:  inputText,
+	})
 	if err != nil {
 		slog.Error("wasm validate callback failed", "plugin", wp.meta.ID, "callback", cbName, "error", err)
-		return true
+		return false
 	}
 	if resp.Result != nil {
 		return *resp.Result
 	}
-	return true
+	slog.Error("wasm validate callback returned empty result", "plugin", wp.meta.ID, "callback", cbName)
+	return false
 }
 
-func (wp *WasmPlugin) callConditionCallback(cbName string, params model.OptionMap) bool {
-	resp, err := wp.callStepCallback(cbName, wasmrt.StepCallbackRequest{Params: params})
+func (wp *WasmPlugin) callConditionCallback(ctx state.StepContext, cbName string, params model.OptionMap) bool {
+	resp, err := wp.callStepCallback(ctx.Context, cbName, wasmrt.StepCallbackRequest{
+		UserID: int64(ctx.UserID),
+		Locale: ctx.Locale,
+		Params: params,
+	})
 	if err != nil {
 		slog.Error("wasm condition callback failed", "plugin", wp.meta.ID, "callback", cbName, "error", err)
-		return true
+		return false
 	}
 	if resp.Result != nil {
 		return *resp.Result
 	}
-	return true
+	slog.Error("wasm condition callback returned empty result", "plugin", wp.meta.ID, "callback", cbName)
+	return false
 }
 
 func (wp *WasmPlugin) callPaginationCallback(cbName string, ctx state.StepContext, page int) state.OptionsPage {
-	resp, err := wp.callStepCallback(cbName, wasmrt.StepCallbackRequest{
+	resp, err := wp.callStepCallback(ctx.Context, cbName, wasmrt.StepCallbackRequest{
 		UserID: int64(ctx.UserID),
 		Locale: ctx.Locale,
 		Params: ctx.Params,
@@ -308,9 +334,20 @@ func (wp *WasmPlugin) callPaginationCallback(cbName string, ctx state.StepContex
 	})
 	if err != nil {
 		slog.Error("wasm pagination callback failed", "plugin", wp.meta.ID, "callback", cbName, "error", err)
-		return state.OptionsPage{}
+		return state.OptionsPage{Error: paginationErrorMessage(ctx.Locale)}
+	}
+	if strings.TrimSpace(resp.Error) != "" {
+		slog.Error("wasm pagination callback returned plugin error", "plugin", wp.meta.ID, "callback", cbName, "error", resp.Error)
+		return state.OptionsPage{Error: paginationErrorMessage(ctx.Locale)}
 	}
 	return state.OptionsPage{Options: convertOptions(resp.Options, ctx.Locale), HasMore: resp.HasMore}
+}
+
+func paginationErrorMessage(locale string) string {
+	if strings.HasPrefix(locale, "ru") {
+		return "Не удалось загрузить варианты. Попробуйте ещё раз."
+	}
+	return "Failed to load options. Please try again."
 }
 
 func evalCondition(cond *wasmrt.ConditionDef, params model.OptionMap) bool {
@@ -421,7 +458,7 @@ func (wp *WasmPlugin) HandleEvent(ctx context.Context, event model.Event) (*mode
 		return nil, fmt.Errorf("wasm plugin %q: marshal event: %w", wp.meta.ID, err)
 	}
 
-	result, err := wp.compiled.CallHandleEvent(ctx, eventJSON, wp.config)
+	result, err := wp.compiled.CallHandleEvent(ctx, eventJSON, wp.Config())
 	if err != nil {
 		return nil, fmt.Errorf("wasm plugin %q handle_event: %w", wp.meta.ID, err)
 	}
@@ -463,11 +500,28 @@ func (wp *WasmPlugin) Triggers() []wasmrt.TriggerDef {
 }
 
 func (wp *WasmPlugin) SetConfig(config json.RawMessage) {
-	wp.config = config
+	wp.configMu.Lock()
+	defer wp.configMu.Unlock()
+	wp.config = cloneRawMessage(config)
+}
+
+func (wp *WasmPlugin) Config() json.RawMessage {
+	wp.configMu.RLock()
+	defer wp.configMu.RUnlock()
+	return cloneRawMessage(wp.config)
 }
 
 func (wp *WasmPlugin) Meta() wasmrt.PluginMeta {
 	return wp.meta
+}
+
+func (wp *WasmPlugin) SupportsRPCMethod(method string) bool {
+	for _, candidate := range wp.meta.RPCMethods {
+		if candidate.Name == method {
+			return true
+		}
+	}
+	return false
 }
 
 func (wp *WasmPlugin) Close(ctx context.Context) error {

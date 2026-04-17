@@ -3,14 +3,21 @@ package wasmplugin
 import "encoding/json"
 
 type pluginMeta struct {
-	ID           string           `json:"id"`
-	Name         string           `json:"name"`
-	Version      string           `json:"version"`
-	SDKVersion   int              `json:"sdk_version"`
-	Triggers     []triggerDef     `json:"triggers,omitempty"`
-	Requirements []requirementDef `json:"requirements,omitempty"`
-	ConfigSchema json.RawMessage  `json:"config_schema,omitempty"`
-	Migrations   []migrationDef   `json:"migrations,omitempty"`
+	ID                  string           `json:"id"`
+	Name                string           `json:"name"`
+	Version             string           `json:"version"`
+	SDKVersion          int              `json:"sdk_version"`
+	SupportsReconfigure bool             `json:"supports_reconfigure,omitempty"`
+	RPCMethods          []rpcMethodDef   `json:"rpc_methods,omitempty"`
+	Triggers            []triggerDef     `json:"triggers,omitempty"`
+	Requirements        []requirementDef `json:"requirements,omitempty"`
+	ConfigSchema        json.RawMessage  `json:"config_schema,omitempty"`
+	Migrations          []migrationDef   `json:"migrations,omitempty"`
+}
+
+type rpcMethodDef struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
 }
 
 type triggerDef struct {
@@ -107,6 +114,24 @@ type migrateRequest struct {
 type migrateResponse struct {
 	Status  string `json:"status"`
 	Message string `json:"message,omitempty"`
+}
+
+type reconfigureRequest struct {
+	PreviousConfig json.RawMessage `json:"previous_config,omitempty"`
+	Config         json.RawMessage `json:"config,omitempty"`
+}
+
+type rpcRequest struct {
+	Caller string `json:"caller,omitempty"`
+	Method string `json:"method"`
+	Params []byte `json:"params,omitempty"`
+}
+
+type rpcResponse struct {
+	Status string     `json:"status"`
+	Result []byte     `json:"result,omitempty"`
+	Error  string     `json:"error,omitempty"`
+	Logs   []logEntry `json:"logs,omitempty"`
 }
 
 type stepCallbackRequest struct {

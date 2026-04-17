@@ -19,6 +19,8 @@ import (
 
 var pluginDrainTimeout = wasmrt.PluginDrainTimeout
 
+var _ hostapi.PluginRegistry = (*Loader)(nil)
+
 type Loader struct {
 	mu              sync.RWMutex
 	rt              *wasmrt.Runtime
@@ -28,6 +30,7 @@ type Loader struct {
 	triggerRegistry *trigger.Registry
 	metrics         *metrics.Metrics
 	registry        *registry.PluginRegistry
+	strictMigrate   bool
 }
 
 type loadedPlugin struct {
@@ -39,18 +42,28 @@ type loadedPlugin struct {
 	drained        chan struct{}
 }
 
+type preparedPlugin struct {
+	meta      wasmrt.PluginMeta
+	compiled  *wasmrt.CompiledModule
+	config    json.RawMessage
+	plugin    *WasmPlugin
+	wasmBytes []byte
+}
+
 func NewLoader(rt *wasmrt.Runtime, hostAPI *hostapi.HostAPI, messageSend MessageSendFunc) *Loader {
 	return &Loader{
-		rt:          rt,
-		hostAPI:     hostAPI,
-		messageSend: messageSend,
-		plugins:     make(map[string]*loadedPlugin),
+		rt:            rt,
+		hostAPI:       hostAPI,
+		messageSend:   messageSend,
+		plugins:       make(map[string]*loadedPlugin),
+		strictMigrate: true,
 	}
 }
 func (l *Loader) SetMetrics(m *metrics.Metrics)            { l.metrics = m }
 func (l *Loader) SetTriggerRegistry(tr *trigger.Registry)  { l.triggerRegistry = tr }
 func (l *Loader) SetRegistry(reg *registry.PluginRegistry) { l.registry = reg }
 func (l *Loader) Registry() *registry.PluginRegistry       { return l.registry }
+func (l *Loader) SetStrictMigrate(strict bool)             { l.strictMigrate = strict }
 
 func (l *Loader) LoadPlugin(ctx context.Context, wasmPath string, config json.RawMessage) (*WasmPlugin, error) {
 	data, err := os.ReadFile(wasmPath)
@@ -61,6 +74,18 @@ func (l *Loader) LoadPlugin(ctx context.Context, wasmPath string, config json.Ra
 }
 
 func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, config json.RawMessage) (*WasmPlugin, error) {
+	prepared, err := l.preparePlugin(ctx, wasmBytes, config)
+	if err != nil {
+		return nil, err
+	}
+
+	l.registerLoadedPlugin(prepared, false)
+
+	slog.Info("wasm: plugin loaded", "id", prepared.meta.ID, "name", prepared.meta.Name, "version", prepared.meta.Version)
+	return prepared.plugin, nil
+}
+
+func (l *Loader) preparePlugin(ctx context.Context, wasmBytes []byte, config json.RawMessage) (*preparedPlugin, error) {
 	compiled, err := l.rt.CompileModule(ctx, wasmBytes)
 	if err != nil {
 		return nil, fmt.Errorf("compile wasm plugin: %w", err)
@@ -90,14 +115,17 @@ func (l *Loader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, conf
 	wp := &WasmPlugin{
 		compiled:    compiled,
 		meta:        meta,
-		config:      config,
+		config:      cloneRawMessage(config),
 		messageSend: l.messageSend,
 	}
 
-	l.registerLoadedPlugin(meta, compiled, config, wp, wasmBytes)
-
-	slog.Info("wasm: plugin loaded", "id", meta.ID, "name", meta.Name, "version", meta.Version)
-	return wp, nil
+	return &preparedPlugin{
+		meta:      meta,
+		compiled:  compiled,
+		config:    cloneRawMessage(config),
+		plugin:    wp,
+		wasmBytes: wasmBytes,
+	}, nil
 }
 
 func (l *Loader) probePlugin(ctx context.Context, compiled *wasmrt.CompiledModule) (wasmrt.PluginMeta, []string, error) {
@@ -148,6 +176,10 @@ func (l *Loader) activatePlugin(ctx context.Context, compiled *wasmrt.CompiledMo
 	}
 
 	l.registerDatabases(meta.ID, config)
+	if err := l.registerHTTPPolicies(meta.ID, meta.Requirements, config); err != nil {
+		l.closeActivatedPlugin(ctx, meta.ID, compiled)
+		return err
+	}
 
 	if err := l.validateDatabaseRequirements(meta); err != nil {
 		l.closeActivatedPlugin(ctx, meta.ID, compiled)
@@ -171,20 +203,30 @@ func (l *Loader) activatePlugin(ctx context.Context, compiled *wasmrt.CompiledMo
 
 func (l *Loader) closeActivatedPlugin(ctx context.Context, pluginID string, compiled *wasmrt.CompiledModule) {
 	_ = compiled.Close(ctx)
+	if sqlStore := l.hostAPI.SQLStore(); sqlStore != nil {
+		sqlStore.UnregisterPlugin(pluginID)
+	}
 	l.hostAPI.RevokePermissions(pluginID)
 }
 
 func (l *Loader) validateDatabaseRequirements(meta wasmrt.PluginMeta) error {
 	for _, req := range meta.Requirements {
-		if req.Type != "database" {
-			continue
-		}
-		dbName := req.Name
-		if dbName == "" {
-			dbName = "default"
-		}
-		if sqlStore := l.hostAPI.SQLStore(); sqlStore == nil || !sqlStore.HasDSN(meta.ID, dbName) {
-			return fmt.Errorf("plugin %q requires database %q but its connection string is not configured", meta.ID, dbName)
+		switch req.Type {
+		case "database":
+			dbName := req.Name
+			if dbName == "" {
+				dbName = "default"
+			}
+			if sqlStore := l.hostAPI.SQLStore(); sqlStore == nil || !sqlStore.HasDSN(meta.ID, dbName) {
+				return fmt.Errorf("plugin %q requires database %q but its connection string is not configured", meta.ID, dbName)
+			}
+		case "plugin":
+			if req.Target == "" {
+				return fmt.Errorf("plugin %q declares plugin requirement without target", meta.ID)
+			}
+			if l.hostAPI.PluginRegistry() == nil {
+				return fmt.Errorf("plugin %q requires inter-plugin RPC but it is disabled", meta.ID)
+			}
 		}
 	}
 	return nil
@@ -208,26 +250,32 @@ func (l *Loader) runPluginMigrations(ctx context.Context, meta wasmrt.PluginMeta
 	return nil
 }
 
-func (l *Loader) registerLoadedPlugin(meta wasmrt.PluginMeta, compiled *wasmrt.CompiledModule, config json.RawMessage, wp *WasmPlugin, wasmBytes []byte) {
+func (l *Loader) registerLoadedPlugin(prepared *preparedPlugin, replace bool) {
 	l.mu.Lock()
-	l.plugins[meta.ID] = &loadedPlugin{
-		plugin:   wp,
-		compiled: compiled,
-		config:   config,
+	_, existed := l.plugins[prepared.meta.ID]
+	l.plugins[prepared.meta.ID] = &loadedPlugin{
+		plugin:   prepared.plugin,
+		compiled: prepared.compiled,
+		config:   cloneRawMessage(prepared.config),
 		drained:  make(chan struct{}),
 	}
 	l.mu.Unlock()
 
-	if l.metrics != nil {
+	if l.metrics != nil && !(replace && existed) {
 		l.metrics.LoadedPluginsGauge.Inc()
 	}
 
-	if l.triggerRegistry != nil && len(meta.Triggers) > 0 {
-		l.triggerRegistry.RegisterTriggers(meta.ID, meta.Triggers)
-		slog.Info("wasm: registered triggers", "plugin", meta.ID, "count", len(meta.Triggers))
+	if l.triggerRegistry != nil {
+		if replace {
+			l.triggerRegistry.UnregisterTriggers(prepared.meta.ID)
+		}
+		if len(prepared.meta.Triggers) > 0 {
+			l.triggerRegistry.RegisterTriggers(prepared.meta.ID, prepared.meta.Triggers)
+			slog.Info("wasm: registered triggers", "plugin", prepared.meta.ID, "count", len(prepared.meta.Triggers))
+		}
 	}
 
-	l.registerInRegistry(&meta, wasmBytes)
+	l.registerInRegistry(&prepared.meta, prepared.wasmBytes)
 }
 
 // checkDependencies resolves plugin dependencies and verifies integrity if a registry is configured.
@@ -289,6 +337,15 @@ func (l *Loader) registerDatabases(pluginID string, config json.RawMessage) {
 			sqlStore.RegisterDSN(pluginID, name, dsn)
 		}
 	}
+}
+
+func (l *Loader) registerHTTPPolicies(pluginID string, requirements []wasmrt.RequirementDef, config json.RawMessage) error {
+	policies, err := hostapi.ResolveHTTPPolicies(requirements, config)
+	if err != nil {
+		return fmt.Errorf("plugin %q http policy: %w", pluginID, err)
+	}
+	l.hostAPI.SetHTTPPolicies(pluginID, policies)
+	return nil
 }
 
 func (l *Loader) registerInRegistry(meta *wasmrt.PluginMeta, wasmBytes []byte) {
@@ -354,30 +411,46 @@ func (l *Loader) ReloadPluginFromBytes(ctx context.Context, pluginID string, was
 	}
 	config := newConfig
 	if config == nil {
-		config = old.config
+		config = cloneRawMessage(old.config)
 	}
 	l.mu.RUnlock()
 
 	old.draining.Store(true)
 
 	oldVersion := old.plugin.Version()
+	oldPermissions := hostapi.PermissionsFromRequirements(old.plugin.Meta().Requirements)
 
-	newPlugin, err := l.LoadPluginFromBytes(ctx, wasmBytes, config)
+	prepared, err := l.preparePlugin(ctx, wasmBytes, config)
 	if err != nil {
 		old.draining.Store(false)
 		reloadStatus = "error"
 		return fmt.Errorf("reload plugin %q: load new version: %w", pluginID, err)
 	}
 
-	newVersion := newPlugin.Version()
+	if prepared.meta.ID != pluginID {
+		l.closeActivatedPlugin(ctx, prepared.meta.ID, prepared.compiled)
+		l.restoreLoadedPluginState(pluginID, old.config, oldPermissions)
+		old.draining.Store(false)
+		reloadStatus = "error"
+		return fmt.Errorf("reload plugin %q: new module declares ID %q", pluginID, prepared.meta.ID)
+	}
+
+	newVersion := prepared.plugin.Version()
 	if oldVersion != newVersion {
 		slog.Info("wasm: plugin version changed, running migration",
 			"plugin", pluginID,
 			"old_version", oldVersion,
 			"new_version", newVersion,
 		)
-		if migrateErr := newPlugin.compiled.CallMigrate(ctx, oldVersion, newVersion); migrateErr != nil {
-			slog.Error("wasm: plugin migration failed (proceeding with reload)",
+		if migrateErr := prepared.compiled.CallMigrate(ctx, oldVersion, newVersion); migrateErr != nil {
+			if l.strictMigrate {
+				l.closeActivatedPlugin(ctx, prepared.meta.ID, prepared.compiled)
+				l.restoreLoadedPluginState(pluginID, old.config, oldPermissions)
+				old.draining.Store(false)
+				reloadStatus = "error"
+				return fmt.Errorf("reload plugin %q: migration failed: %w", pluginID, migrateErr)
+			}
+			slog.Error("wasm: plugin migration failed (continuing because strict migrate is disabled)",
 				"plugin", pluginID,
 				"old_version", oldVersion,
 				"new_version", newVersion,
@@ -392,12 +465,7 @@ func (l *Loader) ReloadPluginFromBytes(ctx context.Context, pluginID string, was
 		}
 	}
 
-	if newPlugin.ID() != pluginID {
-		l.mu.Lock()
-		delete(l.plugins, pluginID)
-		l.mu.Unlock()
-		l.hostAPI.RevokePermissions(pluginID)
-	}
+	l.registerLoadedPlugin(prepared, true)
 
 	l.drainPlugin(old, pluginID)
 
@@ -405,6 +473,101 @@ func (l *Loader) ReloadPluginFromBytes(ctx context.Context, pluginID string, was
 		slog.Error("wasm: error closing old compiled module during reload", "plugin", pluginID, "error", err)
 	}
 
-	slog.Info("wasm: plugin reloaded", "id", pluginID, "new_version", newPlugin.Version())
+	slog.Info("wasm: plugin reloaded", "id", pluginID, "new_version", prepared.plugin.Version())
 	return nil
+}
+
+func (l *Loader) restoreLoadedPluginState(pluginID string, config json.RawMessage, permissions []string) {
+	l.hostAPI.GrantPermissions(pluginID, permissions)
+	if sqlStore := l.hostAPI.SQLStore(); sqlStore != nil {
+		sqlStore.UnregisterPlugin(pluginID)
+	}
+	l.registerDatabases(pluginID, config)
+	if wp, ok := l.GetPlugin(pluginID); ok {
+		if err := l.registerHTTPPolicies(pluginID, wp.Meta().Requirements, config); err != nil {
+			slog.Error("wasm: failed to restore http policies", "plugin", pluginID, "error", err)
+		}
+	}
+}
+
+func (l *Loader) ProbeMetadataFromBytes(ctx context.Context, wasmBytes []byte) (wasmrt.PluginMeta, error) {
+	compiled, err := l.rt.CompileModule(ctx, wasmBytes)
+	if err != nil {
+		return wasmrt.PluginMeta{}, fmt.Errorf("compile wasm plugin: %w", err)
+	}
+	defer compiled.Close(ctx)
+
+	meta, _, err := l.probePlugin(ctx, compiled)
+	if err != nil {
+		return wasmrt.PluginMeta{}, err
+	}
+	return meta, nil
+}
+
+func (l *Loader) ReconfigurePlugin(ctx context.Context, pluginID string, config json.RawMessage) error {
+	start := time.Now()
+	status := "ok"
+	defer func() {
+		if l.metrics != nil {
+			l.metrics.PluginReconfigureTotal.WithLabelValues(pluginID, status).Inc()
+			l.metrics.PluginReconfigureDuration.WithLabelValues(pluginID).Observe(time.Since(start).Seconds())
+		}
+	}()
+
+	l.mu.RLock()
+	lp, ok := l.plugins[pluginID]
+	l.mu.RUnlock()
+	if !ok {
+		status = "error"
+		return fmt.Errorf("plugin %q not loaded", pluginID)
+	}
+	if !lp.plugin.meta.SupportsReconfigure {
+		status = "unsupported"
+		return fmt.Errorf("plugin %q does not support reconfigure", pluginID)
+	}
+	if err := ValidateConfigAgainstSchema(lp.plugin.meta.ConfigSchema, config); err != nil {
+		status = "invalid_config"
+		return err
+	}
+
+	oldConfig := cloneRawMessage(lp.config)
+	if sqlStore := l.hostAPI.SQLStore(); sqlStore != nil {
+		sqlStore.UnregisterPlugin(pluginID)
+	}
+	l.registerDatabases(pluginID, config)
+	if err := l.registerHTTPPolicies(pluginID, lp.plugin.meta.Requirements, config); err != nil {
+		l.restoreLoadedPluginState(pluginID, oldConfig, hostapi.PermissionsFromRequirements(lp.plugin.meta.Requirements))
+		status = "invalid_config"
+		return err
+	}
+	if err := l.validateDatabaseRequirements(lp.plugin.meta); err != nil {
+		l.restoreLoadedPluginState(pluginID, oldConfig, hostapi.PermissionsFromRequirements(lp.plugin.meta.Requirements))
+		status = "missing_dependency"
+		return err
+	}
+
+	if err := lp.compiled.CallReconfigure(ctx, oldConfig, config); err != nil {
+		l.restoreLoadedPluginState(pluginID, oldConfig, hostapi.PermissionsFromRequirements(lp.plugin.meta.Requirements))
+		status = "error"
+		return fmt.Errorf("reconfigure plugin %q: %w", pluginID, err)
+	}
+
+	lp.config = cloneRawMessage(config)
+	lp.plugin.SetConfig(config)
+	return nil
+}
+
+func (l *Loader) CallPlugin(ctx context.Context, target string, method string, params []byte) ([]byte, error) {
+	wp, release := l.AcquirePlugin(target)
+	if wp == nil {
+		return nil, fmt.Errorf("plugin %q is not loaded", target)
+	}
+	defer release()
+
+	if !wp.SupportsRPCMethod(method) {
+		return nil, fmt.Errorf("plugin %q does not expose rpc method %q", target, method)
+	}
+
+	caller, _ := ctx.Value(wasmrt.PluginIDKey{}).(string)
+	return wp.compiled.CallRPC(ctx, caller, method, params, wp.Config())
 }

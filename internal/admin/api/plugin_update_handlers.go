@@ -3,16 +3,11 @@ package api
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"net/http"
-	"time"
 
-	"SuperBotGo/internal/plugin"
-	"SuperBotGo/internal/pubsub"
-	"SuperBotGo/internal/wasm/adapter"
+	wasmrt "SuperBotGo/internal/wasm/runtime"
 )
 
 func (h *AdminHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
@@ -21,25 +16,10 @@ func (h *AdminHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	compiled, err := h.rt.CompileModule(r.Context(), wasmBytes)
+	meta, err := h.probeUploadedPlugin(r.Context(), wasmBytes)
 	if err != nil {
 		slog.Error("admin: invalid wasm module", "error", err)
 		writeError(w, http.StatusBadRequest, "invalid wasm module")
-		return
-	}
-
-	const probeID = "_upload_probe"
-	h.hostAPI.GrantPermissions(probeID, nil)
-	compiled.ID = probeID
-
-	meta, err := compiled.CallMeta(r.Context())
-	h.hostAPI.RevokePermissions(probeID)
-	if closeErr := compiled.Close(r.Context()); closeErr != nil {
-		slog.Warn("admin: failed to close compiled module", "error", closeErr)
-	}
-	if err != nil {
-		slog.Error("admin: failed to read plugin metadata", "error", err)
-		writeError(w, http.StatusBadRequest, "failed to read plugin metadata")
 		return
 	}
 
@@ -59,142 +39,62 @@ func (h *AdminHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hash := sha256.Sum256(wasmBytes)
-
 	writeJSON(w, http.StatusOK, uploadResponse{
 		ID:              meta.ID,
 		Name:            meta.Name,
 		Version:         meta.Version,
+		RPCMethods:      meta.RPCMethods,
 		Triggers:        meta.Triggers,
 		Requirements:    meta.Requirements,
 		ConfigSchema:    meta.ConfigSchema,
 		WasmKey:         wasmKey,
-		WasmHash:        hex.EncodeToString(hash[:]),
+		WasmHash:        hashWASM(wasmBytes),
 		ExistingVersion: existingVersion,
 	})
 }
 
-func (h *AdminHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
-	pluginID := r.PathValue("id")
-
-	record, err := h.store.GetPlugin(r.Context(), pluginID)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "plugin not found")
-		return
-	}
-
-	oldTriggers := collectConfigurableTriggers(h.manager, pluginID)
-
+func (h *AdminHandler) handleUpdatePreview(w http.ResponseWriter, r *http.Request) {
 	wasmBytes, ok := readWasmFromForm(w, r)
 	if !ok {
 		return
 	}
 
-	newKey := fmt.Sprintf("%s_update_%d.wasm", pluginID, time.Now().Unix())
-	if err := h.blobs.Put(r.Context(), newKey, bytes.NewReader(wasmBytes), int64(len(wasmBytes))); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to save wasm file")
+	preview, err := h.buildUpdatePreview(r.Context(), r.PathValue("id"), wasmBytes)
+	if err != nil {
+		slog.Error("admin: failed to build plugin update preview", "id", r.PathValue("id"), "error", err)
+		if _, storeErr := h.store.GetPlugin(r.Context(), r.PathValue("id")); storeErr != nil {
+			writeError(w, http.StatusNotFound, "plugin not found")
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	if err := h.loader.ReloadPluginFromBytes(r.Context(), pluginID, wasmBytes, record.ConfigJSON); err != nil {
-		if delErr := h.blobs.Delete(r.Context(), newKey); delErr != nil {
-			slog.Warn("admin: failed to clean up wasm blob after reload failure", "key", newKey, "error", delErr)
-		}
-		slog.Error("admin: failed to reload plugin", "id", pluginID, "error", err)
-		writeError(w, http.StatusInternalServerError, "failed to reload plugin")
-		return
-	}
-
-	hash := sha256.Sum256(wasmBytes)
-	record.WasmKey = newKey
-	record.WasmHash = hex.EncodeToString(hash[:])
-	record.UpdatedAt = time.Now()
-	if err := h.store.SavePlugin(r.Context(), record); err != nil {
-		slog.Error("admin: failed to update plugin record after reload", "error", err)
-	}
-
-	h.manager.Remove(pluginID)
-	if wp, ok := h.loader.GetPlugin(pluginID); ok {
-		h.manager.Register(wp)
-		h.syncTriggersOnUpdate(r.Context(), pluginID, oldTriggers, wp)
-
-		if h.versions != nil {
-			if _, err := h.versions.SaveVersion(r.Context(), VersionRecord{
-				PluginID:   pluginID,
-				Version:    wp.Version(),
-				WasmKey:    newKey,
-				WasmHash:   record.WasmHash,
-				ConfigJSON: record.ConfigJSON,
-			}); err != nil {
-				slog.Error("admin: failed to save version record on update", "plugin", pluginID, "error", err)
-			}
-		}
-	}
-
-	h.publish(r.Context(), pubsub.EventPluginUpdated, pluginID)
-
-	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+	writeJSON(w, http.StatusOK, preview)
 }
 
-// collectConfigurableTriggers returns names of all non-cron triggers for a plugin.
-func collectConfigurableTriggers(mgr *plugin.Manager, pluginID string) map[string]struct{} {
-	p, ok := mgr.Get(pluginID)
+func (h *AdminHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
+	wasmBytes, ok := readWasmFromForm(w, r)
 	if !ok {
-		return nil
+		return
 	}
-	if wp, ok := p.(*adapter.WasmPlugin); ok {
-		triggers := make(map[string]struct{})
-		for _, t := range wp.Meta().Triggers {
-			if t.Type != "cron" {
-				triggers[t.Name] = struct{}{}
-			}
-		}
-		return triggers
+	result, err := h.lifecycle.Update(r.Context(), r.PathValue("id"), wasmBytes)
+	if err != nil {
+		slog.Error("admin: failed to update plugin", "id", r.PathValue("id"), "error", err)
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
-	triggers := make(map[string]struct{}, len(p.Commands()))
-	for _, def := range p.Commands() {
-		triggers[def.Name] = struct{}{}
-	}
-	return triggers
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": result.Status})
 }
 
-func (h *AdminHandler) syncTriggersOnUpdate(ctx context.Context, pluginID string, oldTriggers map[string]struct{}, newPlugin plugin.Plugin) {
-	newTriggers := collectConfigurableTriggers(h.manager, pluginID)
-
-	h.registerPluginCommands(newPlugin)
-
-	var removed []string
-	for name := range oldTriggers {
-		if _, ok := newTriggers[name]; !ok {
-			removed = append(removed, name)
-		}
+func (h *AdminHandler) probeUploadedPlugin(ctx context.Context, wasmBytes []byte) (wasmrt.PluginMeta, error) {
+	if h.loader == nil {
+		return wasmrt.PluginMeta{}, fmt.Errorf("wasm loader is not configured")
 	}
-
-	var added []string
-	for name := range newTriggers {
-		if _, ok := oldTriggers[name]; !ok {
-			added = append(added, name)
-		}
+	meta, err := h.loader.ProbeMetadataFromBytes(ctx, wasmBytes)
+	if err != nil {
+		return wasmrt.PluginMeta{}, fmt.Errorf("probe uploaded plugin metadata: %w", err)
 	}
-
-	if h.stateMgr != nil {
-		for _, name := range removed {
-			h.stateMgr.UnregisterCommand(pluginID, name)
-		}
-	}
-
-	if h.cmdStore != nil && len(removed) > 0 {
-		if err := h.cmdStore.DeleteCommandSettings(ctx, pluginID, removed); err != nil {
-			slog.Error("admin: failed to delete orphaned trigger settings",
-				"plugin", pluginID, "triggers", removed, "error", err)
-		} else {
-			slog.Info("admin: cleaned up settings for removed triggers",
-				"plugin", pluginID, "removed", removed)
-		}
-	}
-
-	if len(added) > 0 {
-		slog.Info("admin: new triggers detected (no access settings configured yet)",
-			"plugin", pluginID, "added", added)
-	}
+	return meta, nil
 }

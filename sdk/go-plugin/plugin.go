@@ -9,7 +9,7 @@ package wasmplugin
 // The host checks this to ensure compatibility with the loaded plugin.
 // Bump this when the protocol between host and plugin changes
 // (e.g. new env vars, new response fields, changed JSON schema).
-const ProtocolVersion = 1
+const ProtocolVersion = 2
 
 // SQLMigration describes a single SQL schema migration step.
 // Migrations are declared in the Plugin struct and serialized as part of
@@ -21,11 +21,20 @@ type SQLMigration struct {
 	Down        string // SQL to rollback (optional)
 }
 
+type RPCHandler func(ctx *RPCContext) ([]byte, error)
+
+type RPCMethod struct {
+	Name        string
+	Description string
+	Handler     RPCHandler
+}
+
 // Plugin defines a WASM plugin. Fill this struct and pass it to [Run].
 type Plugin struct {
 	ID           string
 	Name         string
 	Version      string
+	RPCMethods   []RPCMethod
 	Triggers     []Trigger
 	Requirements []Requirement
 
@@ -45,6 +54,11 @@ type Plugin struct {
 	// Use [GetConfig] inside handlers to access the stored config.
 	// Return nil to indicate success.
 	OnConfigure func(config []byte) error
+
+	// OnReconfigure is called when PLUGIN_ACTION=reconfigure.
+	// previousConfig contains the currently persisted config, config contains
+	// the new config to apply.
+	OnReconfigure func(previousConfig, config []byte) error
 
 	// OnEvent is the fallback event handler for triggers that don't have
 	// their own Handler. If a Trigger has a Handler, it takes priority.
@@ -166,6 +180,17 @@ func Database(desc string) *RequirementBuilder {
 // HTTP declares a requirement for outbound HTTP requests.
 func HTTP(desc string) *RequirementBuilder {
 	return &RequirementBuilder{r: Requirement{Type: "http", Description: desc}}
+}
+
+// HTTPPolicyConfig returns a standard config schema for host-enforced outbound
+// HTTP restrictions under the reserved requirements.http.<name> namespace.
+func HTTPPolicyConfig() ConfigSchema {
+	return ConfigFields(
+		StringArray("allowed_hosts", "Allowed outbound hostnames").Required(),
+		StringArray("allowed_methods", "Allowed HTTP methods"),
+		Integer("max_request_body_bytes", "Maximum request body size in bytes").Min(0),
+		Integer("max_response_body_bytes", "Maximum response body size in bytes").Min(0),
+	)
 }
 
 // KV declares a requirement for key-value store access.

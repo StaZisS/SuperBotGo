@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"testing"
 
 	"SuperBotGo/internal/model"
@@ -59,7 +60,7 @@ func TestProcessInput_CapturesParam(t *testing.T) {
 	s, _ := handler.CreateNewState("test_cmd")
 
 	input := model.TextInput{Text: "Alice"}
-	newState, outcome, err := handler.ProcessInput(0, s, input)
+	newState, outcome, err := handler.ProcessInput(context.Background(), 0, s, input, "en")
 	if err != nil {
 		t.Fatalf("ProcessInput() error = %v", err)
 	}
@@ -88,7 +89,7 @@ func TestProcessInput_ValidationFails(t *testing.T) {
 
 	// Empty text should fail validation for "name" step.
 	input := model.TextInput{Text: ""}
-	newState, outcome, err := handler.ProcessInput(0, s, input)
+	newState, outcome, err := handler.ProcessInput(context.Background(), 0, s, input, "en")
 	if err != nil {
 		t.Fatalf("ProcessInput() error = %v", err)
 	}
@@ -107,10 +108,10 @@ func TestProcessInput_CompletesCommand(t *testing.T) {
 	s, _ := handler.CreateNewState("test_cmd")
 
 	// Fill first step.
-	s, _, _ = handler.ProcessInput(0, s, model.TextInput{Text: "Alice"})
+	s, _, _ = handler.ProcessInput(context.Background(), 0, s, model.TextInput{Text: "Alice"}, "en")
 
 	// Fill second step.
-	newState, outcome, err := handler.ProcessInput(0, s, model.TextInput{Text: "30"})
+	newState, outcome, err := handler.ProcessInput(context.Background(), 0, s, model.TextInput{Text: "30"}, "en")
 	if err != nil {
 		t.Fatalf("ProcessInput() error = %v", err)
 	}
@@ -166,7 +167,7 @@ func TestProcessInput_Pagination(t *testing.T) {
 
 	// Navigate to next page.
 	nextInput := model.CallbackInput{Data: PageNext}
-	s, outcome, err := handler.ProcessInput(0, s, nextInput)
+	s, outcome, err := handler.ProcessInput(context.Background(), 0, s, nextInput, "en")
 	if err != nil {
 		t.Fatalf("ProcessInput(PageNext) error = %v", err)
 	}
@@ -181,7 +182,7 @@ func TestProcessInput_Pagination(t *testing.T) {
 
 	// Navigate back to previous page.
 	prevInput := model.CallbackInput{Data: PagePrev}
-	s, outcome, err = handler.ProcessInput(0, s, prevInput)
+	s, outcome, err = handler.ProcessInput(context.Background(), 0, s, prevInput, "en")
 	if err != nil {
 		t.Fatalf("ProcessInput(PagePrev) error = %v", err)
 	}
@@ -195,7 +196,7 @@ func TestProcessInput_Pagination(t *testing.T) {
 	}
 
 	// PagePrev at page 0 stays at 0.
-	s, _, _ = handler.ProcessInput(0, s, prevInput)
+	s, _, _ = handler.ProcessInput(context.Background(), 0, s, prevInput, "en")
 	ds = s.(*DslState)
 	if ds.PageState["item"] != 0 {
 		t.Errorf("PageState[item] = %d, want 0 (should not go negative)", ds.PageState["item"])
@@ -207,7 +208,7 @@ func TestPersistAndRestore(t *testing.T) {
 	s, _ := handler.CreateNewState("test_cmd")
 
 	// Fill one param and set page state.
-	s, _, _ = handler.ProcessInput(0, s, model.TextInput{Text: "Bob"})
+	s, _, _ = handler.ProcessInput(context.Background(), 0, s, model.TextInput{Text: "Bob"}, "en")
 	ds := s.(*DslState)
 	ds.PageState["some_key"] = 3
 
@@ -296,7 +297,7 @@ func TestBuildStepMessage(t *testing.T) {
 				PageState: make(map[string]int),
 			}
 
-			msg := handler.BuildStepMessage(s, "en")
+			msg := handler.BuildStepMessage(context.Background(), 0, s, "en")
 
 			if tt.wantNil {
 				if !msg.IsEmpty() {
@@ -340,9 +341,116 @@ func TestBuildStepMessage_WithLocale(t *testing.T) {
 		PageState: make(map[string]int),
 	}
 
-	msg := handler.BuildStepMessage(s, "ru")
+	msg := handler.BuildStepMessage(context.Background(), 0, s, "ru")
 	tb := msg.Blocks[0].(model.TextBlock)
 	if tb.Text != "locale=ru" {
 		t.Errorf("expected locale=ru, got %q", tb.Text)
+	}
+}
+
+func TestProcessInput_ValidateWithContext(t *testing.T) {
+	cmd := &CommandDefinition{
+		Name: "ctx_validate",
+		Nodes: []CommandNode{
+			StepNode{
+				ParamName:      "name",
+				MessageBuilder: msgBuilder("enter name"),
+				ValidateWithContext: func(ctx StepContext, input model.UserInput) bool {
+					if ctx.Context == nil {
+						t.Fatal("expected request context to be propagated")
+					}
+					if ctx.Locale != "ru" {
+						t.Fatalf("expected locale ru, got %q", ctx.Locale)
+					}
+					return input.TextValue() == "ok"
+				},
+			},
+		},
+	}
+
+	handler := NewDslStateHandler(cmd)
+	s, _ := handler.CreateNewState("ctx_validate")
+
+	nextState, outcome, err := handler.ProcessInput(context.Background(), 42, s, model.TextInput{Text: "bad"}, "ru")
+	if err != nil {
+		t.Fatalf("ProcessInput() error = %v", err)
+	}
+	if nextState.(*DslState).Params["name"] != "" {
+		t.Fatal("expected invalid input to be rejected")
+	}
+	if outcome.IsComplete {
+		t.Fatal("command should remain incomplete after rejected input")
+	}
+}
+
+func TestBuildStepMessage_ConditionWithContext(t *testing.T) {
+	cmd := &CommandDefinition{
+		Name: "ctx_condition",
+		Nodes: []CommandNode{
+			StepNode{
+				ParamName: "hidden",
+				MessageBuilder: func(_ StepContext) model.Message {
+					return model.NewTextMessage("hidden")
+				},
+				ConditionWithContext: func(ctx StepContext) bool {
+					return ctx.Locale == "ru"
+				},
+			},
+			StepNode{
+				ParamName:      "visible",
+				MessageBuilder: msgBuilder("visible"),
+			},
+		},
+	}
+
+	handler := NewDslStateHandler(cmd)
+	s := &DslState{
+		Command:   cmd,
+		Params:    model.OptionMap{},
+		PageState: make(map[string]int),
+	}
+
+	msg := handler.BuildStepMessage(context.Background(), 1, s, "en")
+	tb := msg.Blocks[0].(model.TextBlock)
+	if tb.Text != "visible" {
+		t.Fatalf("expected fail-closed condition to hide first step, got %q", tb.Text)
+	}
+}
+
+func TestBuildStepMessage_PaginationErrorFallback(t *testing.T) {
+	cmd := &CommandDefinition{
+		Name: "pagination_error",
+		Nodes: []CommandNode{
+			StepNode{
+				ParamName:      "item",
+				MessageBuilder: msgBuilder("choose item"),
+				Pagination: &PaginationConfig{
+					Prompt:   "Pick one",
+					PageSize: 1,
+					PageProvider: func(_ StepContext, _ int) OptionsPage {
+						return OptionsPage{Error: "custom pagination failure"}
+					},
+				},
+			},
+		},
+	}
+
+	handler := NewDslStateHandler(cmd)
+	s := &DslState{
+		Command:   cmd,
+		Params:    model.OptionMap{},
+		PageState: make(map[string]int),
+	}
+
+	msg := handler.BuildStepMessage(context.Background(), 1, s, "en")
+	if len(msg.Blocks) != 2 {
+		t.Fatalf("expected original message plus fallback error, got %d blocks", len(msg.Blocks))
+	}
+	tb, ok := msg.Blocks[1].(model.TextBlock)
+	if !ok {
+		t.Fatalf("expected fallback TextBlock, got %T", msg.Blocks[1])
+	}
+	if tb.Text != "custom pagination failure" {
+		t.Fatalf("unexpected fallback text %q", tb.Text)
 	}
 }

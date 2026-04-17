@@ -152,9 +152,9 @@ graph LR
 | Компонент | Файл | Назначение |
 |-----------|------|------------|
 | **Runtime** | `runtime/` | Движок WebAssembly на базе wazero. Пул инстансов, AOT-кеш, лимиты памяти |
-| **Loader** | `adapter/loader.go` | Загрузка `.wasm` модулей, hot-reload, валидация манифеста |
+| **Loader** | `adapter/loader.go` | Загрузка `.wasm` модулей, reload/reconfigure, валидация манифеста, регистрация HTTP policy |
 | **Host API** | `hostapi/` | Функции хоста для WASM: HTTP, KV, SQL, уведомления, RPC между плагинами |
-| **EventBus** | `eventbus/` | Pub/sub для плагинов. At-least-once доставка, DLQ, retry с backoff |
+| **EventBus** | `eventbus/` | Pub/sub для плагинов. Memory backend для single-instance и Postgres backend для cluster-wide durable delivery, retry и DLQ |
 | **Registry** | `registry/` | Версии, зависимости, подписи плагинов |
 
 ### `internal/trigger`
@@ -182,7 +182,7 @@ graph LR
 | Компонент | Файл | Назначение |
 |-----------|------|------------|
 | **SPA** | `web/admin/` | React-приложение для управления платформой |
-| **Admin API** | `api/` | REST API: загрузка/установка плагинов, управление правами, статусы каналов |
+| **Admin API** | `api/` | REST API: загрузка/установка плагинов, управление правами, статусы каналов. Lifecycle операций для WASM идут через `PluginLifecycleService` |
 
 ### Внешние хранилища
 

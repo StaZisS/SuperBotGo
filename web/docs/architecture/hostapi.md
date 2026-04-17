@@ -4,6 +4,12 @@ Host API — набор функций, доступных WASM-плагинам
 Все вызовы проходят через единый конвейер: проверка разрешений, rate limiting, трассировка,
 автоочистка ресурсов.
 
+На текущем этапе host layer уже умеет:
+
+- применять requirement-driven HTTP policy
+- выполнять typed inter-plugin RPC через отдельный `handle_rpc`
+- публиковать события в in-memory или Postgres event bus backend
+
 ## Диаграмма классов
 
 ```mermaid
@@ -13,6 +19,7 @@ classDiagram
     class HostAPI {
         -deps Dependencies
         -perms *permissionStore
+        -httpPolicies *httpPolicyStore
         -metrics *Metrics
         -kvStore *KVStore
         -sqlStore *SQLHandleStore
@@ -20,7 +27,8 @@ classDiagram
         +RegisterHostModule(rt)
         +GrantPermissions(pluginID, perms)
         +RevokePermissions(pluginID)
-        +RegisterDSN(pluginID, dsn)
+        +SetHTTPPolicyEnforcement(enabled)
+        +SetHTTPPolicies(pluginID, policies)
         +ContextWithRateLimiter(ctx, pluginID) context
         -registerFunc(name, fn)
     }
@@ -64,6 +72,14 @@ classDiagram
         +List(pluginID) []string
     }
 
+    class httpPolicyStore {
+        -mu RWMutex
+        -policies map~string, map~string, HTTPPolicy~~
+        +Set(pluginID, policies)
+        +Get(pluginID, requirement) HTTPPolicy
+        +Delete(pluginID)
+    }
+
     class RateLimiter {
         -mu Mutex
         -counts map~string, int~
@@ -96,6 +112,7 @@ classDiagram
     %% Relationships
     HostAPI --> Dependencies
     HostAPI --> permissionStore
+    HostAPI --> httpPolicyStore
     HostAPI --> KVStore
     HostAPI --> SQLHandleStore
 
@@ -233,6 +250,13 @@ flowchart TD
 Проверка — **перед каждым вызовом**. Без разрешения вызов возвращает ошибку,
 WASM-модуль не получает доступа к ресурсу.
 
+Для `http` requirement поверх базового permission может применяться policy:
+
+- allowlist хостов
+- allowlist HTTP-методов
+- лимит request body
+- лимит response body
+
 ## Rate Limits
 
 Лимиты **на одно выполнение** (один HandleEvent):
@@ -257,8 +281,31 @@ WASM-модуль не получает доступа к ресурсу.
 |---------------|---------|
 | `localhost`, `127.0.0.1`, `::1` | Loopback |
 | `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` | RFC 1918 (приватные сети) |
-| `169.254.169.254`, `metadata.google.internal` | Cloud metadata API (SSRF) |
 | `169.254.0.0/16` | Link-local |
+| `169.254.169.254`, `metadata.google.internal` | Cloud metadata API (SSRF) |
+
+## HTTP policy enforcement
+
+Когда включён `wasm.http_policy_enabled`, `http_request` дополнительно читает resolved policy из plugin config и блокирует вызов до выхода в сеть, если:
+
+- хост не входит в allowlist
+- HTTP-метод не разрешён
+- request body превышает лимит
+- response body превышает лимит
+
+Политики резолвятся по ключу `pluginID -> requirement name -> HTTPPolicy`.
+
+## Inter-plugin RPC
+
+`call_plugin` сейчас работает как typed RPC path:
+
+1. Проверка `plugins:call:<target>`.
+2. Проверка cycle/depth guard.
+3. Lookup target plugin через `PluginRegistry`.
+4. Проверка, что метод опубликован в `RPCMethods`.
+5. Выполнение `handle_rpc` в целевом плагине.
+
+Это отделяет RPC от обычного `handle_event` и делает контракт явным.
 
 ## SQL: управление ресурсами
 
@@ -298,7 +345,7 @@ flowchart TD
 | Макс. объём на плагин | 10 MB |
 | TTL | опционально, per key |
 
-## Inter-plugin RPC
+### RPC sequence
 
 ```mermaid
 sequenceDiagram
@@ -310,7 +357,7 @@ sequenceDiagram
     HA ->> HA: check permission "plugins:call:pluginB"
     HA ->> HA: check call depth (max 5)
     HA ->> HA: check call cycle (A → B → A)
-    HA ->> B: CallPlugin("method", params)
+    HA ->> B: handle_rpc("method", params)
     B -->> HA: result bytes
     HA -->> A: result bytes
 ```

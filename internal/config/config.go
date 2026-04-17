@@ -19,10 +19,35 @@ type Config struct {
 	VK             VKConfig             `koanf:"vk"`
 	Mattermost     MattermostConfig     `koanf:"mattermost"`
 	Admin          AdminConfig          `koanf:"admin"`
+	WASM           WASMConfig           `koanf:"wasm"`
 	SpiceDB        SpiceDBConfig        `koanf:"spicedb"`
 	UniversitySync UniversitySyncConfig `koanf:"university_sync"`
 	FileStore      FileStoreConfig      `koanf:"filestore"`
 	TsuAccounts    TsuAccountsConfig    `koanf:"tsu_accounts"`
+}
+
+type WASMConfig struct {
+	ReconfigureEnabled *bool  `koanf:"reconfigure_enabled"`
+	RPCEnabled         *bool  `koanf:"rpc_enabled"`
+	EventsBackend      string `koanf:"events_backend"`
+	StrictMigrate      *bool  `koanf:"strict_migrate"`
+	HTTPPolicyEnabled  *bool  `koanf:"http_policy_enabled"`
+}
+
+func (c WASMConfig) ReconfigureEnabledValue() bool {
+	return c.ReconfigureEnabled == nil || *c.ReconfigureEnabled
+}
+
+func (c WASMConfig) RPCEnabledValue() bool {
+	return c.RPCEnabled != nil && *c.RPCEnabled
+}
+
+func (c WASMConfig) StrictMigrateValue() bool {
+	return c.StrictMigrate == nil || *c.StrictMigrate
+}
+
+func (c WASMConfig) HTTPPolicyEnabledValue() bool {
+	return c.HTTPPolicyEnabled != nil && *c.HTTPPolicyEnabled
 }
 
 type TsuAccountsConfig struct {
@@ -161,6 +186,9 @@ func Load() (*Config, error) {
 	if cfg.Admin.BlobStore == "" {
 		cfg.Admin.BlobStore = "localfs"
 	}
+	if cfg.WASM.EventsBackend == "" {
+		cfg.WASM.EventsBackend = "memory"
+	}
 	if cfg.Telegram.Mode == "" {
 		cfg.Telegram.Mode = "polling"
 	}
@@ -233,6 +261,11 @@ func (c *Config) Validate() error {
 	}
 	if c.Mattermost.ActionsPath != "" && !strings.HasPrefix(c.Mattermost.ActionsPath, "/") {
 		return fmt.Errorf("mattermost.actions_path must start with \"/\", got %q", c.Mattermost.ActionsPath)
+	}
+	switch c.WASM.EventsBackend {
+	case "", "memory", "postgres":
+	default:
+		return fmt.Errorf("wasm.events_backend must be \"memory\" or \"postgres\", got %q", c.WASM.EventsBackend)
 	}
 	return nil
 }

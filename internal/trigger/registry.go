@@ -15,17 +15,29 @@ type httpRoute struct {
 	Methods     map[string]bool
 }
 
+type eventRoute struct {
+	PluginID    string
+	TriggerName string
+}
+
+type EventSubscription struct {
+	PluginID    string
+	TriggerName string
+}
+
 type Registry struct {
 	mu            sync.RWMutex
 	httpRoutes    map[string]httpRoute
+	eventRoutes   map[string][]eventRoute
 	apiKeys       map[string]string
 	cronScheduler *CronScheduler
 }
 
 func NewRegistry() *Registry {
 	return &Registry{
-		httpRoutes: make(map[string]httpRoute),
-		apiKeys:    make(map[string]string),
+		httpRoutes:  make(map[string]httpRoute),
+		eventRoutes: make(map[string][]eventRoute),
+		apiKeys:     make(map[string]string),
 	}
 }
 
@@ -72,6 +84,13 @@ func (r *Registry) RegisterTriggers(pluginID string, triggers []wasmrt.TriggerDe
 					)
 				}
 			}
+		case "event":
+			if t.Topic != "" {
+				r.eventRoutes[t.Topic] = append(r.eventRoutes[t.Topic], eventRoute{
+					PluginID:    pluginID,
+					TriggerName: t.Name,
+				})
+			}
 		}
 	}
 }
@@ -84,6 +103,19 @@ func (r *Registry) UnregisterTriggers(pluginID string) {
 		if route.PluginID == pluginID {
 			delete(r.httpRoutes, key)
 		}
+	}
+	for topic, routes := range r.eventRoutes {
+		filtered := routes[:0]
+		for _, route := range routes {
+			if route.PluginID != pluginID {
+				filtered = append(filtered, route)
+			}
+		}
+		if len(filtered) == 0 {
+			delete(r.eventRoutes, topic)
+			continue
+		}
+		r.eventRoutes[topic] = filtered
 	}
 	delete(r.apiKeys, pluginID)
 
@@ -111,4 +143,23 @@ func (r *Registry) GetAPIKey(pluginID string) string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.apiKeys[pluginID]
+}
+
+func (r *Registry) LookupEventSubscribers(topic string) []EventSubscription {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	routes := r.eventRoutes[topic]
+	if len(routes) == 0 {
+		return nil
+	}
+
+	out := make([]EventSubscription, 0, len(routes))
+	for _, route := range routes {
+		out = append(out, EventSubscription{
+			PluginID:    route.PluginID,
+			TriggerName: route.TriggerName,
+		})
+	}
+	return out
 }

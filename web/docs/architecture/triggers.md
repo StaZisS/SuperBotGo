@@ -264,13 +264,18 @@ sequenceDiagram
     participant P1 as Plugin A (WASM)
     participant HA as HostAPI
     participant EB as EventBus
+    participant SUB as EventSubscriber
+    participant R as Router
     participant P2 as Plugin B
 
     P1 ->> HA: host_publish_event("order.created", payload)
     HA ->> HA: check "events" permission
     HA ->> EB: Publish("order.created", payload)
-    EB ->> P2: HandleEvent(event trigger)
-    Note over EB: at-least-once delivery, DLQ, retry с backoff
+    EB ->> SUB: Handle(topic, payload)
+    SUB ->> R: RouteEvent(event trigger)
+    R ->> P2: HandleEvent(event trigger)
+    Note over EB: memory backend or Postgres queue
+    Note over EB: Postgres backend = at-least-once, retry, DLQ
 ```
 
 ## Жизненный цикл триггеров
@@ -305,7 +310,7 @@ stateDiagram-v2
 | `http` | Добавляет запись в `httpRoutes` | `{pluginID}/{path}` |
 | `cron` | Вызывает `CronScheduler.AddSchedule()` | cron expression |
 | `messenger` | Регистрируется отдельно в `StateManager` | command name |
-| `event` | Подписка через `EventBus` | topic name |
+| `event` | Добавляет subscription по `topic` в registry; delivery идёт через `EventSubscriber` | topic name |
 
 При выгрузке плагина `UnregisterTriggers` удаляет все маршруты, расписания и API-ключи.
 

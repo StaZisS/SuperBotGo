@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -39,7 +40,7 @@ type DslState struct {
 }
 
 func (s *DslState) IsComplete() bool {
-	return s.Command.IsComplete(s.Params)
+	return s.Command.IsComplete(StepContext{Params: s.Params})
 }
 
 func (s *DslState) FinalParams() model.OptionMap {
@@ -99,12 +100,18 @@ func (h *DslStateHandler) PersistState(s State) model.DialogState {
 	}
 }
 
-func (h *DslStateHandler) ProcessInput(_ model.GlobalUserID, s State, input model.UserInput) (State, StepOutcome, error) {
+func (h *DslStateHandler) ProcessInput(ctx context.Context, userID model.GlobalUserID, s State, input model.UserInput, locale string) (State, StepOutcome, error) {
 	ds, ok := s.(*DslState)
 	if !ok {
 		return nil, StepOutcome{}, fmt.Errorf("expected *DslState but got %T", s)
 	}
-	step := h.command.CurrentStep(ds.Params)
+	stepCtx := StepContext{
+		Context: ctx,
+		UserID:  userID,
+		Locale:  locale,
+		Params:  ds.Params,
+	}
+	step := h.command.CurrentStep(stepCtx)
 	if step == nil {
 
 		return ds, StepOutcome{
@@ -121,7 +128,7 @@ func (h *DslStateHandler) ProcessInput(_ model.GlobalUserID, s State, input mode
 			case PageNext:
 				cur := ds.PageState[step.ParamName]
 				ds.PageState[step.ParamName] = cur + 1
-				msg := h.BuildStepMessage(ds, "")
+				msg := h.BuildStepMessage(ctx, userID, ds, locale)
 				return ds, StepOutcome{
 					Message:     msg,
 					CommandName: h.command.Name,
@@ -132,7 +139,7 @@ func (h *DslStateHandler) ProcessInput(_ model.GlobalUserID, s State, input mode
 				if cur > 0 {
 					ds.PageState[step.ParamName] = cur - 1
 				}
-				msg := h.BuildStepMessage(ds, "")
+				msg := h.BuildStepMessage(ctx, userID, ds, locale)
 				return ds, StepOutcome{
 					Message:     msg,
 					CommandName: h.command.Name,
@@ -143,7 +150,10 @@ func (h *DslStateHandler) ProcessInput(_ model.GlobalUserID, s State, input mode
 	}
 
 	isValid := true
-	if step.Validate != nil {
+	switch {
+	case step.ValidateWithContext != nil:
+		isValid = step.ValidateWithContext(stepCtx, input)
+	case step.Validate != nil:
 		isValid = step.Validate(input)
 	}
 
@@ -151,8 +161,13 @@ func (h *DslStateHandler) ProcessInput(_ model.GlobalUserID, s State, input mode
 		ds.Params[step.ParamName] = input.TextValue()
 	}
 
-	msg := h.BuildStepMessage(ds, "")
-	complete := ds.IsComplete()
+	msg := h.BuildStepMessage(ctx, userID, ds, locale)
+	complete := h.command.IsComplete(StepContext{
+		Context: ctx,
+		UserID:  userID,
+		Locale:  locale,
+		Params:  ds.Params,
+	})
 
 	outcome := StepOutcome{
 		Message:     msg,
@@ -166,40 +181,46 @@ func (h *DslStateHandler) ProcessInput(_ model.GlobalUserID, s State, input mode
 	return ds, outcome, nil
 }
 
-func (h *DslStateHandler) BuildStepMessage(s State, locale string) model.Message {
+func (h *DslStateHandler) BuildStepMessage(ctx context.Context, userID model.GlobalUserID, s State, locale string) model.Message {
 	ds, ok := s.(*DslState)
 	if !ok {
 		slog.Error("BuildStepMessage: expected *DslState", "got", fmt.Sprintf("%T", s))
 		return model.Message{}
 	}
-	step := h.command.CurrentStep(ds.Params)
+	stepCtx := StepContext{
+		Context: ctx,
+		UserID:  userID,
+		Locale:  locale,
+		Params:  ds.Params,
+	}
+	step := h.command.CurrentStep(stepCtx)
 	if step == nil {
 		return model.Message{}
 	}
 
-	ctx := StepContext{
-		Params: ds.Params,
-		Locale: locale,
-	}
-
-	message := step.MessageBuilder(ctx)
+	message := step.MessageBuilder(stepCtx)
 
 	if step.Pagination != nil {
-		return h.applyPagination(message, step, ds, locale)
+		return h.applyPagination(message, step, ds, stepCtx)
 	}
 
 	return message
 }
 
-func (h *DslStateHandler) applyPagination(message model.Message, step *StepNode, ds *DslState, locale string) model.Message {
+func (h *DslStateHandler) applyPagination(message model.Message, step *StepNode, ds *DslState, baseCtx StepContext) model.Message {
 	config := step.Pagination
 	currentPage := ds.PageState[step.ParamName]
-	ctx := StepContext{
-		Params: ds.Params,
-		Locale: locale,
-		Page:   currentPage,
+	pageCtx := StepContext{
+		Context: baseCtx.Context,
+		UserID:  baseCtx.UserID,
+		Locale:  baseCtx.Locale,
+		Params:  ds.Params,
+		Page:    currentPage,
 	}
-	result := config.PageProvider(ctx, currentPage)
+	result := config.PageProvider(pageCtx, currentPage)
+	if result.Error != "" {
+		return appendMessageText(message, paginationErrorText(baseCtx.Locale, result.Error))
+	}
 
 	var navOptions []model.Option
 	if currentPage > 0 {
@@ -215,7 +236,7 @@ func (h *DslStateHandler) applyPagination(message model.Message, step *StepNode,
 
 	prompt := config.Prompt
 	if len(config.Prompts) > 0 {
-		prompt = resolveLocalizedPrompt(config.Prompts, config.Prompt, locale)
+		prompt = resolveLocalizedPrompt(config.Prompts, config.Prompt, baseCtx.Locale)
 	}
 
 	paginatedBlock := model.OptionsBlock{
@@ -228,6 +249,26 @@ func (h *DslStateHandler) applyPagination(message model.Message, step *StepNode,
 	blocks = append(blocks, paginatedBlock)
 
 	return model.Message{Blocks: blocks}
+}
+
+func appendMessageText(message model.Message, text string) model.Message {
+	if text == "" {
+		return message
+	}
+	blocks := make([]model.ContentBlock, 0, len(message.Blocks)+1)
+	blocks = append(blocks, message.Blocks...)
+	blocks = append(blocks, model.TextBlock{Text: text})
+	return model.Message{Blocks: blocks}
+}
+
+func paginationErrorText(locale, errText string) string {
+	if errText != "" {
+		return errText
+	}
+	if strings.HasPrefix(locale, "ru") {
+		return "Не удалось загрузить варианты. Попробуйте ещё раз."
+	}
+	return "Failed to load options. Please try again."
 }
 
 var _ StateHandler = (*DslStateHandler)(nil)

@@ -71,6 +71,11 @@ func main() {
 		os.Exit(1)
 	}
 	stores.adminBus.SetMetrics(runtime.metrics)
+	configureWasmEventBus(cfg, logger, stores, runtime)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	startWasmEventBus(ctx, logger, cfg, runtime)
 
 	userService := user.NewService(stores.userRepo, stores.accountRepo)
 	studentResolver := university.NewPgStudentResolver(stores.pool)
@@ -122,9 +127,6 @@ func main() {
 	)
 	channelMgr.SetMetrics(runtime.metrics)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
@@ -132,7 +134,7 @@ func main() {
 	adminServer := newAdminServer(cfg, authHandler, adminMux, runtime.metrics)
 	startUniversityPuller(bootstrapCtx, cfg, stores.syncSvc, logger)
 	startAdminServer(adminServer, logger, cfg.Admin.Port)
-	startPubSubSubscriber(ctx, logger, stores, blobStore, runtime, stateMgr)
+	startPubSubSubscriber(ctx, logger, cfg, stores, blobStore, runtime, stateMgr)
 	startPreparedBots(ctx, botStarters)
 	startFileStoreCleanup(ctx, logger, fileStore)
 

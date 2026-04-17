@@ -55,16 +55,19 @@ import (
 )
 
 type runtimeServices struct {
-	adapterRegistry *channel.AdapterRegistry
-	pluginManager   *plugin.Manager
-	senderAPI       *plugin.SenderAPI
-	metrics         *metrics.Metrics
-	rt              *wasmrt.Runtime
-	hostAPI         *hostapi.HostAPI
-	wasmLoader      *adapter.Loader
-	triggerRegistry *trigger.Registry
-	triggerRouter   *trigger.Router
-	cronScheduler   *trigger.CronScheduler
+	adapterRegistry  *channel.AdapterRegistry
+	pluginManager    *plugin.Manager
+	senderAPI        *plugin.SenderAPI
+	metrics          *metrics.Metrics
+	eventMetrics     *eventbus.Metrics
+	rt               *wasmrt.Runtime
+	hostAPI          *hostapi.HostAPI
+	wasmLoader       *adapter.Loader
+	triggerRegistry  *trigger.Registry
+	triggerRouter    *trigger.Router
+	cronScheduler    *trigger.CronScheduler
+	memoryEventBus   *eventbus.Bus
+	postgresEventBus *eventbus.PostgresBus
 }
 
 type postgresServices struct {
@@ -130,6 +133,7 @@ func newRuntimeServices(ctx context.Context, cfg *config.Config, logger *slog.Lo
 		adapterRegistry: channel.NewAdapterRegistry(),
 		pluginManager:   plugin.NewManager(),
 		metrics:         metrics.New(),
+		eventMetrics:    eventbus.NewMetrics(),
 	}
 	services.adapterRegistry.SetMetrics(services.metrics)
 
@@ -145,8 +149,16 @@ func newRuntimeServices(ctx context.Context, cfg *config.Config, logger *slog.Lo
 
 	hostAPI := hostapi.NewHostAPI(hostapi.Dependencies{FileStore: fileStore})
 	hostAPI.SetMetrics(services.metrics)
-	hostAPI.SetEventBus(eventbus.New(nil, eventbus.NewMetrics()))
-	logger.Info("plugin event bus initialised with at-least-once delivery")
+	hostAPI.SetHTTPPolicyEnforcement(cfg.WASM.HTTPPolicyEnabledValue())
+	services.memoryEventBus = eventbus.New(nil, services.eventMetrics)
+	services.memoryEventBus.SetAppMetrics(services.metrics)
+	hostAPI.SetEventBus(services.memoryEventBus)
+	logger.Info("plugin event bus initialised with in-memory at-least-once delivery")
+	if cfg.WASM.HTTPPolicyEnabledValue() {
+		logger.Info("wasm http policy enforcement enabled")
+	} else {
+		logger.Info("wasm http policy enforcement disabled")
+	}
 
 	if err := hostAPI.RegisterHostModule(ctx, rt); err != nil {
 		return nil, fmt.Errorf("register wasm host module: %w", err)
@@ -162,6 +174,13 @@ func newRuntimeServices(ctx context.Context, cfg *config.Config, logger *slog.Lo
 	}))
 	services.wasmLoader.SetMetrics(services.metrics)
 	services.wasmLoader.SetRegistry(pluginRegistry)
+	services.wasmLoader.SetStrictMigrate(cfg.WASM.StrictMigrateValue())
+	if cfg.WASM.RPCEnabledValue() {
+		hostAPI.SetPluginRegistry(services.wasmLoader)
+		logger.Info("wasm inter-plugin RPC enabled")
+	} else {
+		logger.Info("wasm inter-plugin RPC disabled")
+	}
 
 	services.triggerRegistry = trigger.NewRegistry()
 	services.wasmLoader.SetTriggerRegistry(services.triggerRegistry)
@@ -173,6 +192,41 @@ func newRuntimeServices(ctx context.Context, cfg *config.Config, logger *slog.Lo
 	services.triggerRegistry.SetCronScheduler(services.cronScheduler)
 
 	return services, nil
+}
+
+func configureWasmEventBus(cfg *config.Config, logger *slog.Logger, stores *postgresServices, runtime *runtimeServices) {
+	if cfg.WASM.EventsBackend != "postgres" {
+		logger.Info("wasm event backend configured", slog.String("backend", "memory"))
+		return
+	}
+
+	runtime.postgresEventBus = eventbus.NewPostgresBus(stores.pool, generateInstanceID(), nil, runtime.eventMetrics)
+	runtime.postgresEventBus.SetAppMetrics(runtime.metrics)
+	runtime.hostAPI.SetEventBus(runtime.postgresEventBus)
+	logger.Info("wasm event backend configured", slog.String("backend", "postgres"))
+}
+
+func startWasmEventBus(ctx context.Context, logger *slog.Logger, cfg *config.Config, runtime *runtimeServices) {
+	subscriber := trigger.NewEventSubscriber(runtime.triggerRouter, runtime.triggerRegistry)
+
+	if cfg.WASM.EventsBackend == "postgres" {
+		if runtime.postgresEventBus == nil {
+			logger.Warn("postgres event bus was not configured, falling back to no-op start")
+			return
+		}
+		go func() {
+			if err := runtime.postgresEventBus.RunConsumer(ctx, subscriber.Handle); err != nil && ctx.Err() == nil {
+				logger.Error("wasm postgres event consumer stopped", slog.Any("error", err))
+			}
+		}()
+		logger.Info("wasm event consumer started", slog.String("backend", "postgres"))
+		return
+	}
+
+	if runtime.memoryEventBus != nil {
+		runtime.memoryEventBus.Subscribe(subscriber.Handle)
+		logger.Info("wasm event subscriber registered", slog.String("backend", "memory"))
+	}
 }
 
 func newBlobStore(ctx context.Context, cfg *config.Config, logger *slog.Logger) (adminapi.BlobStore, error) {
@@ -342,6 +396,7 @@ func registerAdminRoutes(
 		stores.cmdPermStore,
 		stores.versionStore,
 		stores.adminBus,
+		adminapi.PluginLifecycleOptions{ReconfigureEnabled: cfg.WASM.ReconfigureEnabledValue()},
 		authorizer,
 	)
 
@@ -459,20 +514,21 @@ func collectCommandNames(manager *plugin.Manager) []string {
 	return commandNames
 }
 
-func startPubSubSubscriber(ctx context.Context, logger *slog.Logger, stores *postgresServices, blobStore adminapi.BlobStore, runtime *runtimeServices, stateMgr *state.Manager) {
-	pluginFetcher := func(fCtx context.Context, id string) (*pubsub.PluginData, error) {
-		rec, err := stores.pluginStore.GetPlugin(fCtx, id)
-		if err != nil {
-			return nil, err
-		}
-		return &pubsub.PluginData{
-			WasmKey:    rec.WasmKey,
-			ConfigJSON: rec.ConfigJSON,
-		}, nil
-	}
-	eventHandler := pubsub.NewAdminEventHandler(pluginFetcher, blobStore.Get, runtime.wasmLoader, runtime.pluginManager, runtime.hostAPI, stateMgr)
+func startPubSubSubscriber(ctx context.Context, logger *slog.Logger, cfg *config.Config, stores *postgresServices, blobStore adminapi.BlobStore, runtime *runtimeServices, stateMgr *state.Manager) {
+	lifecycle := adminapi.NewPluginLifecycleService(
+		stores.pluginStore,
+		blobStore,
+		runtime.wasmLoader,
+		runtime.pluginManager,
+		runtime.hostAPI,
+		stateMgr,
+		stores.cmdPermStore,
+		stores.versionStore,
+		stores.adminBus,
+		adminapi.PluginLifecycleOptions{ReconfigureEnabled: cfg.WASM.ReconfigureEnabledValue()},
+	)
 	go func() {
-		if err := stores.adminBus.Subscribe(ctx, eventHandler.Handle); err != nil {
+		if err := stores.adminBus.Subscribe(ctx, lifecycle.HandleEvent); err != nil {
 			logger.Error("pubsub subscriber stopped", slog.Any("error", err))
 		}
 	}()

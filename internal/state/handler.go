@@ -1,6 +1,10 @@
 package state
 
-import "SuperBotGo/internal/model"
+import (
+	"context"
+
+	"SuperBotGo/internal/model"
+)
 
 type StepOutcome struct {
 	Message     model.Message
@@ -21,7 +25,7 @@ type StateHandler interface {
 
 	PersistState(s State) model.DialogState
 
-	ProcessInput(userID model.GlobalUserID, s State, input model.UserInput) (State, StepOutcome, error)
+	ProcessInput(ctx context.Context, userID model.GlobalUserID, s State, input model.UserInput, locale string) (State, StepOutcome, error)
 
-	BuildStepMessage(s State, locale string) model.Message
+	BuildStepMessage(ctx context.Context, userID model.GlobalUserID, s State, locale string) model.Message
 }

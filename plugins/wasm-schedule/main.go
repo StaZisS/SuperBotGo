@@ -13,14 +13,12 @@ func main() {
 	wasmplugin.Run(wasmplugin.Plugin{
 		ID:      "schedule",
 		Name:    "University Schedule",
-		Version: "1.5.6",
+		Version: "1.5.9",
 		Config: wasmplugin.ConfigFields(
 			wasmplugin.String("greeting", "Message shown before the schedule").Default("Welcome! Here is your schedule:"),
-			wasmplugin.String("university_name", "University name shown in the header").Default("University"),
 		),
 		Requirements: []wasmplugin.Requirement{
 			wasmplugin.Database("Store and query schedule entries").Build(),
-			wasmplugin.File("Save and retrieve user photos").Build(),
 			wasmplugin.KV("Store photo gallery references").Build(),
 		},
 		Migrations: wasmplugin.MigrationsFromFS(migrationsFS, "migrations"),

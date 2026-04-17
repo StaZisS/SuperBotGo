@@ -43,7 +43,7 @@ func TestResolveActiveSteps_LinearSteps(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			steps := cmd.ResolveActiveSteps(tt.params)
+			steps := cmd.ResolveActiveSteps(StepContext{Params: tt.params})
 			if len(steps) != tt.want {
 				t.Fatalf("got %d steps, want %d", len(steps), tt.want)
 			}
@@ -99,7 +99,7 @@ func TestResolveActiveSteps_ConditionalStep(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			steps := cmd.ResolveActiveSteps(tt.params)
+			steps := cmd.ResolveActiveSteps(StepContext{Params: tt.params})
 			if len(steps) != tt.wantCount {
 				t.Fatalf("got %d steps, want %d", len(steps), tt.wantCount)
 			}
@@ -158,7 +158,7 @@ func TestResolveActiveSteps_BranchNode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			steps := cmd.ResolveActiveSteps(tt.params)
+			steps := cmd.ResolveActiveSteps(StepContext{Params: tt.params})
 			if len(steps) != len(tt.wantParams) {
 				t.Fatalf("got %d steps, want %d", len(steps), len(tt.wantParams))
 			}
@@ -221,7 +221,7 @@ func TestResolveActiveSteps_ConditionalBranchNode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			steps := cmd.ResolveActiveSteps(tt.params)
+			steps := cmd.ResolveActiveSteps(StepContext{Params: tt.params})
 			if len(steps) != len(tt.wantParams) {
 				t.Fatalf("got %d steps, want %d", len(steps), len(tt.wantParams))
 			}
@@ -288,7 +288,7 @@ func TestResolveActiveSteps_NestedBranches(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			steps := cmd.ResolveActiveSteps(tt.params)
+			steps := cmd.ResolveActiveSteps(StepContext{Params: tt.params})
 			if len(steps) != len(tt.wantParams) {
 				t.Fatalf("got %d steps, want %d", len(steps), len(tt.wantParams))
 			}
@@ -323,7 +323,7 @@ func TestCurrentStep_ReturnsFirstUnfilled(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			step := cmd.CurrentStep(tt.params)
+			step := cmd.CurrentStep(StepContext{Params: tt.params})
 			if step == nil {
 				t.Fatal("expected a step, got nil")
 			}
@@ -344,7 +344,7 @@ func TestCurrentStep_NilWhenComplete(t *testing.T) {
 	}
 
 	params := model.OptionMap{"a": "1", "b": "2"}
-	step := cmd.CurrentStep(params)
+	step := cmd.CurrentStep(StepContext{Params: params})
 	if step != nil {
 		t.Errorf("expected nil when all params filled, got step %q", step.ParamName)
 	}
@@ -371,7 +371,7 @@ func TestIsComplete(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := cmd.IsComplete(tt.params)
+			got := cmd.IsComplete(StepContext{Params: tt.params})
 			if got != tt.wantDone {
 				t.Errorf("IsComplete() = %v, want %v", got, tt.wantDone)
 			}
@@ -386,7 +386,7 @@ func TestIsComplete_NoSteps(t *testing.T) {
 	}
 
 	// A command with no steps is always complete.
-	if !cmd.IsComplete(model.OptionMap{}) {
+	if !cmd.IsComplete(StepContext{Params: model.OptionMap{}}) {
 		t.Error("expected IsComplete=true for command with no steps")
 	}
 }

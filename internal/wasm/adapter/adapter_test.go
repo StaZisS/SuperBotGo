@@ -79,19 +79,19 @@ func TestBranchNodeRoundTrip(t *testing.T) {
 	}
 
 	quickParams := model.OptionMap{"mode": "quick", "building": "1", "room": "101"}
-	quickSteps := cmdDef.ResolveActiveSteps(quickParams)
+	quickSteps := cmdDef.ResolveActiveSteps(state.StepContext{Params: quickParams})
 	quickNames := stepNames(quickSteps)
 	t.Logf("quick path: %v", quickNames)
 
 	if contains(quickNames, "date") {
 		t.Fatalf("quick path should NOT contain date step, got %v", quickNames)
 	}
-	if cmdDef.CurrentStep(quickParams) != nil {
+	if cmdDef.CurrentStep(state.StepContext{Params: quickParams}) != nil {
 		t.Fatalf("quick path should be complete")
 	}
 
 	byDateParams := model.OptionMap{"mode": "by_date", "building": "1", "room": "101"}
-	byDateSteps := cmdDef.ResolveActiveSteps(byDateParams)
+	byDateSteps := cmdDef.ResolveActiveSteps(state.StepContext{Params: byDateParams})
 	byDateNames := stepNames(byDateSteps)
 	t.Logf("by_date path: %v", byDateNames)
 
@@ -99,7 +99,7 @@ func TestBranchNodeRoundTrip(t *testing.T) {
 		t.Fatalf("by_date path MUST contain date step, got %v", byDateNames)
 	}
 
-	cur := cmdDef.CurrentStep(byDateParams)
+	cur := cmdDef.CurrentStep(state.StepContext{Params: byDateParams})
 	if cur == nil {
 		t.Fatalf("by_date path should NOT be complete (date not filled)")
 	}
@@ -108,7 +108,7 @@ func TestBranchNodeRoundTrip(t *testing.T) {
 	}
 
 	fullParams := model.OptionMap{"mode": "by_date", "building": "1", "room": "101", "date": "2026-03-25"}
-	if !cmdDef.IsComplete(fullParams) {
+	if !cmdDef.IsComplete(state.StepContext{Params: fullParams}) {
 		t.Fatalf("by_date path with date filled should be complete")
 	}
 }

@@ -16,11 +16,26 @@ type PluginRecord struct {
 	UpdatedAt   time.Time       `json:"updated_at"`
 }
 
+type PluginMetadataRecord struct {
+	PluginID     string          `json:"plugin_id"`
+	Name         string          `json:"name"`
+	Version      string          `json:"version"`
+	SDKVersion   int             `json:"sdk_version"`
+	MetaJSON     json.RawMessage `json:"meta_json,omitempty"`
+	ConfigSchema json.RawMessage `json:"config_schema,omitempty"`
+	Requirements json.RawMessage `json:"requirements,omitempty"`
+	Triggers     json.RawMessage `json:"triggers,omitempty"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+}
+
 type PluginStore interface {
 	SavePlugin(ctx context.Context, record PluginRecord) error
 	GetPlugin(ctx context.Context, id string) (PluginRecord, error)
 	ListPlugins(ctx context.Context) ([]PluginRecord, error)
 	DeletePlugin(ctx context.Context, id string) error
+	SavePluginMetadata(ctx context.Context, record PluginMetadataRecord) error
+	GetPluginMetadata(ctx context.Context, id string) (PluginMetadataRecord, error)
+	DeletePluginMetadata(ctx context.Context, id string) error
 }
 
 type VersionRecord struct {

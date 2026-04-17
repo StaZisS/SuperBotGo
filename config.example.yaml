@@ -79,3 +79,10 @@ admin:
     access_key: "minioadmin"
     secret_key: "minioadmin"
     prefix: ""                        # optional key prefix, e.g. "wasm_modules/"
+
+wasm:
+  reconfigure_enabled: true
+  rpc_enabled: false
+  events_backend: memory   # "memory" or "postgres"
+  strict_migrate: true
+  http_policy_enabled: false

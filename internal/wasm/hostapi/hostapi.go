@@ -16,20 +16,23 @@ import (
 )
 
 type HostAPI struct {
-	deps       Dependencies
-	perms      *permissionStore
-	metrics    *metrics.Metrics
-	kvStore    *KVStore
-	sqlStore   *SQLHandleStore
-	rateLimits map[string]int
+	deps              Dependencies
+	perms             *permissionStore
+	httpPolicies      *httpPolicyStore
+	httpPolicyEnabled bool
+	metrics           *metrics.Metrics
+	kvStore           *KVStore
+	sqlStore          *SQLHandleStore
+	rateLimits        map[string]int
 }
 
 func NewHostAPI(deps Dependencies) *HostAPI {
 	return &HostAPI{
-		deps:     deps,
-		perms:    newPermissionStore(),
-		kvStore:  NewKVStore(),
-		sqlStore: NewSQLHandleStore(),
+		deps:         deps,
+		perms:        newPermissionStore(),
+		httpPolicies: newHTTPPolicyStore(),
+		kvStore:      NewKVStore(),
+		sqlStore:     NewSQLHandleStore(),
 	}
 }
 
@@ -39,6 +42,10 @@ func (h *HostAPI) KVStore() *KVStore {
 
 func (h *HostAPI) SQLStore() *SQLHandleStore {
 	return h.sqlStore
+}
+
+func (h *HostAPI) PluginRegistry() PluginRegistry {
+	return h.deps.PluginRegistry
 }
 
 func (h *HostAPI) SetRateLimits(limits map[string]int) {
@@ -68,6 +75,10 @@ func (h *HostAPI) SetEventBus(eb EventBus) {
 
 func (h *HostAPI) SetNotifier(n Notifier) {
 	h.deps.Notifier = n
+}
+
+func (h *HostAPI) SetPluginRegistry(reg PluginRegistry) {
+	h.deps.PluginRegistry = reg
 }
 
 func (h *HostAPI) RegisterHostModule(ctx context.Context, rt *wasmrt.Runtime) error {
@@ -152,6 +163,7 @@ func (h *HostAPI) GrantPermissions(pluginID string, permissions []string) {
 
 func (h *HostAPI) RevokePermissions(pluginID string) {
 	h.perms.Revoke(pluginID)
+	h.httpPolicies.Delete(pluginID)
 }
 
 func pluginIDFromContext(ctx context.Context) string {

@@ -75,12 +75,26 @@ export interface TriggerDef {
   topic?: string
 }
 
+export interface RPCMethodDef {
+  name: string
+  description?: string
+}
+
+export interface RequirementDef {
+  type: string
+  name?: string
+  description: string
+  target?: string
+  config?: unknown
+}
+
 export interface PluginMeta {
   id: string
   name: string
   version: string
   triggers: TriggerDef[]
-  requirements: { type: string; description: string; target?: string }[]
+  requirements: RequirementDef[]
+  rpc_methods?: RPCMethodDef[]
   config_schema: Record<string, unknown> | null
   wasm_key: string
   wasm_hash: string
@@ -100,6 +114,57 @@ export interface PluginDetail {
   wasm_hash?: string
   installed_at?: string
   updated_at?: string
+}
+
+export interface PluginUpdatePreviewInfo {
+  id: string
+  name: string
+  version?: string
+}
+
+export interface PluginUpdatePreviewSummary {
+  key: string
+  title: string
+  current: string
+  next: string
+  changed: boolean
+}
+
+export interface PluginUpdatePreviewWarning {
+  code: string
+  level: 'info' | 'warn' | 'error'
+  title: string
+  message: string
+}
+
+export interface PluginUpdatePreviewItem {
+  key: string
+  title: string
+  detail?: string
+  before?: string
+  after?: string
+  change: 'added' | 'removed' | 'changed'
+}
+
+export interface PluginUpdatePreviewSection {
+  key: string
+  title: string
+  added: number
+  removed: number
+  changed: number
+  same: number
+  empty_message?: string
+  items: PluginUpdatePreviewItem[]
+}
+
+export interface PluginUpdatePreviewResponse {
+  can_update: boolean
+  has_changes: boolean
+  current: PluginUpdatePreviewInfo
+  next: PluginUpdatePreviewInfo
+  summary: PluginUpdatePreviewSummary[]
+  warnings: PluginUpdatePreviewWarning[]
+  sections: PluginUpdatePreviewSection[]
 }
 
 export interface CommandSetting {
@@ -328,6 +393,15 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ config }),
     }),
+
+  previewPluginUpdate: (id: string, file: File) => {
+    const form = new FormData()
+    form.append('wasm', file)
+    return request<PluginUpdatePreviewResponse>(`/plugins/${encodeURIComponent(id)}/update/preview`, {
+      method: 'POST',
+      body: form,
+    })
+  },
 
   updatePlugin: (id: string, file: File) => {
     const form = new FormData()

@@ -22,6 +22,7 @@ type uploadResponse struct {
 	ID              string                  `json:"id"`
 	Name            string                  `json:"name"`
 	Version         string                  `json:"version"`
+	RPCMethods      []wasmrt.RPCMethodDef   `json:"rpc_methods,omitempty"`
 	Triggers        []wasmrt.TriggerDef     `json:"triggers"`
 	Requirements    []wasmrt.RequirementDef `json:"requirements"`
 	ConfigSchema    json.RawMessage         `json:"config_schema"`
@@ -60,6 +61,7 @@ type AdminHandler struct {
 	versions    VersionStore
 	bus         *pubsub.Bus
 	invalidator PolicyInvalidator
+	lifecycle   *PluginLifecycleService
 }
 
 func NewAdminHandler(
@@ -73,6 +75,7 @@ func NewAdminHandler(
 	cmdStore CommandPermStore,
 	versions VersionStore,
 	bus *pubsub.Bus,
+	lifecycleOpts PluginLifecycleOptions,
 	invalidator ...PolicyInvalidator,
 ) *AdminHandler {
 	h := &AdminHandler{
@@ -90,6 +93,19 @@ func NewAdminHandler(
 	if len(invalidator) > 0 {
 		h.invalidator = invalidator[0]
 	}
+	h.lifecycle = NewPluginLifecycleService(
+		store,
+		blobs,
+		loader,
+		manager,
+		hostAPI,
+		stateMgr,
+		cmdStore,
+		versions,
+		bus,
+		lifecycleOpts,
+		invalidator...,
+	)
 	return h
 }
 
@@ -153,6 +169,7 @@ func (h *AdminHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/plugins/{id}/install", h.handleInstall)
 	mux.HandleFunc("PUT /api/admin/plugins/{id}/config", h.handleUpdateConfig)
 	mux.HandleFunc("POST /api/admin/plugins/{id}/config/validate", h.handleValidateConfig)
+	mux.HandleFunc("POST /api/admin/plugins/{id}/update/preview", h.handleUpdatePreview)
 	mux.HandleFunc("POST /api/admin/plugins/{id}/update", h.handleUpdate)
 	mux.HandleFunc("POST /api/admin/plugins/{id}/disable", h.handleDisable)
 	mux.HandleFunc("POST /api/admin/plugins/{id}/enable", h.handleEnable)

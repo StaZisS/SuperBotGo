@@ -80,7 +80,7 @@ func (m *Manager) IsCommandImmediate(pluginID, commandName string) bool {
 	if !ok {
 		return false
 	}
-	return def.IsComplete(nil)
+	return def.IsComplete(StepContext{})
 }
 
 func (m *Manager) StartCommand(ctx context.Context, userID model.GlobalUserID, chatID string, pluginID string, commandName string, locale string) (model.Message, error) {
@@ -97,7 +97,7 @@ func (m *Manager) StartCommand(ctx context.Context, userID model.GlobalUserID, c
 		return model.Message{}, fmt.Errorf("creating state for %s: %w", key, err)
 	}
 
-	msg := handler.BuildStepMessage(state, locale)
+	msg := handler.BuildStepMessage(ctx, userID, state, locale)
 
 	ds := handler.PersistState(state)
 	ds.ChatID = chatID
@@ -135,12 +135,12 @@ func (m *Manager) ProcessInput(ctx context.Context, userID model.GlobalUserID, c
 		return model.Message{}, nil, fmt.Errorf("restoring state: %w", err)
 	}
 
-	nextState, outcome, err := handler.ProcessInput(userID, state, input)
+	nextState, outcome, err := handler.ProcessInput(ctx, userID, state, input, locale)
 	if err != nil {
 		return model.Message{}, nil, fmt.Errorf("processing input: %w", err)
 	}
 
-	msg := handler.BuildStepMessage(nextState, locale)
+	msg := handler.BuildStepMessage(ctx, userID, nextState, locale)
 	outcome.Message = msg
 
 	if outcome.IsComplete {
@@ -241,7 +241,7 @@ func (m *Manager) GetCurrentStepMessage(ctx context.Context, userID model.Global
 		return nil, "", fmt.Errorf("restoring state: %w", err)
 	}
 
-	msg := handler.BuildStepMessage(state, locale)
+	msg := handler.BuildStepMessage(ctx, userID, state, locale)
 	return &msg, ds.CommandName, nil
 }
 
