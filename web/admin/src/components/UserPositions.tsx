@@ -279,6 +279,7 @@ function StudentTab({ userId, items, onReload }: { userId: number; items: Studen
   const [education, setEducation] = useState('full_time')
   const [availableSubgroups, setAvailableSubgroups] = useState<RefItem[]>([])
   const [selectedSubgroupIDs, setSelectedSubgroupIDs] = useState<number[]>([])
+  const [saving, setSaving] = useState(false)
 
   const groupId = cascade.group
 
@@ -317,11 +318,19 @@ function StudentTab({ userId, items, onReload }: { userId: number; items: Studen
   }
 
   const handleSave = async () => {
+    if (saving) return
+
+    if (!cascade.group) {
+      toast.error('Выберите учебную группу')
+      return
+    }
+
     const data = {
       program_id: cascade.program, stream_id: cascade.stream, study_group_id: cascade.group,
       status, nationality_type: nationality, funding_type: funding, education_form: education,
       subgroup_ids: selectedSubgroupIDs,
     }
+    setSaving(true)
     try {
       if (editing) {
         await api.updateStudentPosition(userId, editing.id, data)
@@ -332,7 +341,11 @@ function StudentTab({ userId, items, onReload }: { userId: number; items: Studen
       }
       setOpen(false)
       onReload()
-    } catch (e: unknown) { toast.error(getErrorMessage(e)) }
+    } catch (e: unknown) {
+      toast.error(getErrorMessage(e))
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleDelete = async (id: number) => {

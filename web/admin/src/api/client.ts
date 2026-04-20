@@ -304,6 +304,22 @@ export interface PersonInfo {
   phone?: string
 }
 
+export interface ImportedStudentInfo {
+  person_id: number
+  global_user_id?: number
+  external_id?: string
+  last_name: string
+  first_name: string
+  middle_name?: string
+  email?: string
+  phone?: string
+  program_name?: string
+  stream_name?: string
+  study_group_name?: string
+  status: string
+  imported_via_excel: boolean
+}
+
 export interface SubgroupBrief {
   id: number
   name: string
@@ -357,6 +373,37 @@ export interface AdminCredentialInfo {
   email: string
   created_at: string
   updated_at: string
+}
+
+export interface StudentImportError {
+  row: number
+  field?: string
+  message: string
+}
+
+export interface StudentImportResult {
+  total: number
+  created: number
+  updated: number
+  skipped: number
+  errors?: StudentImportError[]
+}
+
+export interface ManualStudentCreateRequest {
+  external_id: string
+  last_name: string
+  first_name: string
+  middle_name?: string
+  email?: string
+  phone?: string
+  program_code?: string
+  stream_code?: string
+  group_code: string
+  subgroup_codes: string[]
+  status: string
+  nationality_type: string
+  funding_type: string
+  education_form: string
 }
 
 // Helpers for university reference CRUD — reduce per-entity boilerplate.
@@ -492,6 +539,21 @@ export const api = {
   deleteUser: (id: number) =>
       request<{ status: string }>(`/users/${id}`, { method: 'DELETE' }),
 
+  importStudents: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<StudentImportResult>('/import/students', { method: 'POST', body: form }).then((result) => ({
+      ...result,
+      errors: result.errors ?? [],
+    }))
+  },
+
+  createImportedStudent: (data: ManualStudentCreateRequest) =>
+      request<{ status: string; created: boolean }>('/import/students/manual', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
   getUserRoles: (userId: number) =>
       request<UserRole[]>(`/users/${userId}/roles`),
 
@@ -553,6 +615,9 @@ export const api = {
   getUserPerson: (userId: number) => request<PersonInfo | null>(`/users/${userId}/person`),
 
   searchUnlinkedPersons: (query: string) => request<PersonInfo[]>(`/persons/search?q=${encodeURIComponent(query)}`),
+
+  listImportedStudents: (query?: string) =>
+      request<ImportedStudentInfo[]>(`/persons/imported${query ? `?q=${encodeURIComponent(query)}` : ''}`),
 
   linkPersonToUser: (userId: number, personId: number) =>
       request<{ status: string }>(`/users/${userId}/person/link`, { method: 'POST', body: JSON.stringify({ person_id: personId }) }),
