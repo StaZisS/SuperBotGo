@@ -424,7 +424,7 @@ func registerAdminRoutes(
 	adminapi.NewUniversityRefHandler(stores.pool).RegisterRoutes(adminMux)
 	positionStore := adminapi.NewPgPositionStore(stores.pool)
 	adminapi.NewPositionHandler(positionStore).RegisterRoutes(adminMux)
-	adminapi.NewImportHandler(stores.syncSvc).RegisterRoutes(adminMux)
+	adminapi.NewImportHandler(stores.syncSvc, stores.pool).RegisterRoutes(adminMux)
 	adminapi.NewUniversitySyncHandler(stores.syncSvc).RegisterRoutes(adminMux)
 
 	httpTrigger := trigger.NewHTTPTriggerHandler(runtime.triggerRouter, runtime.triggerRegistry)

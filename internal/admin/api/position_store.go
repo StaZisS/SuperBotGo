@@ -30,6 +30,22 @@ type CreatePersonRequest struct {
 	Phone      string `json:"phone"`
 }
 
+type ImportedStudentInfo struct {
+	PersonID         int64  `json:"person_id"`
+	GlobalUserID     *int64 `json:"global_user_id,omitempty"`
+	ExternalID       string `json:"external_id,omitempty"`
+	LastName         string `json:"last_name"`
+	FirstName        string `json:"first_name"`
+	MiddleName       string `json:"middle_name,omitempty"`
+	Email            string `json:"email,omitempty"`
+	Phone            string `json:"phone,omitempty"`
+	ProgramName      string `json:"program_name,omitempty"`
+	StreamName       string `json:"stream_name,omitempty"`
+	StudyGroupName   string `json:"study_group_name,omitempty"`
+	Status           string `json:"status"`
+	ImportedViaExcel bool   `json:"imported_via_excel"`
+}
+
 type SubgroupBrief struct {
 	ID   int64  `json:"id"`
 	Name string `json:"name"`
@@ -106,6 +122,7 @@ type AllPositions struct {
 type PositionStore interface {
 	GetPersonByUserID(ctx context.Context, globalUserID int64) (*PersonInfo, error)
 	SearchUnlinkedPersons(ctx context.Context, query string) ([]PersonInfo, error)
+	ListImportedStudents(ctx context.Context, query string) ([]ImportedStudentInfo, error)
 	LinkPersonToUser(ctx context.Context, personID, globalUserID int64) error
 	CreatePersonForUser(ctx context.Context, globalUserID int64, req CreatePersonRequest) (*PersonInfo, error)
 	GetAllPositions(ctx context.Context, personID int64) (*AllPositions, error)
@@ -170,6 +187,78 @@ func (s *PgPositionStore) SearchUnlinkedPersons(ctx context.Context, query strin
 		result = append(result, p)
 	}
 	return result, nil
+}
+
+func (s *PgPositionStore) ListImportedStudents(ctx context.Context, query string) ([]ImportedStudentInfo, error) {
+	searchTerm := "%"
+	if query != "" {
+		searchTerm = "%" + query + "%"
+	}
+
+	rows, err := s.pool.Query(ctx, `
+		SELECT
+			p.id,
+			p.global_user_id,
+			COALESCE(p.external_id, ''),
+			p.last_name,
+			p.first_name,
+			COALESCE(p.middle_name, ''),
+			COALESCE(p.email, ''),
+			COALESCE(p.phone, ''),
+			COALESCE(pr.name, ''),
+			COALESCE(st.name, st.code, ''),
+			COALESCE(gr.name, gr.code, ''),
+			sp.status
+		FROM persons p
+		JOIN LATERAL (
+			SELECT *
+			FROM student_positions sp
+			WHERE sp.person_id = p.id
+			ORDER BY
+				CASE WHEN sp.status = 'active' THEN 0 ELSE 1 END,
+				sp.id DESC
+			LIMIT 1
+		) sp ON true
+		LEFT JOIN programs pr ON pr.id = sp.program_id
+		LEFT JOIN streams st ON st.id = sp.stream_id
+		LEFT JOIN study_groups gr ON gr.id = sp.study_group_id
+		WHERE
+			p.last_name ILIKE $1 OR
+			p.first_name ILIKE $1 OR
+			COALESCE(p.middle_name, '') ILIKE $1 OR
+			COALESCE(p.external_id, '') ILIKE $1 OR
+			COALESCE(p.email, '') ILIKE $1
+		ORDER BY p.last_name, p.first_name, p.id
+		LIMIT 200
+	`, searchTerm)
+	if err != nil {
+		return nil, fmt.Errorf("list imported students: %w", err)
+	}
+	defer rows.Close()
+
+	result := make([]ImportedStudentInfo, 0)
+	for rows.Next() {
+		var item ImportedStudentInfo
+		if err := rows.Scan(
+			&item.PersonID,
+			&item.GlobalUserID,
+			&item.ExternalID,
+			&item.LastName,
+			&item.FirstName,
+			&item.MiddleName,
+			&item.Email,
+			&item.Phone,
+			&item.ProgramName,
+			&item.StreamName,
+			&item.StudyGroupName,
+			&item.Status,
+		); err != nil {
+			return nil, fmt.Errorf("scan imported student: %w", err)
+		}
+		item.ImportedViaExcel = true
+		result = append(result, item)
+	}
+	return result, rows.Err()
 }
 
 func (s *PgPositionStore) LinkPersonToUser(ctx context.Context, personID, globalUserID int64) error {

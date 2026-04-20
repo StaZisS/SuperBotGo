@@ -296,22 +296,69 @@ func (s *SyncService) SyncStudentPosition(ctx context.Context, in StudentPositio
 
 func (s *SyncService) syncStudentPositionTx(ctx context.Context, tx pgx.Tx, in StudentPositionInput) error {
 	in = normalizeStudentPositionInput(in)
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO student_positions (
-			person_id, program_id, stream_id, study_group_id,
-			status, nationality_type, funding_type, education_form
-		)
-		VALUES (
-			(SELECT id FROM persons WHERE external_id = $1),
-			(SELECT id FROM programs WHERE code = $2),
-			(SELECT id FROM streams WHERE code = $3),
-			(SELECT id FROM study_groups WHERE code = $4),
-			$5, $6, $7, $8
-		)
-		ON CONFLICT ON CONSTRAINT student_positions_pkey DO NOTHING
-	`, in.PersonExternalID, in.ProgramCode, in.StreamCode, in.GroupCode,
-		in.Status, in.NationalityType, in.FundingType, in.EducationForm); err != nil {
-		return fmt.Errorf("upsert student_position for %s: %w", in.PersonExternalID, err)
+	var personID int64
+	if err := tx.QueryRow(ctx, `SELECT id FROM persons WHERE external_id = $1`, in.PersonExternalID).Scan(&personID); err != nil {
+		if err == pgx.ErrNoRows {
+			return fmt.Errorf("person %s not found", in.PersonExternalID)
+		}
+		return fmt.Errorf("lookup person %s: %w", in.PersonExternalID, err)
+	}
+
+	var programID, streamID, groupID *int64
+	if in.ProgramCode != "" {
+		programID = new(int64)
+		if err := tx.QueryRow(ctx, `SELECT id FROM programs WHERE code = $1`, in.ProgramCode).Scan(programID); err != nil {
+			if err == pgx.ErrNoRows {
+				return fmt.Errorf("program %s not found", in.ProgramCode)
+			}
+			return fmt.Errorf("lookup program %s: %w", in.ProgramCode, err)
+		}
+	}
+	if in.StreamCode != "" {
+		streamID = new(int64)
+		if err := tx.QueryRow(ctx, `SELECT id FROM streams WHERE code = $1`, in.StreamCode).Scan(streamID); err != nil {
+			if err == pgx.ErrNoRows {
+				return fmt.Errorf("stream %s not found", in.StreamCode)
+			}
+			return fmt.Errorf("lookup stream %s: %w", in.StreamCode, err)
+		}
+	}
+	if in.GroupCode != "" {
+		groupID = new(int64)
+		if err := tx.QueryRow(ctx, `SELECT id FROM study_groups WHERE code = $1`, in.GroupCode).Scan(groupID); err != nil {
+			if err == pgx.ErrNoRows {
+				return fmt.Errorf("study group %s not found", in.GroupCode)
+			}
+			return fmt.Errorf("lookup study group %s: %w", in.GroupCode, err)
+		}
+	}
+
+	result, err := tx.Exec(ctx, `
+		UPDATE student_positions
+		SET program_id = $3,
+		    stream_id = $4,
+		    status = $5,
+		    nationality_type = $6,
+		    funding_type = $7,
+		    education_form = $8,
+		    updated_at = now()
+		WHERE person_id = $1 AND study_group_id = $2
+	`, personID, groupID, programID, streamID, in.Status, in.NationalityType, in.FundingType, in.EducationForm)
+	if err != nil {
+		return fmt.Errorf("update student_position for %s: %w", in.PersonExternalID, err)
+	}
+
+	if result.RowsAffected() == 0 {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO student_positions (
+				person_id, program_id, stream_id, study_group_id,
+				status, nationality_type, funding_type, education_form
+			)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		`, personID, programID, streamID, groupID,
+			in.Status, in.NationalityType, in.FundingType, in.EducationForm); err != nil {
+			return fmt.Errorf("insert student_position for %s: %w", in.PersonExternalID, err)
+		}
 	}
 
 	if err := outbox.EnqueueDeleteBySubject(ctx, tx, "user", in.PersonExternalID, "member"); err != nil {
@@ -338,6 +385,29 @@ func (s *SyncService) SyncStudentSubgroup(ctx context.Context, in StudentSubgrou
 }
 
 func (s *SyncService) syncStudentSubgroupTx(ctx context.Context, tx pgx.Tx, in StudentSubgroupInput) error {
+	var subgroupExists bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM subgroups WHERE code = $1)`, in.SubgroupCode).Scan(&subgroupExists); err != nil {
+		return fmt.Errorf("check subgroup %s: %w", in.SubgroupCode, err)
+	}
+	if !subgroupExists {
+		return fmt.Errorf("subgroup %s not found", in.SubgroupCode)
+	}
+
+	var positionExists bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM student_positions sp
+			JOIN persons p ON p.id = sp.person_id
+			WHERE p.external_id = $1 AND sp.status = 'active'
+		)
+	`, in.PersonExternalID).Scan(&positionExists); err != nil {
+		return fmt.Errorf("check active student position for %s: %w", in.PersonExternalID, err)
+	}
+	if !positionExists {
+		return fmt.Errorf("active student position for %s not found", in.PersonExternalID)
+	}
+
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO student_subgroups (student_position_id, subgroup_id)
 		VALUES (

@@ -10,19 +10,22 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/xuri/excelize/v2"
 )
 
 type ImportHandler struct {
 	syncSvc *university.SyncService
+	pool    *pgxpool.Pool
 }
 
-func NewImportHandler(syncSvc *university.SyncService) *ImportHandler {
-	return &ImportHandler{syncSvc: syncSvc}
+func NewImportHandler(syncSvc *university.SyncService, pool *pgxpool.Pool) *ImportHandler {
+	return &ImportHandler{syncSvc: syncSvc, pool: pool}
 }
 
 func (h *ImportHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/import/students", h.handleImportStudents)
+	mux.HandleFunc("POST /api/admin/import/students/manual", h.handleCreateStudentManual)
 	mux.HandleFunc("GET /api/admin/import/template", h.handleDownloadTemplate)
 }
 
@@ -38,6 +41,23 @@ type ImportError struct {
 	Row     int    `json:"row"`
 	Field   string `json:"field,omitempty"`
 	Message string `json:"message"`
+}
+
+type createStudentManualRequest struct {
+	ExternalID      string   `json:"external_id"`
+	LastName        string   `json:"last_name"`
+	FirstName       string   `json:"first_name"`
+	MiddleName      string   `json:"middle_name"`
+	Email           string   `json:"email"`
+	Phone           string   `json:"phone"`
+	ProgramCode     string   `json:"program_code"`
+	StreamCode      string   `json:"stream_code"`
+	GroupCode       string   `json:"group_code"`
+	SubgroupCodes   []string `json:"subgroup_codes"`
+	Status          string   `json:"status"`
+	NationalityType string   `json:"nationality_type"`
+	FundingType     string   `json:"funding_type"`
+	EducationForm   string   `json:"education_form"`
 }
 
 // handleImportStudents обрабатывает POST с .xlsx файлом
@@ -97,10 +117,57 @@ func (h *ImportHandler) handleImportStudents(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, result)
 }
 
+func (h *ImportHandler) handleCreateStudentManual(w http.ResponseWriter, r *http.Request) {
+	var req createStudentManualRequest
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+
+	row := studentRow{
+		ExternalID:      strings.TrimSpace(req.ExternalID),
+		LastName:        strings.TrimSpace(req.LastName),
+		FirstName:       strings.TrimSpace(req.FirstName),
+		MiddleName:      strings.TrimSpace(req.MiddleName),
+		Email:           strings.TrimSpace(req.Email),
+		Phone:           strings.TrimSpace(req.Phone),
+		ProgramCode:     strings.TrimSpace(req.ProgramCode),
+		StreamCode:      strings.TrimSpace(req.StreamCode),
+		GroupCode:       strings.TrimSpace(req.GroupCode),
+		Status:          strings.TrimSpace(req.Status),
+		NationalityType: strings.TrimSpace(req.NationalityType),
+		FundingType:     strings.TrimSpace(req.FundingType),
+		EducationForm:   strings.TrimSpace(req.EducationForm),
+	}
+	for _, code := range req.SubgroupCodes {
+		if trimmed := strings.TrimSpace(code); trimmed != "" {
+			row.SubgroupCodes = append(row.SubgroupCodes, trimmed)
+		}
+	}
+
+	if verr := validateStudentRow(row); verr != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("%s: %s", verr.Field, verr.Message))
+		return
+	}
+
+	created, err := h.importStudent(r.Context(), row)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":  "ok",
+		"created": created,
+	})
+}
+
 // handleDownloadTemplate отдаёт шаблон Excel
 func (h *ImportHandler) handleDownloadTemplate(w http.ResponseWriter, r *http.Request) {
 	f := excelize.NewFile()
 	defer f.Close()
+
+	dataSheet := "Students"
+	f.SetSheetName("Sheet1", dataSheet)
 
 	// Header row - только существующие поля
 	headers := []string{
@@ -111,33 +178,171 @@ func (h *ImportHandler) handleDownloadTemplate(w http.ResponseWriter, r *http.Re
 	}
 	for i, h := range headers {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
-		f.SetCellValue("Sheet1", cell, h)
+		f.SetCellValue(dataSheet, cell, h)
 	}
 
-	// Example row
-	example := []string{
-		"STU001", "Иванов", "Иван", "Иванович",
-		"ivanov@university.ru", "+79001234567",
-		"PROG01", "STRM01", "GRP01", "SG01,SG02",
-		"active", "domestic", "budget", "full_time",
+	refs, err := h.loadTemplateReferences(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load template references: "+err.Error())
+		return
 	}
+
+	// Example row based on actual reference data from DB.
+	example := buildTemplateExample(refs)
 	for i, v := range example {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 2)
-		f.SetCellValue("Sheet1", cell, v)
+		f.SetCellValue(dataSheet, cell, v)
 	}
 
 	// Style header
 	style, _ := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}})
 	for i := range headers {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
-		f.SetCellStyle("Sheet1", cell, cell, style)
+		f.SetCellStyle(dataSheet, cell, cell, style)
 	}
 
-	f.SetColWidth("Sheet1", "A", "N", 18)
+	f.SetColWidth(dataSheet, "A", "N", 18)
+
+	h.fillInstructionsSheet(f)
+	h.fillReferenceSheet(f, "Programs", []string{"code", "name"}, refs.Programs)
+	h.fillReferenceSheet(f, "Streams", []string{"code", "name"}, refs.Streams)
+	h.fillReferenceSheet(f, "Groups", []string{"code", "name"}, refs.Groups)
+	h.fillReferenceSheet(f, "Subgroups", []string{"code", "name"}, refs.Subgroups)
+	if sheetIndex, err := f.GetSheetIndex(dataSheet); err == nil {
+		f.SetActiveSheet(sheetIndex)
+	}
 
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	w.Header().Set("Content-Disposition", "attachment; filename=students_template.xlsx")
 	f.Write(w)
+}
+
+type templateRefRow struct {
+	Code string
+	Name string
+}
+
+type templateReferences struct {
+	Programs  []templateRefRow
+	Streams   []templateRefRow
+	Groups    []templateRefRow
+	Subgroups []templateRefRow
+}
+
+func (h *ImportHandler) loadTemplateReferences(ctx context.Context) (templateReferences, error) {
+	var refs templateReferences
+	var err error
+
+	if refs.Programs, err = h.queryTemplateRows(ctx, `SELECT code, name FROM programs ORDER BY code LIMIT 200`); err != nil {
+		return templateReferences{}, err
+	}
+	if refs.Streams, err = h.queryTemplateRows(ctx, `SELECT code, name FROM streams ORDER BY code LIMIT 200`); err != nil {
+		return templateReferences{}, err
+	}
+	if refs.Groups, err = h.queryTemplateRows(ctx, `SELECT code, name FROM study_groups ORDER BY code LIMIT 200`); err != nil {
+		return templateReferences{}, err
+	}
+	if refs.Subgroups, err = h.queryTemplateRows(ctx, `SELECT code, name FROM subgroups ORDER BY code LIMIT 200`); err != nil {
+		return templateReferences{}, err
+	}
+
+	return refs, nil
+}
+
+func (h *ImportHandler) queryTemplateRows(ctx context.Context, sql string) ([]templateRefRow, error) {
+	rows, err := h.pool.Query(ctx, sql)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]templateRefRow, 0)
+	for rows.Next() {
+		var row templateRefRow
+		if err := rows.Scan(&row.Code, &row.Name); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
+func buildTemplateExample(refs templateReferences) []string {
+	programCode := "program_code_from_Programs_sheet"
+	streamCode := "stream_code_from_Streams_sheet"
+	groupCode := "group_code_from_Groups_sheet"
+	subgroupCodes := ""
+
+	if len(refs.Programs) > 0 {
+		programCode = refs.Programs[0].Code
+	}
+	if len(refs.Streams) > 0 {
+		streamCode = refs.Streams[0].Code
+	}
+	if len(refs.Groups) > 0 {
+		groupCode = refs.Groups[0].Code
+	}
+	if len(refs.Subgroups) > 0 {
+		subgroupCodes = refs.Subgroups[0].Code
+	}
+
+	return []string{
+		"STU002", "Петров", "Пётр", "Сергеевич",
+		"petrov@university.ru", "+79005554433",
+		programCode, streamCode, groupCode, subgroupCodes,
+		"active", "domestic", "budget", "full_time",
+	}
+}
+
+func (h *ImportHandler) fillInstructionsSheet(f *excelize.File) {
+	const sheet = "Instructions"
+	f.NewSheet(sheet)
+
+	rows := [][]string{
+		{"Как пользоваться шаблоном"},
+		{"1. Заполняйте данные на листе Students."},
+		{"2. Значения program_code, stream_code, group_code и subgroup_codes берите из справочных листов."},
+		{"3. subgroup_codes можно оставить пустым или перечислить несколько кодов через запятую без пробелов."},
+		{"4. Допустимые значения status: active."},
+		{"5. Допустимые значения nationality_type: domestic, foreign."},
+		{"6. Допустимые значения funding_type: budget, contract."},
+		{"7. Допустимые значения education_form: full_time, part_time, remote."},
+		{"8. Не меняйте названия колонок в первой строке листа Students."},
+	}
+
+	for rowIndex, row := range rows {
+		for colIndex, value := range row {
+			cell, _ := excelize.CoordinatesToCellName(colIndex+1, rowIndex+1)
+			f.SetCellValue(sheet, cell, value)
+		}
+	}
+
+	style, _ := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}})
+	f.SetCellStyle(sheet, "A1", "A1", style)
+	f.SetColWidth(sheet, "A", "A", 120)
+}
+
+func (h *ImportHandler) fillReferenceSheet(f *excelize.File, sheet string, headers []string, rows []templateRefRow) {
+	f.NewSheet(sheet)
+
+	for i, header := range headers {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		f.SetCellValue(sheet, cell, header)
+	}
+
+	style, _ := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}})
+	for i := range headers {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		f.SetCellStyle(sheet, cell, cell, style)
+	}
+
+	for rowIndex, row := range rows {
+		f.SetCellValue(sheet, fmt.Sprintf("A%d", rowIndex+2), row.Code)
+		f.SetCellValue(sheet, fmt.Sprintf("B%d", rowIndex+2), row.Name)
+	}
+
+	f.SetColWidth(sheet, "A", "A", 24)
+	f.SetColWidth(sheet, "B", "B", 60)
 }
 
 // studentRow представляет одну строку из Excel
@@ -177,7 +382,12 @@ func parseStudentExcel(r io.Reader) ([]studentRow, error) {
 	}
 	defer f.Close()
 
-	rows, err := f.GetRows("Sheet1")
+	sheetName := "Students"
+	if _, err := f.GetSheetIndex(sheetName); err != nil {
+		sheetName = "Sheet1"
+	}
+
+	rows, err := f.GetRows(sheetName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get rows: %w", err)
 	}
@@ -258,9 +468,9 @@ func validateStudentRow(row studentRow) *validationError {
 	}
 
 	// Validate enums
-	validStatus := map[string]bool{"active": true, "graduated": true, "expelled": true, "on_leave": true}
+	validStatus := map[string]bool{"active": true, "suspended": true, "ended": true}
 	if row.Status != "" && !validStatus[row.Status] {
-		return &validationError{Field: "status", Message: "must be: active, graduated, expelled, on_leave"}
+		return &validationError{Field: "status", Message: "must be: active, suspended, ended"}
 	}
 
 	validNat := map[string]bool{"domestic": true, "foreign": true}

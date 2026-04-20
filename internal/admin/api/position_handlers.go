@@ -5,6 +5,25 @@ import (
 	"strconv"
 )
 
+func validateStudentPositionRequest(req StudentPositionRequest) string {
+	if req.StudyGroupID == nil || *req.StudyGroupID == 0 {
+		return "study_group_id is required"
+	}
+	if req.Status == "" {
+		return "status is required"
+	}
+	if req.NationalityType == "" {
+		return "nationality_type is required"
+	}
+	if req.FundingType == "" {
+		return "funding_type is required"
+	}
+	if req.EducationForm == "" {
+		return "education_form is required"
+	}
+	return ""
+}
+
 type PositionHandler struct {
 	store PositionStore
 }
@@ -18,6 +37,7 @@ func (h *PositionHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/users/{id}/person", h.handleCreatePerson)
 	mux.HandleFunc("POST /api/admin/users/{id}/person/link", h.handleLinkPerson)
 	mux.HandleFunc("GET /api/admin/persons/search", h.handleSearchPersons)
+	mux.HandleFunc("GET /api/admin/persons/imported", h.handleListImportedStudents)
 	mux.HandleFunc("GET /api/admin/users/{id}/positions", h.handleGetPositions)
 
 	mux.HandleFunc("POST /api/admin/users/{id}/positions/student", h.handleCreateStudentPosition)
@@ -105,6 +125,19 @@ func (h *PositionHandler) handleSearchPersons(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, persons)
 }
 
+func (h *PositionHandler) handleListImportedStudents(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("q")
+	items, err := h.store.ListImportedStudents(r.Context(), q)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list imported students")
+		return
+	}
+	if items == nil {
+		items = []ImportedStudentInfo{}
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
 func (h *PositionHandler) handleLinkPerson(w http.ResponseWriter, r *http.Request) {
 	userID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -150,9 +183,13 @@ func (h *PositionHandler) handleCreateStudentPosition(w http.ResponseWriter, r *
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	if msg := validateStudentPositionRequest(req); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
 	pos, err := h.store.CreateStudentPosition(r.Context(), personID, req)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to create student position")
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusCreated, pos)
@@ -168,8 +205,12 @@ func (h *PositionHandler) handleUpdateStudentPosition(w http.ResponseWriter, r *
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	if msg := validateStudentPositionRequest(req); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
 	if err := h.store.UpdateStudentPosition(r.Context(), posID, req); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to update student position")
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
