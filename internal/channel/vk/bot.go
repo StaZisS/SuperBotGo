@@ -135,6 +135,14 @@ func (b *Bot) Start(ctx context.Context) error {
 	return b.startLongPoll(ctx)
 }
 
+// deriveContext returns a context derived from the bot lifecycle context.
+func (b *Bot) deriveContext() context.Context {
+	if b.lifecycleCtx != nil {
+		return b.lifecycleCtx
+	}
+	return context.Background()
+}
+
 func (b *Bot) startLongPoll(ctx context.Context) error {
 	backoff := time.Second
 
@@ -224,19 +232,21 @@ func (b *Bot) handleMessageNew(ctx context.Context, obj events.MessageNewObject)
 
 	chatID := strconv.Itoa(msg.PeerID)
 	platformUserID := strconv.Itoa(msg.FromID)
-	updateID := events.EventIDFromContext(ctx)
+	updateID := eventIDFromContext(ctx)
 	if updateID == "" {
 		updateID = fmt.Sprintf("%d:%d", msg.PeerID, msg.ID)
 	}
 
-	b.ensureChatRegistered(ctx, msg.PeerID)
+	processingCtx := b.deriveContext()
 
-	input, ok := b.buildInput(ctx, msg)
+	b.ensureChatRegistered(processingCtx, msg.PeerID)
+
+	input, ok := b.buildInput(processingCtx, msg)
 	if !ok {
 		return
 	}
 
-	if err := b.handler(ctx, channel.Update{
+	if err := b.handler(processingCtx, channel.Update{
 		ChannelType:      model.ChannelVK,
 		PlatformUserID:   model.PlatformUserID(platformUserID),
 		PlatformUpdateID: "vk:" + updateID,
@@ -248,6 +258,15 @@ func (b *Bot) handleMessageNew(ctx context.Context, obj events.MessageNewObject)
 			slog.String("chat", chatID),
 			slog.Any("error", err))
 	}
+}
+
+func eventIDFromContext(ctx context.Context) (eventID string) {
+	defer func() {
+		if recover() != nil {
+			eventID = ""
+		}
+	}()
+	return events.EventIDFromContext(ctx)
 }
 
 func (b *Bot) buildInput(ctx context.Context, msg vkobject.MessagesMessage) (model.UserInput, bool) {
