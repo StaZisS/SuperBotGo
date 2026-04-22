@@ -93,23 +93,23 @@ func (s *S3Store) Store(ctx context.Context, meta FileMeta, data io.Reader) (mod
 		meta.CreatedAt = time.Now()
 	}
 
-	// Upload data.
-	dataBytes, err := io.ReadAll(data)
-	if err != nil {
-		return model.FileRef{}, fmt.Errorf("filestore s3: read data: %w", err)
+	// Stream data upload and count bytes as they pass through.
+	countingBody := &countingReader{reader: data}
+	putInput := &s3.PutObjectInput{
+		Bucket:      aws.String(s.bucket),
+		Key:         aws.String(s.dataKey(meta.ID)),
+		Body:        countingBody,
+		ContentType: aws.String(meta.MIMEType),
 	}
-	meta.Size = int64(len(dataBytes))
+	if meta.Size > 0 {
+		putInput.ContentLength = aws.Int64(meta.Size)
+	}
 
-	_, err = s.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:        aws.String(s.bucket),
-		Key:           aws.String(s.dataKey(meta.ID)),
-		Body:          bytes.NewReader(dataBytes),
-		ContentLength: aws.Int64(meta.Size),
-		ContentType:   aws.String(meta.MIMEType),
-	})
+	_, err := s.client.PutObject(ctx, putInput)
 	if err != nil {
 		return model.FileRef{}, fmt.Errorf("filestore s3: put data %q: %w", meta.ID, err)
 	}
+	meta.Size = countingBody.n
 
 	// Upload metadata.
 	metaBytes, err := json.Marshal(meta)
@@ -147,6 +147,42 @@ func (s *S3Store) Get(ctx context.Context, id string) (io.ReadCloser, *FileMeta,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("filestore s3: get data %q: %w", id, err)
+	}
+
+	return out.Body, meta, nil
+}
+
+func (s *S3Store) GetRange(ctx context.Context, id string, offset, length int64) (io.ReadCloser, *FileMeta, error) {
+	if offset < 0 {
+		return nil, nil, fmt.Errorf("filestore s3: negative offset %d", offset)
+	}
+
+	meta, err := s.Meta(ctx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	if meta.Size <= 0 || offset >= meta.Size {
+		return io.NopCloser(bytes.NewReader(nil)), meta, nil
+	}
+
+	input := &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(s.dataKey(id)),
+	}
+	switch {
+	case length > 0:
+		end := meta.Size - 1
+		if remaining := meta.Size - offset; remaining > 0 && length < remaining {
+			end = offset + length - 1
+		}
+		input.Range = aws.String(fmt.Sprintf("bytes=%d-%d", offset, end))
+	case offset > 0:
+		input.Range = aws.String(fmt.Sprintf("bytes=%d-", offset))
+	}
+
+	out, err := s.client.GetObject(ctx, input)
+	if err != nil {
+		return nil, nil, fmt.Errorf("filestore s3: get data range %q: %w", id, err)
 	}
 
 	return out.Body, meta, nil
@@ -272,3 +308,15 @@ func (s *S3Store) exists(ctx context.Context, key string) bool {
 }
 
 var _ FileStore = (*S3Store)(nil)
+var _ RangeReader = (*S3Store)(nil)
+
+type countingReader struct {
+	reader io.Reader
+	n      int64
+}
+
+func (r *countingReader) Read(p []byte) (int, error) {
+	n, err := r.reader.Read(p)
+	r.n += int64(n)
+	return n, err
+}

@@ -52,3 +52,12 @@ type FileStore interface {
 	// Cleanup removes expired files. Returns the number of files removed.
 	Cleanup(ctx context.Context) (int, error)
 }
+
+// RangeReader is an optional capability for backends that can serve byte
+// ranges efficiently. Callers should detect it via type assertion and fall
+// back to FileStore.Get when unavailable.
+type RangeReader interface {
+	// GetRange retrieves at most length bytes starting at offset.
+	// When length <= 0, the backend may return data from offset to EOF.
+	GetRange(ctx context.Context, id string, offset, length int64) (io.ReadCloser, *FileMeta, error)
+}

@@ -9,7 +9,7 @@ package wasmplugin
 // The host checks this to ensure compatibility with the loaded plugin.
 // Bump this when the protocol between host and plugin changes
 // (e.g. new env vars, new response fields, changed JSON schema).
-const ProtocolVersion = 2
+const ProtocolVersion = 3
 
 // SQLMigration describes a single SQL schema migration step.
 // Migrations are declared in the Plugin struct and serialized as part of

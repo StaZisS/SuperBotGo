@@ -22,6 +22,12 @@ func _publishEvent(ptr uint32, length uint32) uint64
 // callHost marshals the payload, writes it to WASM memory, calls the host
 // function, and reads + unmarshals the response.
 func callHost(hostFn func(uint32, uint32) uint64, payload any) ([]byte, error) {
+	// Host functions write their response into the plugin arena via alloc().
+	// Reset before each call and copy the response out so subsequent calls do
+	// not accumulate stale allocations.
+	allocReset()
+	defer allocReset()
+
 	data, err := marshalMsgpack(payload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal host call payload: %w", err)
@@ -37,7 +43,10 @@ func callHost(hostFn func(uint32, uint32) uint64, payload any) ([]byte, error) {
 	offset := uint32(result >> 32)
 	length := uint32(result & 0xFFFFFFFF)
 
-	return ptrToBytes(offset, length), nil
+	raw := ptrToBytes(offset, length)
+	out := make([]byte, length)
+	copy(out, raw)
+	return out, nil
 }
 
 // callHostWithResult is like callHost but also unmarshals the response into v.

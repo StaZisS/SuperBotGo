@@ -14,6 +14,9 @@ func _file_meta(offset, length uint32) uint64
 //go:wasmimport env file_read
 func _file_read(offset, length uint32) uint64
 
+//go:wasmimport env file_read_into
+func _file_read_into(offset, length uint32) uint64
+
 //go:wasmimport env file_url
 func _file_url(offset, length uint32) uint64
 
@@ -46,6 +49,19 @@ type fileReadResponse struct {
 	Error     string `msgpack:"error,omitempty"`
 }
 
+type fileReadIntoRequest struct {
+	FileID  string `msgpack:"file_id"`
+	Offset  int64  `msgpack:"offset"`
+	DataPtr uint32 `msgpack:"data_ptr"`
+	DataLen uint32 `msgpack:"data_len"`
+}
+
+type fileReadIntoResponse struct {
+	BytesRead int64  `msgpack:"bytes_read"`
+	EOF       bool   `msgpack:"eof"`
+	Error     string `msgpack:"error,omitempty"`
+}
+
 type fileURLRequest struct {
 	FileID        string `msgpack:"file_id"`
 	ExpirySeconds int    `msgpack:"expiry_seconds,omitempty"`
@@ -73,6 +89,8 @@ type fileStoreResponse struct {
 	Error    string `msgpack:"error,omitempty"`
 }
 
+const maxFileReadChunkSize = 1 << 20 // 1 MB
+
 // FileMeta returns metadata for a file by ID.
 func (ctx *EventContext) FileMeta(fileID string) (*FileRef, error) {
 	var resp fileMetaResponse
@@ -95,18 +113,29 @@ func (ctx *EventContext) FileMeta(fileID string) (*FileRef, error) {
 // Returns the data, whether EOF was reached, and any error.
 // If maxBytes is 0, reads up to 1MB.
 func (ctx *EventContext) FileRead(fileID string, offset int64, maxBytes int64) ([]byte, bool, error) {
-	var resp fileReadResponse
-	if err := callHostWithResult(_file_read, fileReadRequest{
-		FileID: fileID,
-		Offset: offset,
-		Length: maxBytes,
+	readLen := maxBytes
+	if readLen <= 0 || readLen > maxFileReadChunkSize {
+		readLen = maxFileReadChunkSize
+	}
+	buf := make([]byte, readLen)
+	dataPtr, _ := bytesToPtr(buf)
+
+	var resp fileReadIntoResponse
+	if err := callHostWithResult(_file_read_into, fileReadIntoRequest{
+		FileID:  fileID,
+		Offset:  offset,
+		DataPtr: dataPtr,
+		DataLen: uint32(len(buf)),
 	}, &resp); err != nil {
-		return nil, false, fmt.Errorf("file_read: %w", err)
+		return nil, false, fmt.Errorf("file_read_into: %w", err)
 	}
 	if resp.Error != "" {
-		return nil, false, fmt.Errorf("file_read: %s", resp.Error)
+		return nil, false, fmt.Errorf("file_read_into: %s", resp.Error)
 	}
-	return resp.Data, resp.EOF, nil
+	if resp.BytesRead < 0 || resp.BytesRead > int64(len(buf)) {
+		return nil, false, fmt.Errorf("file_read_into: invalid bytes_read %d", resp.BytesRead)
+	}
+	return buf[:resp.BytesRead], resp.EOF, nil
 }
 
 // FileReadAll reads the entire file content into memory.

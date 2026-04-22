@@ -67,6 +67,14 @@ type FileStore interface {
 }
 ```
 
+Для эффективного чтения чанков backend может дополнительно реализовать range-capability:
+
+```go
+type RangeReader interface {
+    GetRange(ctx context.Context, id string, offset, length int64) (io.ReadCloser, *FileMeta, error)
+}
+```
+
 ### FileMeta
 
 ```go
@@ -93,6 +101,38 @@ type FileMeta struct {
 
 - `URL()` — возвращает presigned GET URL для прямого скачивания из S3
 - `Cleanup()` — листинг `.meta.json` объектов, проверка `ExpiresAt`, удаление просроченных. Запускается горутиной каждый час
+
+## Чтение файла из WASM
+
+Начиная с SDK protocol v3 метод `ctx.FileRead(...)` использует низкоуровневый host ABI `file_read_into`. Буфер для чтения выделяется самим плагином, а host заполняет его напрямую.
+
+```mermaid
+sequenceDiagram
+    participant P as WASM Plugin
+    participant HA as Host API
+    participant FS as FileStore
+
+    P->>P: make([]byte, maxBytes)
+    P->>HA: file_read_into(fileID, offset, dst_ptr, dst_len)
+    alt backend supports range reads
+        HA->>FS: GetRange(id, offset, dst_len)
+    else fallback path
+        HA->>FS: Get(id) + skip(offset)
+    end
+    FS-->>HA: io.ReadCloser + meta
+    HA->>P: write chunk into dst_ptr
+    HA-->>P: {bytes_read, eof}
+```
+
+Преимущества этой схемы:
+
+- нет большого blob-ответа через result arena хоста
+- меньше копирований при чтении чанков
+- S3 backend может использовать `Range`-запросы вместо повторного чтения префиксов
+
+::: warning Deprecated host ABI
+`file_read` помечен как `deprecated` и сохранён только для обратной совместимости со старыми WASM-плагинами. На уровне SDK по-прежнему используйте `ctx.FileRead(...)` и `ctx.FileReadAll(...)`.
+:::
 
 ## Поток данных: входящий файл
 

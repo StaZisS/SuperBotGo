@@ -170,7 +170,8 @@ graph LR
 
         subgraph Files["Files"]
             file_meta["file_meta"]
-            file_read["file_read"]
+            file_read_into["file_read_into"]
+            file_read["file_read (deprecated)"]
             file_url["file_url"]
             file_store["file_store"]
         end
@@ -191,10 +192,10 @@ graph LR
     Plugin --> http_request
     Plugin --> notify_user & notify_chat & notify_students
     Plugin --> call_plugin & publish_event
-    Plugin --> file_meta & file_read & file_url & file_store
+    Plugin --> file_meta & file_read_into & file_read & file_url & file_store
 
     kv_get & kv_set --> Redis
-    file_meta & file_read & file_url & file_store --> FSt
+    file_meta & file_read_into & file_read & file_url & file_store --> FSt
     sql_open & sql_exec & sql_query --> PG
     http_request --> ExtHTTP
     notify_user & notify_chat --> MsgCh
@@ -205,9 +206,20 @@ graph LR
     classDef host fill:#fff3e0,stroke:#ef6c00
     classDef infra fill:#e1f5fe,stroke:#0288d1
     class Plugin wasm
-    class kv_get,kv_set,kv_delete,kv_list,sql_open,sql_close,sql_exec,sql_query,sql_next,sql_rows_close,sql_begin,sql_end,http_request,notify_user,notify_chat,notify_students,call_plugin,publish_event,file_meta,file_read,file_url,file_store host
+    class kv_get,kv_set,kv_delete,kv_list,sql_open,sql_close,sql_exec,sql_query,sql_next,sql_rows_close,sql_begin,sql_end,http_request,notify_user,notify_chat,notify_students,call_plugin,publish_event,file_meta,file_read_into,file_read,file_url,file_store host
     class PG,Redis,ExtHTTP,MsgCh,Plugins,EB,FSt infra
 ```
+
+## Чтение файлов: текущий и legacy ABI
+
+Для новых сборок плагинов чтение чанков идёт через `file_read_into`:
+
+1. Плагин выделяет буфер в своей WASM memory.
+2. Передаёт `file_id`, `offset`, `dst_ptr`, `dst_len`.
+3. Host читает чанк из `FileStore` и пишет его прямо в guest memory.
+4. Обратно возвращается только небольшой ответ `{bytes_read, eof}`.
+
+`file_read` оставлен как `deprecated` compatibility path для ранее собранных плагинов. Публичные методы SDK `ctx.FileRead(...)` и `ctx.FileReadAll(...)` остаются штатным API и не помечены как устаревшие.
 
 ## Конвейер вызова
 

@@ -91,6 +91,128 @@ type fileReadResponse struct {
 	Error     string `msgpack:"error,omitempty"`
 }
 
+type fileReadIntoRequest struct {
+	FileID  string `msgpack:"file_id"`
+	Offset  int64  `msgpack:"offset"`
+	DataPtr uint32 `msgpack:"data_ptr"`
+	DataLen uint32 `msgpack:"data_len"`
+}
+
+type fileReadIntoResponse struct {
+	BytesRead int64  `msgpack:"bytes_read"`
+	EOF       bool   `msgpack:"eof"`
+	Error     string `msgpack:"error,omitempty"`
+}
+
+func readFileChunk(ctx context.Context, store filestore.FileStore, fileID string, offset, length int64) (fileReadResponse, error) {
+	if offset < 0 {
+		return fileReadResponse{}, fmt.Errorf("negative file offset: %d", offset)
+	}
+
+	readLen := length
+	if readLen <= 0 || readLen > wasmrt.MaxFileChunkSize {
+		readLen = wasmrt.MaxFileChunkSize
+	}
+
+	if rangeStore, ok := store.(filestore.RangeReader); ok {
+		return readFileChunkFromReader(func() (io.ReadCloser, error) {
+			rc, _, err := rangeStore.GetRange(ctx, fileID, offset, readLen)
+			return rc, err
+		}, readLen)
+	}
+
+	return readFileChunkFromReader(func() (io.ReadCloser, error) {
+		rc, _, err := store.Get(ctx, fileID)
+		if err != nil {
+			return nil, err
+		}
+		if offset == 0 {
+			return rc, nil
+		}
+		if _, err := io.CopyN(io.Discard, rc, offset); err != nil {
+			rc.Close()
+			if err == io.EOF {
+				return io.NopCloser(bytes.NewReader(nil)), nil
+			}
+			return nil, err
+		}
+		return rc, nil
+	}, readLen)
+}
+
+func readFileChunkInto(ctx context.Context, store filestore.FileStore, fileID string, offset int64, dst []byte) (int, bool, error) {
+	if offset < 0 {
+		return 0, false, fmt.Errorf("negative file offset: %d", offset)
+	}
+	if len(dst) == 0 {
+		return 0, false, fmt.Errorf("empty file read buffer")
+	}
+	if len(dst) > int(wasmrt.MaxFileChunkSize) {
+		dst = dst[:wasmrt.MaxFileChunkSize]
+	}
+
+	if rangeStore, ok := store.(filestore.RangeReader); ok {
+		return readFileChunkIntoFromReader(func() (io.ReadCloser, error) {
+			rc, _, err := rangeStore.GetRange(ctx, fileID, offset, int64(len(dst)))
+			return rc, err
+		}, dst)
+	}
+
+	return readFileChunkIntoFromReader(func() (io.ReadCloser, error) {
+		rc, _, err := store.Get(ctx, fileID)
+		if err != nil {
+			return nil, err
+		}
+		if offset == 0 {
+			return rc, nil
+		}
+		if _, err := io.CopyN(io.Discard, rc, offset); err != nil {
+			rc.Close()
+			if err == io.EOF {
+				return io.NopCloser(bytes.NewReader(nil)), nil
+			}
+			return nil, err
+		}
+		return rc, nil
+	}, dst)
+}
+
+func readFileChunkIntoFromReader(open func() (io.ReadCloser, error), dst []byte) (int, bool, error) {
+	rc, err := open()
+	if err != nil {
+		return 0, false, err
+	}
+	defer rc.Close()
+
+	n, readErr := io.ReadFull(rc, dst)
+	eof := readErr == io.EOF || readErr == io.ErrUnexpectedEOF
+	if readErr != nil && !eof {
+		return 0, false, readErr
+	}
+	return n, eof, nil
+}
+
+func readFileChunkFromReader(open func() (io.ReadCloser, error), readLen int64) (fileReadResponse, error) {
+	rc, err := open()
+	if err != nil {
+		return fileReadResponse{}, err
+	}
+	defer rc.Close()
+
+	buf := make([]byte, readLen)
+	n, readErr := io.ReadFull(rc, buf)
+	eof := readErr == io.EOF || readErr == io.ErrUnexpectedEOF
+	if readErr != nil && !eof {
+		return fileReadResponse{}, readErr
+	}
+
+	return fileReadResponse{
+		Data:      buf[:n],
+		BytesRead: int64(n),
+		EOF:       eof,
+	}, nil
+}
+
 func (h *HostAPI) fileReadFunc() api.GoModuleFunc {
 	return func(ctx context.Context, mod api.Module, stack []uint64) {
 		pluginID := pluginIDFromContext(ctx)
@@ -119,48 +241,73 @@ func (h *HostAPI) fileReadFunc() api.GoModuleFunc {
 			return
 		}
 
-		// Clamp length to max chunk size
-		readLen := req.Length
-		if readLen <= 0 || readLen > wasmrt.MaxFileChunkSize {
-			readLen = wasmrt.MaxFileChunkSize
-		}
-
-		rc, _, err := h.deps.FileStore.Get(ctx, req.FileID)
+		resp, err := readFileChunk(ctx, h.deps.FileStore, req.FileID, req.Offset, req.Length)
 		if err != nil {
 			SetHostCallStatus(ctx, "error")
 			writeResult(ctx, mod, stack, fileReadResponse{Error: err.Error()})
 			return
 		}
-		defer rc.Close()
+		writeResult(ctx, mod, stack, resp)
+	}
+}
 
-		// Skip to offset without loading entire file into memory.
-		if req.Offset > 0 {
-			if _, err := io.CopyN(io.Discard, rc, req.Offset); err != nil {
-				if err == io.EOF {
-					writeResult(ctx, mod, stack, fileReadResponse{
-						Data: []byte{}, BytesRead: 0, EOF: true,
-					})
-					return
-				}
-				SetHostCallStatus(ctx, "error")
-				writeResult(ctx, mod, stack, fileReadResponse{Error: err.Error()})
-				return
-			}
-		}
+func (h *HostAPI) fileReadIntoFunc() api.GoModuleFunc {
+	return func(ctx context.Context, mod api.Module, stack []uint64) {
+		pluginID := pluginIDFromContext(ctx)
+		offset := uint32(stack[0])
+		length := uint32(stack[1])
 
-		// Read only the requested chunk.
-		buf := make([]byte, readLen)
-		n, readErr := io.ReadFull(rc, buf)
-		eof := readErr == io.EOF || readErr == io.ErrUnexpectedEOF
-		if readErr != nil && !eof {
-			SetHostCallStatus(ctx, "error")
-			writeResult(ctx, mod, stack, fileReadResponse{Error: readErr.Error()})
+		if err := h.perms.CheckPermission(pluginID, "file"); err != nil {
+			returnError(ctx, mod, stack, err)
 			return
 		}
 
-		writeResult(ctx, mod, stack, fileReadResponse{
-			Data:      buf[:n],
-			BytesRead: int64(n),
+		data, err := readPayload(mod, offset, length)
+		if err != nil {
+			returnError(ctx, mod, stack, err)
+			return
+		}
+
+		var req fileReadIntoRequest
+		if err := msgpack.Unmarshal(data, &req); err != nil {
+			returnError(ctx, mod, stack, err)
+			return
+		}
+
+		if h.deps.FileStore == nil {
+			returnError(ctx, mod, stack, errDepNotAvailable("FileStore"))
+			return
+		}
+		if req.DataLen == 0 {
+			returnError(ctx, mod, stack, fmt.Errorf("file_read_into: data_len must be > 0"))
+			return
+		}
+
+		readLen := req.DataLen
+		if readLen > uint32(wasmrt.MaxFileChunkSize) {
+			readLen = uint32(wasmrt.MaxFileChunkSize)
+		}
+
+		mem := mod.Memory()
+		if mem == nil {
+			returnError(ctx, mod, stack, fmt.Errorf("module has no memory"))
+			return
+		}
+		dst, ok := mem.Read(req.DataPtr, readLen)
+		if !ok {
+			returnError(ctx, mod, stack, fmt.Errorf("memory read out of bounds: offset=%d, length=%d", req.DataPtr, readLen))
+			return
+		}
+
+		bytesRead, eof, err := readFileChunkInto(ctx, h.deps.FileStore, req.FileID, req.Offset, dst)
+		if err != nil {
+			SetHostCallStatus(ctx, "error")
+			writeResult(ctx, mod, stack, fileReadIntoResponse{Error: err.Error()})
+			return
+		}
+
+		writeResult(ctx, mod, stack, fileReadIntoResponse{
+			BytesRead: int64(bytesRead),
 			EOF:       eof,
 		})
 	}
@@ -269,10 +416,10 @@ func (h *HostAPI) fileStoreFunc() api.GoModuleFunc {
 			return
 		}
 
-		if int64(len(req.Data)) > wasmrt.MaxFileStoreSize {
+		if int64(len(req.Data)) > h.maxFileStoreSize {
 			SetHostCallStatus(ctx, "error")
 			writeResult(ctx, mod, stack, fileStoreResponse{
-				Error: fmt.Sprintf("file too large: %d bytes (max %d)", len(req.Data), wasmrt.MaxFileStoreSize),
+				Error: fmt.Sprintf("file too large: %d bytes (max %d)", len(req.Data), h.maxFileStoreSize),
 			})
 			return
 		}
@@ -280,6 +427,7 @@ func (h *HostAPI) fileStoreFunc() api.GoModuleFunc {
 		meta := filestore.FileMeta{
 			Name:     req.Name,
 			MIMEType: req.MIMEType,
+			Size:     int64(len(req.Data)),
 			FileType: model.FileType(req.FileType),
 			PluginID: pluginID,
 		}

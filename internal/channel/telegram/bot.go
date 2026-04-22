@@ -292,6 +292,7 @@ func (b *Bot) storeTelegramFile(ctx context.Context, platformUserID string, file
 	ref, err := b.fileStore.Store(ctx, filestore.FileMeta{
 		Name:     incoming.name,
 		MIMEType: incoming.mimeType,
+		Size:     int64(incoming.file.FileSize),
 		FileType: fileType,
 	}, reader)
 	if err != nil {

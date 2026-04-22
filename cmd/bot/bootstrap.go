@@ -149,6 +149,7 @@ func newRuntimeServices(ctx context.Context, cfg *config.Config, logger *slog.Lo
 
 	hostAPI := hostapi.NewHostAPI(hostapi.Dependencies{FileStore: fileStore})
 	hostAPI.SetMetrics(services.metrics)
+	hostAPI.SetMaxFileStoreSize(cfg.FileStore.MaxFileSize)
 	hostAPI.SetHTTPPolicyEnforcement(cfg.WASM.HTTPPolicyEnabledValue())
 	services.memoryEventBus = eventbus.New(nil, services.eventMetrics)
 	services.memoryEventBus.SetAppMetrics(services.metrics)

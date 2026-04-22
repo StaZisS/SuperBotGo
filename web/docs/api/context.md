@@ -92,6 +92,8 @@ ctx.Reply(wasmplugin.NewMessage("Вот расписание").File(ref, "schedu
 
 Подробнее: [Файлы](/api/files)
 
+`ctx.FileRead(...)` и `ctx.FileReadAll(...)` остаются рекомендуемым API SDK. В новых сборках они внутри используют `file_read_into`; raw host ABI `file_read` оставлен только для совместимости со старыми плагинами.
+
 ### Уведомления {#notifications}
 
 | Метод | Описание |

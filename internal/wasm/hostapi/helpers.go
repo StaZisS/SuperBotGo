@@ -38,6 +38,11 @@ func writeModMemory(ctx context.Context, mod api.Module, data []byte) (uint32, u
 	if length == 0 {
 		return 0, 0, nil
 	}
+	if reset := mod.ExportedFunction("alloc_reset"); reset != nil {
+		if _, err := reset.Call(ctx); err != nil {
+			return 0, 0, fmt.Errorf("alloc_reset: %w", err)
+		}
+	}
 	alloc := mod.ExportedFunction("alloc")
 	if alloc == nil {
 		return 0, 0, fmt.Errorf("module does not export 'alloc'")

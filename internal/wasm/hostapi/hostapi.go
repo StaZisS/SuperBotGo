@@ -20,6 +20,7 @@ type HostAPI struct {
 	perms             *permissionStore
 	httpPolicies      *httpPolicyStore
 	httpPolicyEnabled bool
+	maxFileStoreSize  int64
 	metrics           *metrics.Metrics
 	kvStore           *KVStore
 	sqlStore          *SQLHandleStore
@@ -28,11 +29,12 @@ type HostAPI struct {
 
 func NewHostAPI(deps Dependencies) *HostAPI {
 	return &HostAPI{
-		deps:         deps,
-		perms:        newPermissionStore(),
-		httpPolicies: newHTTPPolicyStore(),
-		kvStore:      NewKVStore(),
-		sqlStore:     NewSQLHandleStore(),
+		deps:             deps,
+		perms:            newPermissionStore(),
+		httpPolicies:     newHTTPPolicyStore(),
+		maxFileStoreSize: wasmrt.MaxFileStoreSize,
+		kvStore:          NewKVStore(),
+		sqlStore:         NewSQLHandleStore(),
 	}
 }
 
@@ -79,6 +81,14 @@ func (h *HostAPI) SetNotifier(n Notifier) {
 
 func (h *HostAPI) SetPluginRegistry(reg PluginRegistry) {
 	h.deps.PluginRegistry = reg
+}
+
+func (h *HostAPI) SetMaxFileStoreSize(size int64) {
+	if size <= 0 {
+		h.maxFileStoreSize = wasmrt.MaxFileStoreSize
+		return
+	}
+	h.maxFileStoreSize = size
 }
 
 func (h *HostAPI) RegisterHostModule(ctx context.Context, rt *wasmrt.Runtime) error {
@@ -150,6 +160,7 @@ func (h *HostAPI) RegisterHostModule(ctx context.Context, rt *wasmrt.Runtime) er
 
 	builder = h.registerFunc(builder, "file_meta", h.fileMetaFunc(), i32i32, i64)
 	builder = h.registerFunc(builder, "file_read", h.fileReadFunc(), i32i32, i64)
+	builder = h.registerFunc(builder, "file_read_into", h.fileReadIntoFunc(), i32i32, i64)
 	builder = h.registerFunc(builder, "file_url", h.fileURLFunc(), i32i32, i64)
 	builder = h.registerFunc(builder, "file_store", h.fileStoreFunc(), i32i32, i64)
 

@@ -4,9 +4,9 @@ package wasmplugin
 
 import "unsafe"
 
-const heapSize = 262144 // 256 KB
+const initialArenaSize = 64 * 1024 // grows on demand up to the module memory limit
 
-var heapBuf [heapSize]byte
+var heapBuf []byte
 var heapOffset uint32
 
 //go:wasmexport alloc
@@ -16,15 +16,33 @@ func alloc(size uint32) uint32 {
 	}
 	aligned := (heapOffset + 7) & ^uint32(7)
 	end := aligned + size
-	if end > heapSize {
+	if end < aligned {
 		return 0
 	}
+
+	need := int(end)
+	if cap(heapBuf) < need {
+		newCap := cap(heapBuf)
+		if newCap < initialArenaSize {
+			newCap = initialArenaSize
+		}
+		for newCap < need {
+			newCap *= 2
+		}
+		newBuf := make([]byte, need, newCap)
+		copy(newBuf, heapBuf)
+		heapBuf = newBuf
+	} else if len(heapBuf) < need {
+		heapBuf = heapBuf[:need]
+	}
+
 	heapOffset = end
 	return uint32(uintptr(unsafe.Pointer(&heapBuf[aligned])))
 }
 
 //go:wasmexport alloc_reset
 func allocReset() {
+	heapBuf = heapBuf[:0]
 	heapOffset = 0
 }
 

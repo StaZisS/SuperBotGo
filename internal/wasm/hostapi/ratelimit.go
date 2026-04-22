@@ -23,6 +23,7 @@ var DefaultRateLimits = map[string]int{
 	"sql_end":        20,
 	"file_meta":      50,
 	"file_read":      50,
+	"file_read_into": 50,
 	"file_url":       20,
 	"file_store":     10,
 }

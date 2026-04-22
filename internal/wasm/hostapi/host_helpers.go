@@ -18,12 +18,14 @@ func returnError(ctx context.Context, mod api.Module, stack []uint64, err error)
 func writeResult(ctx context.Context, mod api.Module, stack []uint64, v interface{}) {
 	data, err := marshalWire(v)
 	if err != nil {
+		SetHostCallStatus(ctx, "error")
 		slog.Error("wasm: marshal result failed", "error", err)
 		stack[0] = 0
 		return
 	}
 	offset, length, err := writeModMemory(ctx, mod, data)
 	if err != nil {
+		SetHostCallStatus(ctx, "error")
 		slog.Error("wasm: write result to memory failed", "error", err)
 		stack[0] = 0
 		return

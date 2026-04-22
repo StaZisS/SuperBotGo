@@ -4,7 +4,7 @@ import "encoding/json"
 
 type PluginIDKey struct{}
 
-const MaxSupportedSDKVersion = 2
+const MaxSupportedSDKVersion = 3
 
 const ActionMigrate = "migrate"
 const ActionReconfigure = "reconfigure"
