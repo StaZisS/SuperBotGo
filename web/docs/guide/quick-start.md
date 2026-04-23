@@ -31,7 +31,7 @@ go get github.com/StaZisS/SuperBotGo/sdk/go-plugin@latest
 Или конкретную версию:
 
 ```bash
-go get github.com/StaZisS/SuperBotGo/sdk/go-plugin@v0.1.1
+go get github.com/StaZisS/SuperBotGo/sdk/go-plugin@v0.1.2
 ```
 
 В коде SDK импортируется с алиасом `wasmplugin`:
