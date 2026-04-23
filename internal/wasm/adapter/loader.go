@@ -50,6 +50,14 @@ type preparedPlugin struct {
 	wasmBytes []byte
 }
 
+type reloadPlan struct {
+	pluginID       string
+	old            *loadedPlugin
+	config         json.RawMessage
+	oldVersion     string
+	oldPermissions []string
+}
+
 func NewLoader(rt *wasmrt.Runtime, hostAPI *hostapi.HostAPI, messageSend MessageSendFunc) *Loader {
 	return &Loader{
 		rt:            rt,
@@ -402,78 +410,103 @@ func (l *Loader) ReloadPluginFromBytes(ctx context.Context, pluginID string, was
 		)
 	}()
 
-	l.mu.RLock()
-	old, ok := l.plugins[pluginID]
-	if !ok {
-		l.mu.RUnlock()
-		reloadStatus = "error"
-		return fmt.Errorf("plugin %q not loaded", pluginID)
-	}
-	config := newConfig
-	if config == nil {
-		config = cloneRawMessage(old.config)
-	}
-	l.mu.RUnlock()
-
-	old.draining.Store(true)
-
-	oldVersion := old.plugin.Version()
-	oldPermissions := hostapi.PermissionsFromRequirements(old.plugin.Meta().Requirements)
-
-	prepared, err := l.preparePlugin(ctx, wasmBytes, config)
+	plan, err := l.beginReload(pluginID, newConfig)
 	if err != nil {
-		old.draining.Store(false)
+		reloadStatus = "error"
+		return err
+	}
+
+	prepared, err := l.preparePlugin(ctx, wasmBytes, plan.config)
+	if err != nil {
+		plan.old.draining.Store(false)
 		reloadStatus = "error"
 		return fmt.Errorf("reload plugin %q: load new version: %w", pluginID, err)
 	}
 
 	if prepared.meta.ID != pluginID {
-		l.closeActivatedPlugin(ctx, prepared.meta.ID, prepared.compiled)
-		l.restoreLoadedPluginState(pluginID, old.config, oldPermissions)
-		old.draining.Store(false)
+		l.abortReload(ctx, plan, prepared)
 		reloadStatus = "error"
 		return fmt.Errorf("reload plugin %q: new module declares ID %q", pluginID, prepared.meta.ID)
 	}
 
-	newVersion := prepared.plugin.Version()
-	if oldVersion != newVersion {
-		slog.Info("wasm: plugin version changed, running migration",
-			"plugin", pluginID,
-			"old_version", oldVersion,
-			"new_version", newVersion,
-		)
-		if migrateErr := prepared.compiled.CallMigrate(ctx, oldVersion, newVersion); migrateErr != nil {
-			if l.strictMigrate {
-				l.closeActivatedPlugin(ctx, prepared.meta.ID, prepared.compiled)
-				l.restoreLoadedPluginState(pluginID, old.config, oldPermissions)
-				old.draining.Store(false)
-				reloadStatus = "error"
-				return fmt.Errorf("reload plugin %q: migration failed: %w", pluginID, migrateErr)
-			}
-			slog.Error("wasm: plugin migration failed (continuing because strict migrate is disabled)",
-				"plugin", pluginID,
-				"old_version", oldVersion,
-				"new_version", newVersion,
-				"error", migrateErr,
-			)
-		} else {
-			slog.Info("wasm: plugin migration completed successfully",
-				"plugin", pluginID,
-				"old_version", oldVersion,
-				"new_version", newVersion,
-			)
-		}
+	if err := l.maybeRunReloadMigration(ctx, plan, prepared); err != nil {
+		l.abortReload(ctx, plan, prepared)
+		reloadStatus = "error"
+		return err
 	}
 
 	l.registerLoadedPlugin(prepared, true)
 
-	l.drainPlugin(old, pluginID)
+	l.drainPlugin(plan.old, pluginID)
 
-	if err := old.compiled.Close(ctx); err != nil {
+	if err := plan.old.compiled.Close(ctx); err != nil {
 		slog.Error("wasm: error closing old compiled module during reload", "plugin", pluginID, "error", err)
 	}
 
 	slog.Info("wasm: plugin reloaded", "id", pluginID, "new_version", prepared.plugin.Version())
+	return nil
+}
+
+func (l *Loader) beginReload(pluginID string, newConfig json.RawMessage) (*reloadPlan, error) {
+	l.mu.RLock()
+	old, ok := l.plugins[pluginID]
+	l.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("plugin %q not loaded", pluginID)
+	}
+
+	config := cloneRawMessage(newConfig)
+	if config == nil {
+		config = cloneRawMessage(old.config)
+	}
+
+	old.draining.Store(true)
+	return &reloadPlan{
+		pluginID:       pluginID,
+		old:            old,
+		config:         config,
+		oldVersion:     old.plugin.Version(),
+		oldPermissions: hostapi.PermissionsFromRequirements(old.plugin.Meta().Requirements),
+	}, nil
+}
+
+func (l *Loader) abortReload(ctx context.Context, plan *reloadPlan, prepared *preparedPlugin) {
+	if prepared != nil {
+		l.closeActivatedPlugin(ctx, prepared.meta.ID, prepared.compiled)
+	}
+	l.restoreLoadedPluginState(plan.pluginID, plan.old.config, plan.oldPermissions)
+	plan.old.draining.Store(false)
+}
+
+func (l *Loader) maybeRunReloadMigration(ctx context.Context, plan *reloadPlan, prepared *preparedPlugin) error {
+	newVersion := prepared.plugin.Version()
+	if plan.oldVersion == newVersion {
+		return nil
+	}
+
+	slog.Info("wasm: plugin version changed, running migration",
+		"plugin", plan.pluginID,
+		"old_version", plan.oldVersion,
+		"new_version", newVersion,
+	)
+	if err := prepared.compiled.CallMigrate(ctx, plan.oldVersion, newVersion); err != nil {
+		if l.strictMigrate {
+			return fmt.Errorf("reload plugin %q: migration failed: %w", plan.pluginID, err)
+		}
+		slog.Error("wasm: plugin migration failed (continuing because strict migrate is disabled)",
+			"plugin", plan.pluginID,
+			"old_version", plan.oldVersion,
+			"new_version", newVersion,
+			"error", err,
+		)
+		return nil
+	}
+
+	slog.Info("wasm: plugin migration completed successfully",
+		"plugin", plan.pluginID,
+		"old_version", plan.oldVersion,
+		"new_version", newVersion,
+	)
 	return nil
 }
 

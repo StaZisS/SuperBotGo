@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -40,6 +41,14 @@ type ServiceKeyPrincipal struct {
 
 type resolvedHTTPPrincipal struct {
 	authData *model.HTTPAuthData
+}
+
+type pluginHTTPError struct {
+	message string
+}
+
+func (e pluginHTTPError) Error() string {
+	return e.message
 }
 
 type HTTPTriggerHandler struct {
@@ -106,18 +115,11 @@ func (h *HTTPTriggerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		)
 	}()
 
-	remainder := strings.TrimPrefix(r.URL.Path, h.basePath)
-	remainder = strings.TrimPrefix(remainder, "/")
-	if remainder == "" {
-		http.Error(rec, "missing plugin ID in URL", http.StatusBadRequest)
+	var err error
+	pluginID, triggerPath, err := h.resolveRoute(r.URL.Path)
+	if err != nil {
+		http.Error(rec, err.Error(), http.StatusBadRequest)
 		return
-	}
-
-	parts := strings.SplitN(remainder, "/", 2)
-	pluginID = parts[0]
-	triggerPath := ""
-	if len(parts) > 1 {
-		triggerPath = parts[1]
 	}
 
 	triggerName, err := h.registry.LookupHTTP(pluginID, triggerPath, r.Method)
@@ -150,10 +152,64 @@ func (h *HTTPTriggerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	event, err := h.buildHTTPEvent(r, pluginID, triggerName, triggerPath, principal)
+	if err != nil {
+		http.Error(rec, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	httpResp, err := h.dispatchHTTPEvent(r.Context(), event)
+	if err != nil {
+		var pluginErr pluginHTTPError
+		if errors.As(err, &pluginErr) {
+			slog.Error("HTTP trigger plugin error", "plugin", pluginID, "trigger", triggerName, "error", pluginErr.Error())
+			http.Error(rec, pluginErr.Error(), http.StatusInternalServerError)
+			return
+		}
+		slog.Error("HTTP trigger dispatch failed", "plugin", pluginID, "trigger", triggerName, "error", err)
+		http.Error(rec, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	writeHTTPResponse(rec, httpResp)
+}
+
+func (h *HTTPTriggerHandler) resolveRoute(path string) (pluginID, triggerPath string, err error) {
+	remainder := strings.TrimPrefix(path, h.basePath)
+	remainder = strings.TrimPrefix(remainder, "/")
+	if remainder == "" {
+		return "", "", fmt.Errorf("missing plugin ID in URL")
+	}
+
+	parts := strings.SplitN(remainder, "/", 2)
+	pluginID = parts[0]
+	if len(parts) > 1 {
+		triggerPath = parts[1]
+	}
+	return pluginID, triggerPath, nil
+}
+
+func (h *HTTPTriggerHandler) buildHTTPEvent(r *http.Request, pluginID, triggerName, triggerPath string, principal resolvedHTTPPrincipal) (model.Event, error) {
+	triggerData, err := buildHTTPRequestData(r, triggerPath, principal)
+	if err != nil {
+		return model.Event{}, err
+	}
+
+	dataJSON, _ := json.Marshal(triggerData)
+	return model.Event{
+		ID:          generateID(),
+		TriggerType: model.TriggerHTTP,
+		TriggerName: triggerName,
+		PluginID:    pluginID,
+		Timestamp:   time.Now().UnixMilli(),
+		Data:        dataJSON,
+	}, nil
+}
+
+func buildHTTPRequestData(r *http.Request, triggerPath string, principal resolvedHTTPPrincipal) (model.HTTPTriggerData, error) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, 10<<20))
 	if err != nil {
-		http.Error(rec, "failed to read request body", http.StatusBadRequest)
-		return
+		return model.HTTPTriggerData{}, fmt.Errorf("failed to read request body")
 	}
 
 	query := make(map[string]string, len(r.URL.Query()))
@@ -170,7 +226,7 @@ func (h *HTTPTriggerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	triggerData := model.HTTPTriggerData{
+	return model.HTTPTriggerData{
 		Method:     r.Method,
 		Path:       "/" + triggerPath,
 		Query:      query,
@@ -178,52 +234,44 @@ func (h *HTTPTriggerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Body:       string(body),
 		RemoteAddr: r.RemoteAddr,
 		Auth:       principal.authData,
-	}
-	dataJSON, _ := json.Marshal(triggerData)
+	}, nil
+}
 
-	event := model.Event{
-		ID:          generateID(),
-		TriggerType: model.TriggerHTTP,
-		TriggerName: triggerName,
-		PluginID:    pluginID,
-		Timestamp:   time.Now().UnixMilli(),
-		Data:        dataJSON,
-	}
-
-	resp, err := h.router.RouteEvent(r.Context(), event)
+func (h *HTTPTriggerHandler) dispatchHTTPEvent(ctx context.Context, event model.Event) (model.HTTPResponseData, error) {
+	resp, err := h.router.RouteEvent(ctx, event)
 	if err != nil {
-		slog.Error("HTTP trigger dispatch failed", "plugin", pluginID, "trigger", triggerName, "error", err)
-		http.Error(rec, "internal error", http.StatusInternalServerError)
-		return
+		return model.HTTPResponseData{}, err
 	}
-
+	if resp == nil {
+		return model.HTTPResponseData{}, nil
+	}
 	if resp.Error != "" {
-		slog.Error("HTTP trigger plugin error", "plugin", pluginID, "trigger", triggerName, "error", resp.Error)
-		http.Error(rec, resp.Error, http.StatusInternalServerError)
-		return
+		return model.HTTPResponseData{}, pluginHTTPError{message: resp.Error}
+	}
+	if len(resp.Data) == 0 {
+		return model.HTTPResponseData{}, nil
 	}
 
 	var httpResp model.HTTPResponseData
-	if len(resp.Data) > 0 {
-		if err := json.Unmarshal(resp.Data, &httpResp); err != nil {
-			slog.Error("HTTP trigger: failed to parse plugin HTTP response", "plugin", pluginID, "error", err)
-			http.Error(rec, "internal error", http.StatusInternalServerError)
-			return
-		}
+	if err := json.Unmarshal(resp.Data, &httpResp); err != nil {
+		return model.HTTPResponseData{}, fmt.Errorf("parse plugin HTTP response: %w", err)
 	}
+	return httpResp, nil
+}
 
+func writeHTTPResponse(w http.ResponseWriter, httpResp model.HTTPResponseData) {
 	for k, v := range httpResp.Headers {
-		rec.Header().Set(k, v)
+		w.Header().Set(k, v)
 	}
-	if rec.Header().Get("Content-Type") == "" {
-		rec.Header().Set("Content-Type", "application/json")
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "application/json")
 	}
-	statusCode = httpResp.StatusCode
+	statusCode := httpResp.StatusCode
 	if statusCode == 0 {
 		statusCode = http.StatusOK
 	}
-	rec.WriteHeader(statusCode)
-	rec.Write([]byte(httpResp.Body))
+	w.WriteHeader(statusCode)
+	_, _ = w.Write([]byte(httpResp.Body))
 }
 
 func (h *HTTPTriggerHandler) resolveSetting(ctx context.Context, pluginID, triggerName string) (HTTPTriggerSetting, error) {

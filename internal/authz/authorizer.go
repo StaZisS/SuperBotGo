@@ -288,84 +288,87 @@ func (a *Authorizer) buildSubjectContext(ctx context.Context, userID model.Globa
 		a.incAuthzCache("subject", "miss")
 	}
 
-	sc := &SubjectContext{
-		UserID: userID,
-		Attrs:  make(map[string]any),
-	}
-
-	var (
-		extID   string
-		roles   []string
-		ch, loc string
-	)
-
-	// Phase 1: independent queries in parallel.
-	g1, ctx1 := errgroup.WithContext(ctx)
-
-	g1.Go(func() error {
-		var err error
-		extID, err = a.store.GetExternalID(ctx1, userID)
-		if err != nil {
-			a.logger.Warn("failed to get external_id", slog.Any("error", err))
-		}
-		return nil
-	})
-
-	g1.Go(func() error {
-		var err error
-		roles, err = a.store.GetAllRoleNames(ctx1, userID)
-		if err != nil {
-			a.logger.Warn("failed to get roles", slog.Any("error", err))
-		}
-		return nil
-	})
-
-	g1.Go(func() error {
-		var err error
-		ch, loc, err = a.store.GetUserChannelAndLocale(ctx1, userID)
-		if err != nil {
-			a.logger.Warn("failed to get channel/locale", slog.Any("error", err))
-		}
-		return nil
-	})
-
-	_ = g1.Wait()
-
-	sc.ExternalID = extID
-	sc.Roles = roles
-	sc.PrimaryChannel = ch
-	sc.Locale = loc
-
-	// Phase 2: queries that require ExternalID.
-	if sc.ExternalID != "" {
-		g2, ctx2 := errgroup.WithContext(ctx)
-
-		g2.Go(func() error {
-			groups, err := a.lookupMemberGroups(ctx2, userID)
-			if err != nil {
-				a.logger.Warn("failed to get member groups from SpiceDB", slog.Any("error", err))
-			}
-			sc.Groups = groups
-			return nil
-		})
-
-		g2.Go(func() error {
-			for _, p := range a.providers {
-				if err := p.LoadAttributes(ctx2, sc); err != nil {
-					a.logger.Warn("attribute provider failed", slog.Any("error", err))
-				}
-			}
-			return nil
-		})
-
-		_ = g2.Wait()
-	}
+	sc := a.newSubjectContext(userID)
+	a.loadSubjectBase(ctx, sc)
+	a.loadSubjectEnrichment(ctx, sc)
 
 	if a.subjectCache != nil {
 		a.subjectCache.Set(userID, sc)
 	}
 
 	return sc, nil
+}
+
+func (a *Authorizer) newSubjectContext(userID model.GlobalUserID) *SubjectContext {
+	return &SubjectContext{
+		UserID: userID,
+		Attrs:  make(map[string]any),
+	}
+}
+
+func (a *Authorizer) loadSubjectBase(ctx context.Context, sc *SubjectContext) {
+	g, groupCtx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		extID, err := a.store.GetExternalID(groupCtx, sc.UserID)
+		if err != nil {
+			a.logger.Warn("failed to get external_id", slog.Any("error", err))
+			return nil
+		}
+		sc.ExternalID = extID
+		return nil
+	})
+
+	g.Go(func() error {
+		roles, err := a.store.GetAllRoleNames(groupCtx, sc.UserID)
+		if err != nil {
+			a.logger.Warn("failed to get roles", slog.Any("error", err))
+			return nil
+		}
+		sc.Roles = roles
+		return nil
+	})
+
+	g.Go(func() error {
+		channel, locale, err := a.store.GetUserChannelAndLocale(groupCtx, sc.UserID)
+		if err != nil {
+			a.logger.Warn("failed to get channel/locale", slog.Any("error", err))
+			return nil
+		}
+		sc.PrimaryChannel = channel
+		sc.Locale = locale
+		return nil
+	})
+
+	_ = g.Wait()
+}
+
+func (a *Authorizer) loadSubjectEnrichment(ctx context.Context, sc *SubjectContext) {
+	if sc.ExternalID == "" {
+		return
+	}
+
+	g, groupCtx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		groups, err := a.lookupMemberGroups(groupCtx, sc.UserID)
+		if err != nil {
+			a.logger.Warn("failed to get member groups from SpiceDB", slog.Any("error", err))
+			return nil
+		}
+		sc.Groups = groups
+		return nil
+	})
+
+	g.Go(func() error {
+		for _, p := range a.providers {
+			if err := p.LoadAttributes(groupCtx, sc); err != nil {
+				a.logger.Warn("attribute provider failed", slog.Any("error", err))
+			}
+		}
+		return nil
+	})
+
+	_ = g.Wait()
 }
 
 // lookupMemberGroups finds all study_groups where the user is a member via SpiceDB.

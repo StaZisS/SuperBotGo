@@ -34,7 +34,7 @@ type LifecycleResult struct {
 type PluginLifecycleService struct {
 	store       PluginStore
 	blobs       BlobStore
-	loader      *adapter.Loader
+	loader      lifecycleLoader
 	manager     *plugin.Manager
 	hostAPI     *hostapi.HostAPI
 	stateMgr    StateManagerRegistrar
@@ -43,6 +43,53 @@ type PluginLifecycleService struct {
 	bus         *pubsub.Bus
 	invalidator PolicyInvalidator
 	opts        PluginLifecycleOptions
+}
+
+type lifecyclePlugin interface {
+	plugin.Plugin
+	Meta() wasmrt.PluginMeta
+}
+
+type lifecycleLoader interface {
+	GetPlugin(pluginID string) (lifecyclePlugin, bool)
+	LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, config json.RawMessage) (lifecyclePlugin, error)
+	ReloadPluginFromBytes(ctx context.Context, pluginID string, wasmBytes []byte, newConfig json.RawMessage) error
+	ProbeMetadataFromBytes(ctx context.Context, wasmBytes []byte) (wasmrt.PluginMeta, error)
+	UnloadPlugin(ctx context.Context, pluginID string) error
+	ReconfigurePlugin(ctx context.Context, pluginID string, config json.RawMessage) error
+	DropPluginData(ctx context.Context, pluginID string) error
+}
+
+type adapterLifecycleLoader struct {
+	loader *adapter.Loader
+}
+
+func (l adapterLifecycleLoader) GetPlugin(pluginID string) (lifecyclePlugin, bool) {
+	return l.loader.GetPlugin(pluginID)
+}
+
+func (l adapterLifecycleLoader) LoadPluginFromBytes(ctx context.Context, wasmBytes []byte, config json.RawMessage) (lifecyclePlugin, error) {
+	return l.loader.LoadPluginFromBytes(ctx, wasmBytes, config)
+}
+
+func (l adapterLifecycleLoader) ReloadPluginFromBytes(ctx context.Context, pluginID string, wasmBytes []byte, newConfig json.RawMessage) error {
+	return l.loader.ReloadPluginFromBytes(ctx, pluginID, wasmBytes, newConfig)
+}
+
+func (l adapterLifecycleLoader) ProbeMetadataFromBytes(ctx context.Context, wasmBytes []byte) (wasmrt.PluginMeta, error) {
+	return l.loader.ProbeMetadataFromBytes(ctx, wasmBytes)
+}
+
+func (l adapterLifecycleLoader) UnloadPlugin(ctx context.Context, pluginID string) error {
+	return l.loader.UnloadPlugin(ctx, pluginID)
+}
+
+func (l adapterLifecycleLoader) ReconfigurePlugin(ctx context.Context, pluginID string, config json.RawMessage) error {
+	return l.loader.ReconfigurePlugin(ctx, pluginID, config)
+}
+
+func (l adapterLifecycleLoader) DropPluginData(ctx context.Context, pluginID string) error {
+	return l.loader.DropPluginData(ctx, pluginID)
 }
 
 func NewPluginLifecycleService(
@@ -61,7 +108,7 @@ func NewPluginLifecycleService(
 	svc := &PluginLifecycleService{
 		store:    store,
 		blobs:    blobs,
-		loader:   loader,
+		loader:   adapterLifecycleLoader{loader: loader},
 		manager:  manager,
 		hostAPI:  hostAPI,
 		stateMgr: stateMgr,
@@ -122,13 +169,9 @@ func (s *PluginLifecycleService) Install(ctx context.Context, pluginID string, w
 		return LifecycleResult{}, err
 	}
 
-	wp, err := s.loader.LoadPluginFromBytes(ctx, wasmBytes, config)
+	wp, err := s.loadPluginBytes(ctx, pluginID, wasmBytes, config)
 	if err != nil {
-		return LifecycleResult{}, fmt.Errorf("load plugin: %w", err)
-	}
-	if wp.ID() != pluginID {
-		_ = s.loader.UnloadPlugin(ctx, wp.ID())
-		return LifecycleResult{}, fmt.Errorf("plugin ID mismatch: expected %q, got %q", pluginID, wp.ID())
+		return LifecycleResult{}, err
 	}
 
 	record := PluginRecord{
@@ -181,13 +224,9 @@ func (s *PluginLifecycleService) Enable(ctx context.Context, pluginID string) (L
 		return LifecycleResult{}, err
 	}
 
-	wp, err := s.loader.LoadPluginFromBytes(ctx, wasmBytes, record.ConfigJSON)
+	wp, err := s.loadPluginBytes(ctx, pluginID, wasmBytes, record.ConfigJSON)
 	if err != nil {
-		return LifecycleResult{}, fmt.Errorf("load plugin: %w", err)
-	}
-	if wp.ID() != pluginID {
-		_ = s.loader.UnloadPlugin(ctx, wp.ID())
-		return LifecycleResult{}, fmt.Errorf("plugin ID mismatch: expected %q, got %q", pluginID, wp.ID())
+		return LifecycleResult{}, err
 	}
 
 	record.Enabled = true
@@ -314,32 +353,10 @@ func (s *PluginLifecycleService) Update(ctx context.Context, pluginID string, wa
 	oldVersion := s.currentVersion(ctx, pluginID)
 
 	var meta wasmrt.PluginMeta
-	if record.Enabled {
-		if err := s.loader.ReloadPluginFromBytes(ctx, pluginID, wasmBytes, record.ConfigJSON); err != nil {
-			_ = s.blobs.Delete(ctx, newKey)
-			return LifecycleResult{}, fmt.Errorf("reload plugin: %w", err)
-		}
-		wp, ok := s.loader.GetPlugin(pluginID)
-		if !ok {
-			_ = s.blobs.Delete(ctx, newKey)
-			return LifecycleResult{}, fmt.Errorf("plugin %q missing after reload", pluginID)
-		}
-		meta = wp.Meta()
-		s.syncPluginAfterReload(ctx, pluginID, oldTriggers, wp)
-	} else {
-		meta, err = s.loader.ProbeMetadataFromBytes(ctx, wasmBytes)
-		if err != nil {
-			_ = s.blobs.Delete(ctx, newKey)
-			return LifecycleResult{}, fmt.Errorf("probe plugin metadata: %w", err)
-		}
-		if meta.ID != pluginID {
-			_ = s.blobs.Delete(ctx, newKey)
-			return LifecycleResult{}, fmt.Errorf("plugin ID mismatch: expected %q, got %q", pluginID, meta.ID)
-		}
-		if err := adapter.ValidateConfigAgainstSchema(meta.ConfigSchema, record.ConfigJSON); err != nil {
-			_ = s.blobs.Delete(ctx, newKey)
-			return LifecycleResult{}, err
-		}
+	meta, err = s.reloadOrProbePlugin(ctx, pluginID, record.Enabled, wasmBytes, record.ConfigJSON, oldTriggers)
+	if err != nil {
+		_ = s.blobs.Delete(ctx, newKey)
+		return LifecycleResult{}, err
 	}
 
 	record.WasmKey = newKey
@@ -399,27 +416,9 @@ func (s *PluginLifecycleService) Rollback(ctx context.Context, pluginID string, 
 	oldVersion := s.currentVersion(ctx, pluginID)
 
 	var meta wasmrt.PluginMeta
-	if record.Enabled {
-		if err := s.loader.ReloadPluginFromBytes(ctx, pluginID, wasmBytes, ver.ConfigJSON); err != nil {
-			return LifecycleResult{}, fmt.Errorf("reload plugin: %w", err)
-		}
-		wp, ok := s.loader.GetPlugin(pluginID)
-		if !ok {
-			return LifecycleResult{}, fmt.Errorf("plugin %q missing after rollback", pluginID)
-		}
-		meta = wp.Meta()
-		s.syncPluginAfterReload(ctx, pluginID, oldTriggers, wp)
-	} else {
-		meta, err = s.loader.ProbeMetadataFromBytes(ctx, wasmBytes)
-		if err != nil {
-			return LifecycleResult{}, fmt.Errorf("probe plugin metadata: %w", err)
-		}
-		if meta.ID != pluginID {
-			return LifecycleResult{}, fmt.Errorf("plugin ID mismatch: expected %q, got %q", pluginID, meta.ID)
-		}
-		if err := adapter.ValidateConfigAgainstSchema(meta.ConfigSchema, ver.ConfigJSON); err != nil {
-			return LifecycleResult{}, err
-		}
+	meta, err = s.reloadOrProbePlugin(ctx, pluginID, record.Enabled, wasmBytes, ver.ConfigJSON, oldTriggers)
+	if err != nil {
+		return LifecycleResult{}, err
 	}
 
 	record.WasmKey = ver.WasmKey
@@ -554,6 +553,60 @@ func (s *PluginLifecycleService) applyConfigToLoadedPlugin(ctx context.Context, 
 	}
 	s.syncPluginAfterReload(ctx, pluginID, oldTriggers, next)
 	return nil
+}
+
+func (s *PluginLifecycleService) loadPluginBytes(ctx context.Context, pluginID string, wasmBytes []byte, config json.RawMessage) (lifecyclePlugin, error) {
+	wp, err := s.loader.LoadPluginFromBytes(ctx, wasmBytes, config)
+	if err != nil {
+		return nil, fmt.Errorf("load plugin: %w", err)
+	}
+	if err := s.ensurePluginID(ctx, pluginID, wp.ID()); err != nil {
+		return nil, err
+	}
+	return wp, nil
+}
+
+func (s *PluginLifecycleService) reloadOrProbePlugin(
+	ctx context.Context,
+	pluginID string,
+	enabled bool,
+	wasmBytes []byte,
+	config json.RawMessage,
+	oldTriggers map[string]struct{},
+) (wasmrt.PluginMeta, error) {
+	if enabled {
+		if err := s.loader.ReloadPluginFromBytes(ctx, pluginID, wasmBytes, config); err != nil {
+			return wasmrt.PluginMeta{}, fmt.Errorf("reload plugin: %w", err)
+		}
+		wp, ok := s.loader.GetPlugin(pluginID)
+		if !ok {
+			return wasmrt.PluginMeta{}, fmt.Errorf("plugin %q missing after reload", pluginID)
+		}
+		s.syncPluginAfterReload(ctx, pluginID, oldTriggers, wp)
+		return wp.Meta(), nil
+	}
+
+	meta, err := s.loader.ProbeMetadataFromBytes(ctx, wasmBytes)
+	if err != nil {
+		return wasmrt.PluginMeta{}, fmt.Errorf("probe plugin metadata: %w", err)
+	}
+	if err := s.ensurePluginID(ctx, pluginID, meta.ID); err != nil {
+		return wasmrt.PluginMeta{}, err
+	}
+	if err := adapter.ValidateConfigAgainstSchema(meta.ConfigSchema, config); err != nil {
+		return wasmrt.PluginMeta{}, err
+	}
+	return meta, nil
+}
+
+func (s *PluginLifecycleService) ensurePluginID(ctx context.Context, wantID, gotID string) error {
+	if gotID == wantID {
+		return nil
+	}
+	if gotID != "" {
+		_ = s.loader.UnloadPlugin(ctx, gotID)
+	}
+	return fmt.Errorf("plugin ID mismatch: expected %q, got %q", wantID, gotID)
 }
 
 func (s *PluginLifecycleService) removeLocal(ctx context.Context, pluginID string) {

@@ -593,6 +593,30 @@ func registerBotFeatures(bot any, mux *http.ServeMux, commandNames []string) err
 	return nil
 }
 
+func registerPreparedBot(
+	starters []botStarter,
+	registerAdapter func(channel.ChannelAdapter),
+	mux *http.ServeMux,
+	logger *slog.Logger,
+	name string,
+	bot any,
+	adapter channel.ChannelAdapter,
+	start func(context.Context) error,
+	commandNames []string,
+) []botStarter {
+	if err := registerBotFeatures(bot, mux, commandNames); err != nil {
+		logger.Error("failed to register "+name+" features", slog.Any("error", err))
+		return starters
+	}
+
+	registerAdapter(adapter)
+	return append(starters, func(ctx context.Context) {
+		if err := start(ctx); err != nil {
+			logger.Error(name+" bot stopped with error", slog.Any("error", err))
+		}
+	})
+}
+
 type botStarter func(context.Context)
 
 func prepareConfiguredBots(
@@ -623,16 +647,17 @@ func prepareConfiguredBots(
 		if err != nil {
 			logger.Error("failed to create Telegram bot", slog.Any("error", err))
 		} else {
-			if err := registerBotFeatures(tgBot, mux, commandNames); err != nil {
-				logger.Error("failed to register Telegram features", slog.Any("error", err))
-			} else {
-				manager.RegisterAdapter(tgBot.Adapter())
-				starters = append(starters, func(ctx context.Context) {
-					if err := tgBot.Start(ctx); err != nil {
-						logger.Error("Telegram bot stopped with error", slog.Any("error", err))
-					}
-				})
-			}
+			starters = registerPreparedBot(
+				starters,
+				manager.RegisterAdapter,
+				mux,
+				logger,
+				"Telegram",
+				tgBot,
+				tgBot.Adapter(),
+				tgBot.Start,
+				commandNames,
+			)
 		}
 	} else {
 		logger.Warn("Telegram token not configured, Telegram bot will not start")
@@ -653,12 +678,17 @@ func prepareConfiguredBots(
 		if err != nil {
 			logger.Error("failed to create Discord bot", slog.Any("error", err))
 		} else {
-			manager.RegisterAdapter(dcBot.Adapter())
-			starters = append(starters, func(ctx context.Context) {
-				if err := dcBot.Start(ctx); err != nil {
-					logger.Error("Discord bot stopped with error", slog.Any("error", err))
-				}
-			})
+			starters = registerPreparedBot(
+				starters,
+				manager.RegisterAdapter,
+				mux,
+				logger,
+				"Discord",
+				dcBot,
+				dcBot.Adapter(),
+				dcBot.Start,
+				commandNames,
+			)
 		}
 	}
 
@@ -676,16 +706,17 @@ func prepareConfiguredBots(
 		if err != nil {
 			logger.Error("failed to create VK bot", slog.Any("error", err))
 		} else {
-			if err := registerBotFeatures(vkBot, mux, commandNames); err != nil {
-				logger.Error("failed to register VK features", slog.Any("error", err))
-			} else {
-				manager.RegisterAdapter(vkBot.Adapter())
-				starters = append(starters, func(ctx context.Context) {
-					if err := vkBot.Start(ctx); err != nil {
-						logger.Error("VK bot stopped with error", slog.Any("error", err))
-					}
-				})
-			}
+			starters = registerPreparedBot(
+				starters,
+				manager.RegisterAdapter,
+				mux,
+				logger,
+				"VK",
+				vkBot,
+				vkBot.Adapter(),
+				vkBot.Start,
+				commandNames,
+			)
 		}
 	}
 
@@ -708,18 +739,17 @@ func prepareConfiguredBots(
 		return starters
 	}
 
-	if err := registerBotFeatures(mmBot, mux, commandNames); err != nil {
-		logger.Error("failed to register Mattermost features", slog.Any("error", err))
-		return starters
-	}
-	manager.RegisterAdapter(mmBot.Adapter())
-	starters = append(starters, func(ctx context.Context) {
-		if err := mmBot.Start(ctx); err != nil {
-			logger.Error("Mattermost bot stopped with error", slog.Any("error", err))
-		}
-	})
-
-	return starters
+	return registerPreparedBot(
+		starters,
+		manager.RegisterAdapter,
+		mux,
+		logger,
+		"Mattermost",
+		mmBot,
+		mmBot.Adapter(),
+		mmBot.Start,
+		commandNames,
+	)
 }
 
 func startPreparedBots(ctx context.Context, starters []botStarter) {

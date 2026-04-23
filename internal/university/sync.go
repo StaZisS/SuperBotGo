@@ -3,6 +3,8 @@ package university
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -236,36 +238,53 @@ type HierarchyLevel struct {
 	ParentTable string
 	TupleType   string
 	ParentTuple string
+	ExtraCols   []string
 }
 
 var (
-	LevelDepartment = HierarchyLevel{"departments", "faculty_id", "faculties", "department", "faculty"}
-	LevelProgram    = HierarchyLevel{"programs", "department_id", "departments", "program", "department"}
-	LevelStream     = HierarchyLevel{"streams", "program_id", "programs", "stream", "program"}
-	LevelGroup      = HierarchyLevel{"study_groups", "stream_id", "streams", "study_group", "stream"}
-	LevelSubgroup   = HierarchyLevel{"subgroups", "study_group_id", "study_groups", "subgroup", "study_group"}
+	LevelDepartment = HierarchyLevel{
+		Table:       "departments",
+		ParentFK:    "faculty_id",
+		ParentTable: "faculties",
+		TupleType:   "department",
+		ParentTuple: "faculty",
+	}
+	LevelProgram = HierarchyLevel{
+		Table:       "programs",
+		ParentFK:    "department_id",
+		ParentTable: "departments",
+		TupleType:   "program",
+		ParentTuple: "department",
+	}
+	LevelStream = HierarchyLevel{
+		Table:       "streams",
+		ParentFK:    "program_id",
+		ParentTable: "programs",
+		TupleType:   "stream",
+		ParentTuple: "program",
+	}
+	LevelGroup = HierarchyLevel{
+		Table:       "study_groups",
+		ParentFK:    "stream_id",
+		ParentTable: "streams",
+		TupleType:   "study_group",
+		ParentTuple: "stream",
+	}
+	LevelSubgroup = HierarchyLevel{
+		Table:       "subgroups",
+		ParentFK:    "study_group_id",
+		ParentTable: "study_groups",
+		TupleType:   "subgroup",
+		ParentTuple: "study_group",
+	}
 )
 
 func (s *SyncService) SyncHierarchyNode(ctx context.Context, level HierarchyLevel, in HierarchyNodeInput) error {
 	return s.inTx(ctx, func(tx pgx.Tx) error {
-		cols := level.ParentFK + ", code, name"
-		vals := fmt.Sprintf("(SELECT id FROM %s WHERE code = $1), $2, $3", level.ParentTable)
-		updates := fmt.Sprintf("%s = (SELECT id FROM %s WHERE code = $1), name = $3", level.ParentFK, level.ParentTable)
-		args := []any{in.ParentCode, in.Code, in.Name}
-
-		i := 4
-		for col, val := range in.Extra {
-			cols += fmt.Sprintf(", %s", col)
-			vals += fmt.Sprintf(", $%d", i)
-			updates += fmt.Sprintf(", %s = $%d", col, i)
-			args = append(args, val)
-			i++
+		query, args, err := buildHierarchyNodeUpsert(level, in)
+		if err != nil {
+			return err
 		}
-
-		query := fmt.Sprintf(`
-			INSERT INTO %s (%s) VALUES (%s)
-			ON CONFLICT (code) DO UPDATE SET %s, updated_at = now()
-		`, level.Table, cols, vals, updates)
 
 		if _, err := tx.Exec(ctx, query, args...); err != nil {
 			return fmt.Errorf("upsert %s %s: %w", level.Table, in.Code, err)
@@ -275,6 +294,64 @@ func (s *SyncService) SyncHierarchyNode(ctx context.Context, level HierarchyLeve
 			{ObjectType: level.TupleType, ObjectID: in.Code, Relation: "parent", SubjectType: level.ParentTuple, SubjectID: in.ParentCode},
 		})
 	})
+}
+
+func buildHierarchyNodeUpsert(level HierarchyLevel, in HierarchyNodeInput) (string, []any, error) {
+	cols := []string{level.ParentFK, "code", "name"}
+	vals := []string{
+		fmt.Sprintf("(SELECT id FROM %s WHERE code = $1)", level.ParentTable),
+		"$2",
+		"$3",
+	}
+	updates := []string{
+		fmt.Sprintf("%s = (SELECT id FROM %s WHERE code = $1)", level.ParentFK, level.ParentTable),
+		"name = $3",
+	}
+	args := []any{in.ParentCode, in.Code, in.Name}
+
+	extraKeys, err := level.sortedExtraKeys(in.Extra)
+	if err != nil {
+		return "", nil, err
+	}
+	for _, col := range extraKeys {
+		args = append(args, in.Extra[col])
+		placeholder := fmt.Sprintf("$%d", len(args))
+		cols = append(cols, col)
+		vals = append(vals, placeholder)
+		updates = append(updates, fmt.Sprintf("%s = %s", col, placeholder))
+	}
+
+	query := fmt.Sprintf(`
+		INSERT INTO %s (%s) VALUES (%s)
+		ON CONFLICT (code) DO UPDATE SET %s, updated_at = now()
+	`,
+		level.Table,
+		strings.Join(cols, ", "),
+		strings.Join(vals, ", "),
+		strings.Join(updates, ", "),
+	)
+	return query, args, nil
+}
+
+func (l HierarchyLevel) sortedExtraKeys(extra map[string]any) ([]string, error) {
+	if len(extra) == 0 {
+		return nil, nil
+	}
+
+	allowed := make(map[string]struct{}, len(l.ExtraCols))
+	for _, col := range l.ExtraCols {
+		allowed[col] = struct{}{}
+	}
+
+	keys := make([]string, 0, len(extra))
+	for col := range extra {
+		if _, ok := allowed[col]; !ok {
+			return nil, fmt.Errorf("hierarchy level %s does not allow extra column %q", l.Table, col)
+		}
+		keys = append(keys, col)
+	}
+	sort.Strings(keys)
+	return keys, nil
 }
 
 type StudentPositionInput struct {

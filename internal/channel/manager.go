@@ -223,16 +223,16 @@ func (m *ChannelManager) handleCommand(
 	}
 
 	if result.IsComplete {
-		return m.dispatchCompletedCommand(ctx, completedCommand{
-			userID:      userID,
-			channelType: channelType,
-			chatID:      chatID,
-			pluginID:    pluginID,
-			commandName: commandName,
-			params:      result.Params,
-			locale:      loc,
-			files:       extractFiles(input),
-		})
+		return m.dispatchCompletedCommand(ctx, newCompletedCommand(
+			userID,
+			channelType,
+			chatID,
+			pluginID,
+			commandName,
+			result.Params,
+			loc,
+			input,
+		))
 	}
 
 	return m.adapters.SendToChat(ctx, channelType, chatID, result.Message)
@@ -259,16 +259,16 @@ func (m *ChannelManager) handleInput(
 	}
 
 	if result.IsComplete {
-		return m.dispatchCompletedCommand(ctx, completedCommand{
-			userID:      userID,
-			channelType: channelType,
-			chatID:      chatID,
-			pluginID:    m.resultPluginID(result),
-			commandName: result.CommandName,
-			params:      result.Params,
-			locale:      loc,
-			files:       extractFiles(input),
-		})
+		return m.dispatchCompletedCommand(ctx, newCompletedCommand(
+			userID,
+			channelType,
+			chatID,
+			m.resultPluginID(result),
+			result.CommandName,
+			result.Params,
+			loc,
+			input,
+		))
 	}
 
 	return nil
@@ -283,6 +283,28 @@ type completedCommand struct {
 	params      model.OptionMap
 	locale      string
 	files       []model.FileRef
+}
+
+func newCompletedCommand(
+	userID model.GlobalUserID,
+	channelType model.ChannelType,
+	chatID string,
+	pluginID string,
+	commandName string,
+	params model.OptionMap,
+	locale string,
+	input model.UserInput,
+) completedCommand {
+	return completedCommand{
+		userID:      userID,
+		channelType: channelType,
+		chatID:      chatID,
+		pluginID:    pluginID,
+		commandName: commandName,
+		params:      params,
+		locale:      locale,
+		files:       extractFiles(input),
+	}
 }
 
 type completedCommandError struct {
