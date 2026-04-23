@@ -5,7 +5,6 @@ import { Toaster } from '@/components/ui/sonner'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import ChangePasswordDialog from '@/components/ChangePasswordDialog'
-import UserTokensDialog from '@/components/UserTokensDialog'
 
 const navItems = [
     { to: '/admin/plugins', label: 'Плагины', icon: Package, exact: false },
@@ -58,7 +57,6 @@ export default function Layout() {
                 </Button>
               )
             })}
-            <UserTokensDialog />
             <ChangePasswordDialog />
             <Button
               variant="ghost"
