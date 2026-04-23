@@ -126,7 +126,7 @@ func TestHTTPTriggerResolvePrincipal_UserBearerToken(t *testing.T) {
 	}
 }
 
-func TestHTTPTriggerResolvePrincipal_DenyUserWhenDisabled(t *testing.T) {
+func TestHTTPTriggerResolvePrincipal_DenyUserWhenPublicAccessNotAllowed(t *testing.T) {
 	h := NewHTTPTriggerHandler(nil, nil)
 	h.SetUserAuthenticator(func(_ *http.Request) (model.GlobalUserID, bool) {
 		return 99, true
@@ -136,7 +136,7 @@ func TestHTTPTriggerResolvePrincipal_DenyUserWhenDisabled(t *testing.T) {
 	_, status, err := h.resolvePrincipal(req, "demo", "incoming", HTTPTriggerSetting{
 		Enabled:          true,
 		AllowUserKeys:    false,
-		AllowServiceKeys: false,
+		AllowServiceKeys: true,
 	})
 	if err == nil {
 		t.Fatal("expected resolvePrincipal() to deny disabled user access")
@@ -160,6 +160,29 @@ func TestHTTPTriggerResolvePrincipal_RequiresAuthentication(t *testing.T) {
 	}
 	if status != 401 {
 		t.Fatalf("resolvePrincipal() status = %d, want 401", status)
+	}
+}
+
+func TestHTTPTriggerResolvePrincipal_AllowsAnonymousWhenAllAuthModesDisabled(t *testing.T) {
+	h := NewHTTPTriggerHandler(nil, nil)
+	h.SetUserAuthenticator(func(_ *http.Request) (model.GlobalUserID, bool) {
+		return 42, true
+	})
+
+	req := httptest.NewRequest("GET", "/api/triggers/http/demo/incoming", nil)
+	principal, status, err := h.resolvePrincipal(req, "demo", "incoming", HTTPTriggerSetting{
+		Enabled:          true,
+		AllowUserKeys:    false,
+		AllowServiceKeys: false,
+	})
+	if err != nil {
+		t.Fatalf("resolvePrincipal() error = %v", err)
+	}
+	if status != 0 {
+		t.Fatalf("resolvePrincipal() status = %d, want 0", status)
+	}
+	if principal.authData != nil {
+		t.Fatalf("expected anonymous principal, got %#v", principal.authData)
 	}
 }
 

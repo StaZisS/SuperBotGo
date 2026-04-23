@@ -183,6 +183,11 @@ function CommandCard({
   const [savingPolicy, setSavingPolicy] = useState(false)
   const [builderKey, setBuilderKey] = useState(0)
   const [clearOpen, setClearOpen] = useState(false)
+  const isPublicHTTPTrigger =
+    row.type === 'http' &&
+    !row.allowUserKeys &&
+    !row.allowServiceKeys &&
+    row.policyExpression.trim() === ''
 
   useEffect(() => { setPolicyExpr(row.policyExpression) }, [row.policyExpression])
 
@@ -260,6 +265,9 @@ function CommandCard({
             </button>
           </CollapsibleTrigger>
           <div className="flex items-center gap-3">
+            {isPublicHTTPTrigger && (
+              <Badge variant="secondary">public</Badge>
+            )}
             {row.policyExpression && (
               <Badge variant="secondary">policy</Badge>
             )}
@@ -328,6 +336,10 @@ function CommandCard({
                       />
                     </div>
                   </div>
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    Если оба переключателя выключены и policy пустая, trigger становится публичным.
+                    В плагин такой запрос приходит с пустым `ctx.HTTP.Auth`.
+                  </p>
                 </div>
 
                 <Separator className="my-3" />

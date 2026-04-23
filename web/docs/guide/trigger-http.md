@@ -56,6 +56,8 @@ Host проверяет доступ **до вызова плагина**.
 - `allow service key`
 - `policy expression`
 
+Если `allow user session` и `allow service key` выключены одновременно, а `policy expression` пустая, endpoint считается публичным. В этом режиме host пропускает запрос без аутентификации и передаёт в плагин `ctx.HTTP.Auth == nil`.
+
 ### Frontend-сценарий
 
 Для фронтенда рекомендуется использовать browser login через TSU и cookie-сессию host-системы:

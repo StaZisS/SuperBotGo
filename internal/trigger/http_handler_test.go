@@ -137,3 +137,62 @@ func TestHTTPTriggerServeHTTP_InvalidPluginResponse(t *testing.T) {
 		t.Fatalf("body = %q, want internal error", body)
 	}
 }
+
+func TestHTTPTriggerServeHTTP_PublicEndpointUsesAnonymousPrincipal(t *testing.T) {
+	t.Parallel()
+
+	registry := NewRegistry()
+	registry.RegisterTriggers("demo", []wasmrt.TriggerDef{{
+		Type:    "http",
+		Name:    "public",
+		Path:    "public",
+		Methods: []string{http.MethodGet},
+	}})
+
+	manager := plugin.NewManager()
+	manager.Register(&httpTestPlugin{
+		id: "demo",
+		handleEventFn: func(_ context.Context, event model.Event) (*model.EventResponse, error) {
+			data, err := event.HTTP()
+			if err != nil {
+				t.Fatalf("event.HTTP() error = %v", err)
+			}
+			if data.Auth != nil {
+				t.Fatalf("expected anonymous auth data, got %#v", data.Auth)
+			}
+
+			payload, _ := json.Marshal(model.HTTPResponseData{
+				StatusCode: http.StatusOK,
+				Body:       `{"ok":true}`,
+			})
+			return &model.EventResponse{Data: payload}, nil
+		},
+	})
+
+	handler := NewHTTPTriggerHandler(NewRouter(registry, manager), registry)
+	handler.SetSettingLoader(func(_ context.Context, pluginID, triggerName string) (HTTPTriggerSetting, bool, error) {
+		if pluginID != "demo" || triggerName != "public" {
+			t.Fatalf("unexpected setting lookup for %s/%s", pluginID, triggerName)
+		}
+		return HTTPTriggerSetting{
+			Enabled:          true,
+			AllowUserKeys:    false,
+			AllowServiceKeys: false,
+		}, true, nil
+	})
+	handler.SetUserAuthenticator(func(_ *http.Request) (model.GlobalUserID, bool) {
+		return 42, true
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/triggers/http/demo/public", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if got, want := rec.Code, http.StatusOK; got != want {
+		t.Fatalf("status = %d, want %d", got, want)
+	}
+	if got, want := rec.Body.String(), `{"ok":true}`; got != want {
+		t.Fatalf("body = %q, want %q", got, want)
+	}
+}

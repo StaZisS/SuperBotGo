@@ -294,14 +294,34 @@ func (h *HTTPTriggerHandler) resolveSetting(ctx context.Context, pluginID, trigg
 }
 
 func (h *HTTPTriggerHandler) resolvePrincipal(r *http.Request, pluginID, triggerName string, setting HTTPTriggerSetting) (resolvedHTTPPrincipal, int, error) {
+	allowAnonymous := allowsAnonymousHTTPAccess(setting)
+
 	if token, ok := bearerToken(r); ok {
-		return h.resolveBearerPrincipal(r.Context(), token, pluginID, triggerName, setting)
+		principal, statusCode, err := h.resolveBearerPrincipal(r.Context(), token, pluginID, triggerName, setting)
+		if err == nil {
+			return principal, 0, nil
+		}
+		if allowAnonymous && statusCode == http.StatusForbidden {
+			return resolvedHTTPPrincipal{}, 0, nil
+		}
+		return resolvedHTTPPrincipal{}, statusCode, err
 	}
 
 	if h.authenticateUser != nil {
 		if userID, ok := h.authenticateUser(r); ok {
-			return h.authorizeUserPrincipal(r.Context(), pluginID, triggerName, setting, userID)
+			principal, statusCode, err := h.authorizeUserPrincipal(r.Context(), pluginID, triggerName, setting, userID)
+			if err == nil {
+				return principal, 0, nil
+			}
+			if allowAnonymous && statusCode == http.StatusForbidden {
+				return resolvedHTTPPrincipal{}, 0, nil
+			}
+			return resolvedHTTPPrincipal{}, statusCode, err
 		}
+	}
+
+	if allowAnonymous {
+		return resolvedHTTPPrincipal{}, 0, nil
 	}
 
 	return resolvedHTTPPrincipal{}, http.StatusUnauthorized, fmt.Errorf("authentication required")
@@ -421,6 +441,10 @@ func requestReturnTo(r *http.Request) string {
 		return "/"
 	}
 	return r.URL.Path
+}
+
+func allowsAnonymousHTTPAccess(setting HTTPTriggerSetting) bool {
+	return !setting.AllowUserKeys && !setting.AllowServiceKeys && strings.TrimSpace(setting.PolicyExpression) == ""
 }
 
 func generateID() string {
