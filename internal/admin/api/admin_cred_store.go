@@ -172,3 +172,12 @@ func (s *PgAdminCredStore) HasAny(ctx context.Context) (bool, error) {
 	err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM admin_credentials)`).Scan(&exists)
 	return exists, err
 }
+
+// HasUser returns true if the given global user has admin credentials.
+func (s *PgAdminCredStore) HasUser(ctx context.Context, globalUserID int64) (bool, error) {
+	var exists bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS(SELECT 1 FROM admin_credentials WHERE global_user_id = $1)
+	`, globalUserID).Scan(&exists)
+	return exists, err
+}

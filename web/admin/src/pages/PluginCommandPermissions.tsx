@@ -28,6 +28,8 @@ interface CommandRow {
   type: string
   description: string
   enabled: boolean
+  allowUserKeys: boolean
+  allowServiceKeys: boolean
   policyExpression: string
   hasSetting: boolean
 }
@@ -60,6 +62,8 @@ export default function PluginCommandPermissions() {
             type: ('type' in cmd ? cmd.type : 'messenger') as string,
             description: cmd.description ?? '',
             enabled: setting?.enabled ?? true,
+            allowUserKeys: setting?.allow_user_keys ?? true,
+            allowServiceKeys: setting?.allow_service_keys ?? false,
             policyExpression: setting?.policy_expression ?? '',
             hasSetting: !!setting,
           }
@@ -75,6 +79,7 @@ export default function PluginCommandPermissions() {
   useEffect(() => { loadData() }, [loadData])
 
   const enabledCount = rows.filter((r) => r.enabled).length
+  const hasHTTPTriggers = rows.some((r) => r.type === 'http')
 
   if (loading) {
     return (
@@ -113,17 +118,28 @@ export default function PluginCommandPermissions() {
             Назад к {plugin.name || id}
           </Link>
         </Button>
-        <div className="flex items-center gap-3 mt-2">
-          <h1 className="text-2xl font-semibold">Права доступа к триггерам</h1>
-          {rows.length > 0 && (
-            <Badge variant="secondary" className="font-normal">
-              {enabledCount} из {rows.length} включены
-            </Badge>
+        <div className="flex flex-wrap items-start justify-between gap-3 mt-2">
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-semibold">Права доступа к триггерам</h1>
+              {rows.length > 0 && (
+                <Badge variant="secondary" className="font-normal">
+                  {enabledCount} из {rows.length} включены
+                </Badge>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground mt-1">
+              Управление доступом к триггерам <strong>{plugin.name || id}</strong> через политики доступа.
+            </p>
+          </div>
+          {hasHTTPTriggers && (
+            <Button variant="outline" asChild>
+              <Link to="/admin/http/service-keys">
+                Service keys
+              </Link>
+            </Button>
           )}
         </div>
-        <p className="text-sm text-muted-foreground mt-1">
-          Управление доступом к триггерам <strong>{plugin.name || id}</strong> через политики доступа.
-        </p>
       </div>
 
       {rows.length === 0 ? (
@@ -162,6 +178,7 @@ function CommandCard({
 }) {
   const [expanded, setExpanded] = useState(false)
   const [toggling, setToggling] = useState(false)
+  const [savingAccess, setSavingAccess] = useState(false)
   const [policyExpr, setPolicyExpr] = useState(row.policyExpression)
   const [savingPolicy, setSavingPolicy] = useState(false)
   const [builderKey, setBuilderKey] = useState(0)
@@ -178,6 +195,21 @@ function CommandCard({
       toast.error('Не удалось переключить команду')
     } finally {
       setToggling(false)
+    }
+  }
+
+  const updateAccess = async (next: { allowUserKeys: boolean; allowServiceKeys: boolean }) => {
+    setSavingAccess(true)
+    try {
+      await api.setCommandAccess(pluginId, row.name, {
+        allow_user_keys: next.allowUserKeys,
+        allow_service_keys: next.allowServiceKeys,
+      })
+      onUpdate()
+    } catch {
+      toast.error('Не удалось обновить доступ к HTTP-триггеру')
+    } finally {
+      setSavingAccess(false)
     }
   }
 
@@ -231,6 +263,12 @@ function CommandCard({
             {row.policyExpression && (
               <Badge variant="secondary">policy</Badge>
             )}
+            {row.type === 'http' && row.allowUserKeys && (
+              <Badge variant="secondary">user</Badge>
+            )}
+            {row.type === 'http' && row.allowServiceKeys && (
+              <Badge variant="secondary">service</Badge>
+            )}
             <Switch
               checked={row.enabled}
               onCheckedChange={handleToggle}
@@ -247,12 +285,61 @@ function CommandCard({
               !row.enabled && 'opacity-50 pointer-events-none',
             )}
           >
+            {row.type === 'http' && (
+              <>
+                <div className="mb-4">
+                  <h4 className="text-sm font-medium mb-3">Кто может вызывать trigger</h4>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between rounded-lg border p-3">
+                      <div>
+                        <div className="text-sm font-medium">User session</div>
+                        <div className="text-xs text-muted-foreground">
+                          Доступ по пользовательской cookie-сессии host-системы
+                        </div>
+                      </div>
+                      <Switch
+                        checked={row.allowUserKeys}
+                        disabled={savingAccess}
+                        onCheckedChange={(checked) => updateAccess({
+                          allowUserKeys: checked,
+                          allowServiceKeys: row.allowServiceKeys,
+                        })}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg border p-3">
+                      <div>
+                        <div className="text-sm font-medium">Service key</div>
+                        <div className="text-xs text-muted-foreground">
+                          Доступ по bearer service-key с разрешённым scope на этот trigger
+                        </div>
+                        <Button variant="link" size="sm" asChild className="h-auto px-0 mt-1">
+                          <Link to="/admin/http/service-keys">
+                            Управление ключами и scope
+                          </Link>
+                        </Button>
+                      </div>
+                      <Switch
+                        checked={row.allowServiceKeys}
+                        disabled={savingAccess}
+                        onCheckedChange={(checked) => updateAccess({
+                          allowUserKeys: row.allowUserKeys,
+                          allowServiceKeys: checked,
+                        })}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <Separator className="my-3" />
+              </>
+            )}
+
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-sm font-medium">
                 Политика доступа
                 {row.policyExpression
                   ? <span className="ml-2 text-xs text-primary font-normal">(активна)</span>
-                  : <span className="ml-2 text-xs text-muted-foreground font-normal">(пусто = доступно всем)</span>
+                  : <span className="ml-2 text-xs text-muted-foreground font-normal">{row.type === 'http' ? '(пусто = без дополнительных ограничений для user session)' : '(пусто = доступно всем)'}</span>
                 }
               </h4>
             </div>

@@ -413,6 +413,13 @@ func handleEvent(p Plugin) {
 				Body:       h.Body,
 				RemoteAddr: h.RemoteAddr,
 			}
+			if h.Auth != nil {
+				ctx.HTTP.Auth = &HTTPAuthInfo{
+					Kind:         h.Auth.Kind,
+					UserID:       h.Auth.UserID,
+					ServiceKeyID: h.Auth.ServiceKeyID,
+				}
+			}
 		}
 
 	case TriggerCron:

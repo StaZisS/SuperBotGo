@@ -11,16 +11,14 @@ import (
 // or a Bearer API key (for programmatic access).
 // If no admin credentials exist in the database, all requests are allowed (initial setup).
 type AdminAuthMiddleware struct {
-	apiKey    string
-	signer    *sessionSigner
-	credStore *PgAdminCredStore
+	apiKey string
+	auth   *AuthHandler
 }
 
 func NewAdminAuthMiddleware(auth *AuthHandler) *AdminAuthMiddleware {
 	return &AdminAuthMiddleware{
-		apiKey:    auth.APIKey(),
-		signer:    auth.Signer(),
-		credStore: auth.CredStore(),
+		apiKey: auth.APIKey(),
+		auth:   auth,
 	}
 }
 
@@ -31,6 +29,8 @@ func (m *AdminAuthMiddleware) Wrap(next http.Handler) http.Handler {
 
 		// Always allow auth endpoints, TSU OAuth, static files, metrics, and trigger webhooks.
 		if strings.HasPrefix(path, "/api/admin/auth/") ||
+			strings.HasPrefix(path, "/api/auth/") ||
+			strings.HasPrefix(path, "/api/triggers/http/") ||
 			strings.HasPrefix(path, "/oauth/") ||
 			!strings.HasPrefix(path, "/api/") {
 			next.ServeHTTP(w, r)
@@ -38,17 +38,14 @@ func (m *AdminAuthMiddleware) Wrap(next http.Handler) http.Handler {
 		}
 
 		// If no admin credentials exist, allow all requests (initial setup mode).
-		if hasAdmins, err := m.credStore.HasAny(r.Context()); err == nil && !hasAdmins {
+		if hasAdmins, err := m.auth.CredStore().HasAny(r.Context()); err == nil && !hasAdmins {
 			next.ServeHTTP(w, r)
 			return
 		}
 
-		// Check session cookie first.
-		if cookie, err := r.Cookie(sessionCookieName); err == nil {
-			if _, ok := m.signer.validate(cookie.Value); ok {
-				next.ServeHTTP(w, r)
-				return
-			}
+		if _, ok := m.auth.Authenticate(r); ok {
+			next.ServeHTTP(w, r)
+			return
 		}
 
 		// Fall back to Bearer API key (for programmatic access).

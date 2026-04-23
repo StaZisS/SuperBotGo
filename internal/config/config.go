@@ -19,6 +19,7 @@ type Config struct {
 	VK             VKConfig             `koanf:"vk"`
 	Mattermost     MattermostConfig     `koanf:"mattermost"`
 	Admin          AdminConfig          `koanf:"admin"`
+	UserAuth       UserAuthConfig       `koanf:"user_auth"`
 	WASM           WASMConfig           `koanf:"wasm"`
 	SpiceDB        SpiceDBConfig        `koanf:"spicedb"`
 	UniversitySync UniversitySyncConfig `koanf:"university_sync"`
@@ -76,6 +77,10 @@ type AdminConfig struct {
 	BlobStore  string   `koanf:"blob_store"`
 	APIKey     string   `koanf:"api_key"`
 	S3         S3Config `koanf:"s3"`
+}
+
+type UserAuthConfig struct {
+	SessionSecret string `koanf:"session_secret"`
 }
 
 type S3Config struct {

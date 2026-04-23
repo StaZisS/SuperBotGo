@@ -157,6 +157,22 @@ Requirements: []wasmplugin.Requirement{
 
 Если имя requirement не задано, используется `default`.
 
+## Host-конфигурация user session {#host-user-auth}
+
+Для frontend login через TSU host использует отдельную cookie-сессию.
+Для неё нужно задать secret в конфигурации приложения:
+
+```yaml
+user_auth:
+  session_secret: "change-me"
+```
+
+Env-переменная:
+
+- `BOT_USER__AUTH_SESSION__SECRET`
+
+Если secret не задан, host сгенерирует случайный ключ при старте. Это подходит для локальной разработки, но сессии будут сбрасываться после рестарта.
+
 ## Callback при конфигурации (OnConfigure) {#on-configure}
 
 `OnConfigure` вызывается при первичной загрузке/активации плагина. Используйте для дополнительной валидации или подготовки данных:

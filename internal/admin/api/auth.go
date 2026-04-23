@@ -1,16 +1,13 @@
 package api
 
 import (
-	"crypto/hmac"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"strconv"
-	"strings"
 	"time"
+
+	"SuperBotGo/internal/auth/session"
+	"SuperBotGo/internal/auth/userhttp"
 )
 
 const (
@@ -18,78 +15,22 @@ const (
 	sessionTTL        = 24 * time.Hour
 )
 
-// sessionSigner creates and validates HMAC-signed session tokens
-// containing a user ID and expiration.
-type sessionSigner struct {
-	key []byte
-}
-
-func newSessionSigner(secret string) *sessionSigner {
-	if secret == "" {
-		// Generate a random key when no secret is configured.
-		// Sessions won't survive restarts, which is acceptable for dev.
-		b := make([]byte, 32)
-		if _, err := rand.Read(b); err != nil {
-			panic("failed to generate session key: " + err.Error())
-		}
-		slog.Warn("admin auth: no session secret configured — using random key (sessions will not survive restarts)")
-		return &sessionSigner{key: b}
-	}
-	return &sessionSigner{key: []byte(secret)}
-}
-
-// createToken returns a token in the format "userID:expiry:signature".
-func (s *sessionSigner) createToken(userID int64, ttl time.Duration) string {
-	expiry := strconv.FormatInt(time.Now().Add(ttl).Unix(), 10)
-	uid := strconv.FormatInt(userID, 10)
-	payload := uid + ":" + expiry
-	return payload + ":" + s.sign(payload)
-}
-
-func (s *sessionSigner) sign(data string) string {
-	mac := hmac.New(sha256.New, s.key)
-	mac.Write([]byte(data))
-	return hex.EncodeToString(mac.Sum(nil))
-}
-
-// validate checks that the token is well-formed, not expired, and correctly signed.
-// Returns the user ID on success.
-func (s *sessionSigner) validate(token string) (int64, bool) {
-	parts := strings.SplitN(token, ":", 3)
-	if len(parts) != 3 {
-		return 0, false
-	}
-	uidStr, expiryStr, sig := parts[0], parts[1], parts[2]
-
-	expiry, err := strconv.ParseInt(expiryStr, 10, 64)
-	if err != nil || time.Now().Unix() > expiry {
-		return 0, false
-	}
-
-	userID, err := strconv.ParseInt(uidStr, 10, 64)
-	if err != nil {
-		return 0, false
-	}
-
-	expected := s.sign(uidStr + ":" + expiryStr)
-	if !hmac.Equal([]byte(sig), []byte(expected)) {
-		return 0, false
-	}
-	return userID, true
-}
-
 // AuthHandler handles login / logout / session-check endpoints.
 type AuthHandler struct {
-	apiKey    string
-	signer    *sessionSigner
-	credStore *PgAdminCredStore
+	apiKey     string
+	signer     *session.Signer
+	credStore  *PgAdminCredStore
+	userAuth   *userhttp.SessionManager
+	tsuEnabled bool
 }
 
-func NewAuthHandler(apiKey string, credStore *PgAdminCredStore) *AuthHandler {
+func NewAuthHandler(apiKey string, credStore *PgAdminCredStore, userAuth *userhttp.SessionManager, tsuEnabled bool) *AuthHandler {
 	return &AuthHandler{
-		apiKey:    apiKey,
-		signer:    newSessionSigner(apiKey),
-		credStore: credStore,
+		apiKey:     apiKey,
+		signer:     session.NewSigner(apiKey, "admin auth"),
+		credStore:  credStore,
+		userAuth:   userAuth,
+		tsuEnabled: tsuEnabled,
 	}
 }
 
@@ -122,29 +63,18 @@ func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token := h.signer.createToken(userID, sessionTTL)
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    token,
-		Path:     "/",
-		MaxAge:   int(sessionTTL.Seconds()),
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	})
+	token := h.signer.CreateToken(userID, sessionTTL)
+	h.setSessionCookie(w, token, int(sessionTTL.Seconds()))
 
 	slog.Info("admin auth: successful login", "user_id", userID, "email", body.Email, "remote", r.RemoteAddr)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "user_id": userID})
 }
 
 func (h *AuthHandler) handleLogout(w http.ResponseWriter, _ *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	})
+	h.ClearSession(w)
+	if h.userAuth != nil {
+		h.userAuth.ClearSession(w)
+	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -157,28 +87,31 @@ func (h *AuthHandler) handleCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !hasAdmins {
-		writeJSON(w, http.StatusOK, map[string]any{"authenticated": true, "setup_required": true})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"authenticated":  true,
+			"setup_required": true,
+			"tsu_enabled":    h.tsuEnabled,
+		})
 		return
 	}
 
-	cookie, err := r.Cookie(sessionCookieName)
-	if err == nil {
-		if userID, ok := h.signer.validate(cookie.Value); ok {
-			writeJSON(w, http.StatusOK, map[string]any{"authenticated": true, "user_id": userID})
-			return
-		}
+	if userID, ok := h.Authenticate(r); ok {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"authenticated": true,
+			"user_id":       userID,
+			"tsu_enabled":   h.tsuEnabled,
+		})
+		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"authenticated": false})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"authenticated": false,
+		"tsu_enabled":   h.tsuEnabled,
+	})
 }
 
 func (h *AuthHandler) handleChangePassword(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie(sessionCookieName)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "not authenticated")
-		return
-	}
-	userID, ok := h.signer.validate(cookie.Value)
+	userID, ok := h.Authenticate(r)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "session expired")
 		return
@@ -213,7 +146,7 @@ func (h *AuthHandler) handleChangePassword(w http.ResponseWriter, r *http.Reques
 }
 
 // Signer returns the session signer (used by the middleware).
-func (h *AuthHandler) Signer() *sessionSigner {
+func (h *AuthHandler) Signer() *session.Signer {
 	return h.signer
 }
 
@@ -225,4 +158,49 @@ func (h *AuthHandler) APIKey() string {
 // CredStore returns the credentials store (used by the middleware for HasAny check).
 func (h *AuthHandler) CredStore() *PgAdminCredStore {
 	return h.credStore
+}
+
+func (h *AuthHandler) Authenticate(r *http.Request) (int64, bool) {
+	if userID, ok := h.AuthenticateSession(r); ok {
+		return userID, true
+	}
+	if h.userAuth == nil {
+		return 0, false
+	}
+	userID, ok := h.userAuth.Authenticate(r)
+	if !ok {
+		return 0, false
+	}
+	hasAccess, err := h.credStore.HasUser(r.Context(), int64(userID))
+	if err != nil || !hasAccess {
+		return 0, false
+	}
+	return int64(userID), true
+}
+
+func (h *AuthHandler) AuthenticateSession(r *http.Request) (int64, bool) {
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil {
+		return 0, false
+	}
+	return h.signer.Validate(cookie.Value)
+}
+
+func (h *AuthHandler) SetSession(w http.ResponseWriter, userID int64) {
+	h.setSessionCookie(w, h.signer.CreateToken(userID, sessionTTL), int(sessionTTL.Seconds()))
+}
+
+func (h *AuthHandler) ClearSession(w http.ResponseWriter) {
+	h.setSessionCookie(w, "", -1)
+}
+
+func (h *AuthHandler) setSessionCookie(w http.ResponseWriter, value string, maxAge int) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    value,
+		Path:     "/",
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
 }

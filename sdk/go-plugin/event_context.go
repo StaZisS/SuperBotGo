@@ -52,6 +52,13 @@ type HTTPEventData struct {
 	Headers    map[string]string
 	Body       string
 	RemoteAddr string
+	Auth       *HTTPAuthInfo
+}
+
+type HTTPAuthInfo struct {
+	Kind         string
+	UserID       int64
+	ServiceKeyID int64
 }
 
 // CronEventData contains details for cron triggers.

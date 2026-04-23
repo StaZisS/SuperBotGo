@@ -12,6 +12,7 @@ import (
 	"SuperBotGo/internal/admin"
 	adminapi "SuperBotGo/internal/admin/api"
 	tsuauth "SuperBotGo/internal/auth/tsu"
+	"SuperBotGo/internal/auth/userhttp"
 	"SuperBotGo/internal/authz"
 	"SuperBotGo/internal/authz/outbox"
 	"SuperBotGo/internal/authz/providers"
@@ -79,6 +80,8 @@ type postgresServices struct {
 	pluginStore        *adminapi.PgPluginStore
 	versionStore       *adminapi.PgVersionStore
 	cmdPermStore       *adminapi.PgCommandPermStore
+	serviceKeyStore    *adminapi.PgServiceKeyStore
+	userTokenStore     *userhttp.PgTokenStore
 	adminChatStore     *adminapi.PgAdminChatStore
 	authzStore         *authz.PgStore
 	universityProvider *providers.UniversityProvider
@@ -297,6 +300,8 @@ func newPostgresServices(ctx context.Context, cfg *config.Config, logger *slog.L
 		pluginStore:        adminapi.NewPgPluginStore(pool),
 		versionStore:       adminapi.NewPgVersionStore(pool),
 		cmdPermStore:       adminapi.NewPgCommandPermStore(pool),
+		serviceKeyStore:    adminapi.NewPgServiceKeyStore(pool),
+		userTokenStore:     userhttp.NewPgTokenStore(pool),
 		adminChatStore:     adminapi.NewPgAdminChatStore(pool),
 		authzStore:         authz.NewPgStore(pool),
 		universityProvider: providers.NewUniversityProvider(pool),
@@ -346,7 +351,7 @@ func configureSpiceDB(ctx context.Context, cfg *config.Config, services *postgre
 	return client, nil
 }
 
-func configureTSUAccounts(cfg *config.Config, userRepo *user.PgUserRepo, accountRepo *user.PgAccountRepo, pool *pgxpool.Pool, adminMux *http.ServeMux, logger *slog.Logger) tsuAuthServices {
+func configureTSUAccounts(cfg *config.Config, userRepo *user.PgUserRepo, accountRepo *user.PgAccountRepo, pool *pgxpool.Pool, adminMux *http.ServeMux, sessions *userhttp.SessionManager, logger *slog.Logger) tsuAuthServices {
 	var services tsuAuthServices
 	if cfg.TsuAccounts.ApplicationID == "" || cfg.TsuAccounts.SecretKey == "" {
 		logger.Info("TSU.Accounts not configured, skipping")
@@ -368,7 +373,7 @@ func configureTSUAccounts(cfg *config.Config, userRepo *user.PgUserRepo, account
 
 	personLinker := user.NewPersonAutoLinker(pool)
 	tsuLinker := tsuauth.NewLinker(userRepo, accountRepo, personLinker, logger)
-	tsuHandler := tsuauth.NewHandler(tsuClient, services.stateStore, tsuLinker, cfg.TsuAccounts.CallbackURL, logger)
+	tsuHandler := tsuauth.NewHandler(tsuClient, services.stateStore, tsuLinker, userRepo, personLinker, sessions, cfg.TsuAccounts.CallbackURL, logger)
 	tsuHandler.RegisterRoutes(adminMux)
 
 	services.linker = services.stateStore
@@ -385,6 +390,7 @@ func registerAdminRoutes(
 	authorizer *authz.Authorizer,
 	stateMgr *state.Manager,
 	spiceClient *authzed.Client,
+	userSessions *userhttp.SessionManager,
 ) (*http.ServeMux, *adminapi.AuthHandler) {
 	adminHandler := adminapi.NewAdminHandler(
 		stores.pluginStore,
@@ -403,11 +409,18 @@ func registerAdminRoutes(
 
 	adminMux := http.NewServeMux()
 	adminCredStore := adminapi.NewPgAdminCredStore(stores.pool)
-	authHandler := adminapi.NewAuthHandler(cfg.Admin.APIKey, adminCredStore)
+	authHandler := adminapi.NewAuthHandler(cfg.Admin.APIKey, adminCredStore, userSessions, cfg.TsuAccounts.ApplicationID != "" && cfg.TsuAccounts.SecretKey != "")
 	authHandler.RegisterRoutes(adminMux)
+	userAuthHandler := userhttp.NewHandler(userSessions, stores.userTokenStore)
+	userAuthHandler.AddAuthenticator(func(r *http.Request) (model.GlobalUserID, bool) {
+		userID, ok := authHandler.AuthenticateSession(r)
+		return model.GlobalUserID(userID), ok
+	})
+	userAuthHandler.RegisterRoutes(adminMux)
 	adminapi.NewAdminCredHandler(adminCredStore).RegisterRoutes(adminMux)
 	adminHandler.RegisterRoutes(adminMux)
 	adminapi.NewCommandPermHandler(stores.cmdPermStore, authorizer).RegisterRoutes(adminMux)
+	adminapi.NewServiceKeyHandler(stores.serviceKeyStore).RegisterRoutes(adminMux)
 	adminapi.NewUserHandler(adminapi.NewPgUserStore(stores.pool), authorizer).RegisterRoutes(adminMux)
 	adminapi.NewPluginPermHandler(stores.pluginStore, runtime.wasmLoader, runtime.hostAPI, stores.adminBus).RegisterRoutes(adminMux)
 	adminapi.NewChatHandler(stores.adminChatStore, runtime.adapterRegistry).RegisterRoutes(adminMux)
@@ -430,6 +443,40 @@ func registerAdminRoutes(
 
 	httpTrigger := trigger.NewHTTPTriggerHandler(runtime.triggerRouter, runtime.triggerRegistry)
 	httpTrigger.SetMetrics(runtime.metrics)
+	httpTrigger.SetSettingLoader(func(ctx context.Context, pluginID, triggerName string) (trigger.HTTPTriggerSetting, bool, error) {
+		setting, found, err := stores.cmdPermStore.GetCommandSetting(ctx, pluginID, triggerName)
+		if err != nil {
+			return trigger.HTTPTriggerSetting{}, false, err
+		}
+		if !found {
+			return trigger.HTTPTriggerSetting{}, false, nil
+		}
+		return trigger.HTTPTriggerSetting{
+			Enabled:          setting.Enabled,
+			AllowUserKeys:    setting.AllowUserKeys,
+			AllowServiceKeys: setting.AllowServiceKeys,
+			PolicyExpression: setting.PolicyExpression,
+		}, true, nil
+	})
+	if userSessions != nil {
+		httpTrigger.SetUserAuthenticator(userSessions.Authenticate)
+	}
+	if stores.userTokenStore != nil {
+		httpTrigger.SetUserTokenAuthenticator(stores.userTokenStore.AuthenticateUserToken)
+	}
+	if stores.serviceKeyStore != nil {
+		httpTrigger.SetServiceAuthenticator(func(ctx context.Context, rawToken, pluginID, triggerName string) (trigger.ServiceKeyPrincipal, bool, error) {
+			principal, ok, err := stores.serviceKeyStore.AuthenticateServiceKey(ctx, rawToken, pluginID, triggerName)
+			if err != nil {
+				return trigger.ServiceKeyPrincipal{}, false, err
+			}
+			if !ok {
+				return trigger.ServiceKeyPrincipal{}, false, nil
+			}
+			return trigger.ServiceKeyPrincipal{ID: principal.ID}, true, nil
+		})
+	}
+	httpTrigger.SetPolicyEvaluator(authorizer.EvalPolicy)
 	adminMux.Handle("/api/triggers/http/", httpTrigger)
 	adminMux.Handle("GET /metrics", promhttp.Handler())
 	admin.RegisterStaticRoutes(adminMux)

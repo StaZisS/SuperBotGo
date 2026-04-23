@@ -124,6 +124,20 @@ type HTTPTriggerData struct {
 	Headers    map[string]string `json:"headers,omitempty"`
 	Body       string            `json:"body,omitempty"`
 	RemoteAddr string            `json:"remote_addr,omitempty"`
+	Auth       *HTTPAuthData     `json:"auth,omitempty"`
+}
+
+type HTTPAuthKind string
+
+const (
+	HTTPAuthUser    HTTPAuthKind = "user"
+	HTTPAuthService HTTPAuthKind = "service"
+)
+
+type HTTPAuthData struct {
+	Kind         HTTPAuthKind `json:"kind"`
+	UserID       GlobalUserID `json:"user_id,omitempty"`
+	ServiceKeyID int64        `json:"service_key_id,omitempty"`
 }
 
 type HTTPResponseData struct {

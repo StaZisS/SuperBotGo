@@ -7,6 +7,7 @@ const (
 	ChannelDiscord    ChannelType = "DISCORD"
 	ChannelVK         ChannelType = "VK"
 	ChannelMattermost ChannelType = "MATTERMOST"
+	ChannelWeb        ChannelType = "WEB"
 )
 
 type ChannelAccount struct {

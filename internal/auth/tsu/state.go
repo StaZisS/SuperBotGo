@@ -15,8 +15,21 @@ const (
 	stateLength = 32 // bytes → 64 hex chars
 )
 
+type flowKind string
+
+const (
+	flowKindLink  flowKind = "link"
+	flowKindLogin flowKind = "login"
+)
+
+type FlowState struct {
+	Kind     flowKind
+	UserID   model.GlobalUserID
+	ReturnTo string
+}
+
 type stateEntry struct {
-	UserID    model.GlobalUserID
+	FlowState
 	ExpiresAt time.Time
 }
 
@@ -43,6 +56,16 @@ func (s *StateStore) Stop() {
 
 // GenerateAuthURL creates a state token for the given user and returns the login URL.
 func (s *StateStore) GenerateAuthURL(userID model.GlobalUserID) (string, error) {
+	return s.generateURL(FlowState{Kind: flowKindLink, UserID: userID})
+}
+
+// GenerateLoginURL creates a state token for a browser login flow and returns
+// the login URL that should be opened by the user agent.
+func (s *StateStore) GenerateLoginURL(returnTo string) (string, error) {
+	return s.generateURL(FlowState{Kind: flowKindLogin, ReturnTo: returnTo})
+}
+
+func (s *StateStore) generateURL(flow FlowState) (string, error) {
 	token, err := generateStateToken()
 	if err != nil {
 		return "", fmt.Errorf("generate state token: %w", err)
@@ -50,7 +73,7 @@ func (s *StateStore) GenerateAuthURL(userID model.GlobalUserID) (string, error) 
 
 	s.mu.Lock()
 	s.states[token] = &stateEntry{
-		UserID:    userID,
+		FlowState: flow,
 		ExpiresAt: time.Now().Add(stateTTL),
 	}
 	s.mu.Unlock()
@@ -70,21 +93,21 @@ func (s *StateStore) Verify(state string) bool {
 	return !time.Now().After(entry.ExpiresAt)
 }
 
-// Consume validates and removes a state token, returning the associated user ID.
-func (s *StateStore) Consume(state string) (model.GlobalUserID, bool) {
+// Consume validates and removes a state token, returning the associated flow payload.
+func (s *StateStore) Consume(state string) (FlowState, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	entry, ok := s.states[state]
 	if !ok {
-		return 0, false
+		return FlowState{}, false
 	}
 	delete(s.states, state)
 
 	if time.Now().After(entry.ExpiresAt) {
-		return 0, false
+		return FlowState{}, false
 	}
-	return entry.UserID, true
+	return entry.FlowState, true
 }
 
 func (s *StateStore) cleanupLoop() {

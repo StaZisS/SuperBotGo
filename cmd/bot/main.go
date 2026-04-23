@@ -7,9 +7,11 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
+	"SuperBotGo/internal/auth/userhttp"
 	"SuperBotGo/internal/authz"
 	"SuperBotGo/internal/channel"
 	"SuperBotGo/internal/notification"
@@ -99,8 +101,9 @@ func main() {
 	stateMgr := state.NewManager(dialogStore)
 	stateMgr.SetMetrics(runtime.metrics)
 
-	adminMux, authHandler := registerAdminRoutes(cfg, logger, runtime, stores, blobStore, authorizer, stateMgr, spiceClient)
-	tsuAuth := configureTSUAccounts(cfg, stores.userRepo, stores.accountRepo, stores.pool, adminMux, logger)
+	userSessions := userhttp.NewSessionManager(cfg.UserAuth.SessionSecret, strings.HasPrefix(cfg.TsuAccounts.CallbackURL, "https://"))
+	adminMux, authHandler := registerAdminRoutes(cfg, logger, runtime, stores, blobStore, authorizer, stateMgr, spiceClient, userSessions)
+	tsuAuth := configureTSUAccounts(cfg, stores.userRepo, stores.accountRepo, stores.pool, adminMux, userSessions, logger)
 
 	runtime.senderAPI = plugin.NewSenderAPI(runtime.adapterRegistry, userService)
 

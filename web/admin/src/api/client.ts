@@ -11,9 +11,13 @@ export class ApiError extends Error {
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  return requestWithBase<T>(BASE, url, init)
+}
+
+async function requestWithBase<T>(base: string, url: string, init?: RequestInit): Promise<T> {
   let res: Response
   try {
-    res = await fetch(`${BASE}${url}`, {
+    res = await fetch(`${base}${url}`, {
       ...init,
       headers: {
         ...(init?.headers ?? {}),
@@ -53,6 +57,21 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   }
 
   return data as T
+}
+
+export interface UserTokenInfo {
+  id: number
+  public_id: string
+  name: string
+  active: boolean
+  expires_at?: string
+  last_used_at?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface CreatedUserToken extends UserTokenInfo {
+  token: string
 }
 
 export interface PluginInfo {
@@ -172,9 +191,32 @@ export interface CommandSetting {
   plugin_id: string
   command_name: string
   enabled: boolean
+  allow_user_keys: boolean
+  allow_service_keys: boolean
   policy_expression: string
   created_at: string
   updated_at: string
+}
+
+export interface ServiceKeyScope {
+  plugin_id: string
+  trigger_name: string
+}
+
+export interface ServiceKeyInfo {
+  id: number
+  public_id: string
+  name: string
+  active: boolean
+  expires_at?: string
+  last_used_at?: string
+  created_at: string
+  updated_at: string
+  scopes: ServiceKeyScope[]
+}
+
+export interface CreatedServiceKey extends ServiceKeyInfo {
+  token: string
 }
 
 export interface RuleParamOption {
@@ -479,11 +521,29 @@ export const api = {
       { method: 'PUT', body: JSON.stringify({ enabled }) },
     ),
 
+  setCommandAccess: (pluginId: string, commandName: string, access: { allow_user_keys: boolean; allow_service_keys: boolean }) =>
+    request<{ status: string }>(
+      `/plugins/${encodeURIComponent(pluginId)}/commands/${encodeURIComponent(commandName)}/access`,
+      { method: 'PUT', body: JSON.stringify(access) },
+    ),
+
   setCommandPolicy: (pluginId: string, commandName: string, expression: string) =>
     request<{ status: string }>(
       `/plugins/${encodeURIComponent(pluginId)}/commands/${encodeURIComponent(commandName)}/policy`,
       { method: 'PUT', body: JSON.stringify({ expression }) },
     ),
+
+  listServiceKeys: () =>
+    request<ServiceKeyInfo[]>('/http/service-keys'),
+
+  createServiceKey: (body: { name: string; scopes: ServiceKeyScope[]; expires_at?: string }) =>
+    request<CreatedServiceKey>('/http/service-keys', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  deleteServiceKey: (id: number) =>
+    request<{ status: string }>(`/http/service-keys/${id}`, { method: 'DELETE' }),
 
   getPluginRequirements: (id: string) =>
     request<PluginRequirementsDetail>(`/plugins/${encodeURIComponent(id)}/requirements`),
@@ -677,4 +737,16 @@ export const api = {
         if (!res.ok) throw new ApiError(data.error ?? `HTTP ${res.status}`, res.status)
         return data as { status: string }
       }),
+
+  listOwnTokens: () =>
+      requestWithBase<UserTokenInfo[]>('', '/api/auth/tokens'),
+
+  createOwnToken: (body: { name: string; expires_at?: string }) =>
+      requestWithBase<CreatedUserToken>('', '/api/auth/tokens', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+
+  deleteOwnToken: (id: number) =>
+      requestWithBase<{ status: string }>('', `/api/auth/tokens/${id}`, { method: 'DELETE' }),
 }

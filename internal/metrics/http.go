@@ -62,6 +62,8 @@ func httpRouteLabel(r *http.Request) string {
 	switch path := r.URL.Path; {
 	case path == "/metrics":
 		return "/metrics"
+	case strings.HasPrefix(path, "/api/auth/"):
+		return "/api/auth/*"
 	case strings.HasPrefix(path, "/api/triggers/http/"):
 		return "/api/triggers/http/"
 	case strings.HasPrefix(path, "/api/admin/"):

@@ -44,6 +44,15 @@
 | `Headers` | `map[string]string` | Заголовки запроса |
 | `Body` | `string` | Тело запроса |
 | `RemoteAddr` | `string` | IP-адрес клиента |
+| `Auth` | `*HTTPAuthInfo` | Principal, прошедший host-auth |
+
+### HTTPAuthInfo
+
+| Поле | Тип | Описание |
+|---|---|---|
+| `Kind` | `string` | `"user"` или `"service"` |
+| `UserID` | `int64` | ID пользователя для запросов с cookie-сессией или user bearer token |
+| `ServiceKeyID` | `int64` | ID service-key для server-to-server запросов |
 
 ### CronEventData
 

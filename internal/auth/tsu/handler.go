@@ -1,17 +1,29 @@
 package tsu
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strings"
+
+	"SuperBotGo/internal/auth/userhttp"
+	"SuperBotGo/internal/locale"
+	"SuperBotGo/internal/model"
+	"SuperBotGo/internal/user"
 )
 
-const stateCookieName = "tsu_auth_state"
+const (
+	stateCookieName = "tsu_auth_state"
+	defaultReturnTo = "/"
+)
 
 type Handler struct {
 	client       *Client
 	stateStore   *StateStore
 	linker       *Linker
+	userRepo     user.UserRepository
+	personLinker PersonLinker
+	sessions     *userhttp.SessionManager
 	secureCookie bool
 	logger       *slog.Logger
 }
@@ -20,6 +32,9 @@ func NewHandler(
 	client *Client,
 	stateStore *StateStore,
 	linker *Linker,
+	userRepo user.UserRepository,
+	personLinker PersonLinker,
+	sessions *userhttp.SessionManager,
 	callbackURL string,
 	logger *slog.Logger,
 ) *Handler {
@@ -27,14 +42,33 @@ func NewHandler(
 		client:       client,
 		stateStore:   stateStore,
 		linker:       linker,
+		userRepo:     userRepo,
+		personLinker: personLinker,
+		sessions:     sessions,
 		secureCookie: strings.HasPrefix(callbackURL, "https://"),
 		logger:       logger,
 	}
 }
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/auth/tsu/start", h.handleStartLogin)
 	mux.HandleFunc("GET /oauth/authorize", h.handleLogin)
 	mux.HandleFunc("GET /oauth/login", h.handleCallback)
+}
+
+func (h *Handler) handleStartLogin(w http.ResponseWriter, r *http.Request) {
+	if h.sessions == nil || h.userRepo == nil {
+		http.Error(w, "authentication is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	loginURL, err := h.stateStore.GenerateLoginURL(sanitizeReturnTo(r.URL.Query().Get("return_to")))
+	if err != nil {
+		h.logger.Error("tsu login start: failed to generate login URL", slog.Any("error", err))
+		http.Error(w, "failed to start authentication", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, loginURL, http.StatusFound)
 }
 
 // handleLogin validates the state and redirects the user to TSU login page.
@@ -64,7 +98,7 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleCallback is called by TSU after user authentication.
-// Exchanges the temporary token for AccountId, links the user.
+// It supports both account-link and browser-login flows.
 func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 	tempToken := r.URL.Query().Get("token")
 	if tempToken == "" {
@@ -86,9 +120,11 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		Path:     "/oauth/",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   h.secureCookie,
+		SameSite: http.SameSiteLaxMode,
 	})
 
-	userID, ok := h.stateStore.Consume(cookie.Value)
+	flow, ok := h.stateStore.Consume(cookie.Value)
 	if !ok {
 		h.logger.Warn("tsu callback: invalid or expired state")
 		http.Error(w, "session expired, please try again", http.StatusBadRequest)
@@ -103,10 +139,21 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logger.Info("tsu callback: token exchanged",
-		slog.Int64("user_id", int64(userID)),
+		slog.String("flow", string(flow.Kind)),
 		slog.String("account_id", result.AccountID))
 
-	if err := h.linker.Link(r.Context(), userID, result.AccountID); err != nil {
+	switch flow.Kind {
+	case flowKindLink:
+		h.handleLinkCallback(w, r, flow.UserID, result.AccountID)
+	case flowKindLogin:
+		h.handleWebLoginCallback(w, r, flow.ReturnTo, result.AccountID)
+	default:
+		http.Error(w, "invalid authentication flow", http.StatusBadRequest)
+	}
+}
+
+func (h *Handler) handleLinkCallback(w http.ResponseWriter, r *http.Request, userID model.GlobalUserID, accountID string) {
+	if err := h.linker.Link(r.Context(), userID, accountID); err != nil {
 		h.logger.Error("tsu callback: account linking failed",
 			slog.Int64("user_id", int64(userID)),
 			slog.Any("error", err))
@@ -117,6 +164,70 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(successHTML))
+}
+
+func (h *Handler) handleWebLoginCallback(w http.ResponseWriter, r *http.Request, returnTo string, accountID string) {
+	if h.sessions == nil || h.userRepo == nil {
+		http.Error(w, "authentication is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	userID, err := h.ensureWebUser(r.Context(), accountID)
+	if err != nil {
+		h.logger.Error("tsu callback: web login failed", slog.Any("error", err))
+		http.Error(w, "authentication failed, please try again", http.StatusInternalServerError)
+		return
+	}
+
+	h.sessions.SetSession(w, userID)
+	http.Redirect(w, r, sanitizeReturnTo(returnTo), http.StatusFound)
+}
+
+func (h *Handler) ensureWebUser(ctx context.Context, accountID string) (model.GlobalUserID, error) {
+	existing, err := h.userRepo.FindByTsuAccountsID(ctx, accountID)
+	if err != nil {
+		return 0, err
+	}
+	if existing != nil {
+		h.autoLinkPerson(ctx, existing.ID, accountID)
+		return existing.ID, nil
+	}
+
+	userRec := &model.GlobalUser{
+		PrimaryChannel: model.ChannelWeb,
+		Locale:         locale.Default(),
+	}
+	saved, err := h.userRepo.Save(ctx, userRec)
+	if err != nil {
+		return 0, err
+	}
+	if err := h.userRepo.SetTsuAccountsID(ctx, saved.ID, accountID); err != nil {
+		return 0, err
+	}
+	h.autoLinkPerson(ctx, saved.ID, accountID)
+	return saved.ID, nil
+}
+
+func (h *Handler) autoLinkPerson(ctx context.Context, userID model.GlobalUserID, accountID string) {
+	if h.personLinker == nil {
+		return
+	}
+	if err := h.personLinker.LinkByExternalID(ctx, userID, accountID); err != nil {
+		h.logger.Warn("tsu callback: auto-link person failed",
+			slog.Int64("user_id", int64(userID)),
+			slog.String("account_id", accountID),
+			slog.Any("error", err))
+	}
+}
+
+func sanitizeReturnTo(value string) string {
+	if value == "" {
+		return defaultReturnTo
+	}
+	if strings.HasPrefix(value, "/") && !strings.HasPrefix(value, "//") {
+		return value
+	}
+	return defaultReturnTo
 }
 
 const successHTML = `<!DOCTYPE html>

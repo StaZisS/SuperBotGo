@@ -59,7 +59,7 @@ func (p *UniversityProvider) ContributeFieldValues(ctx context.Context) map[stri
 		"nationality_type": {{Value: "domestic", Label: "domestic"}, {Value: "foreign", Label: "foreign"}},
 		"funding_type":     {{Value: "budget", Label: "budget"}, {Value: "contract", Label: "contract"}},
 		"education_form":   {{Value: "full_time", Label: "full_time"}, {Value: "part_time", Label: "part_time"}, {Value: "remote", Label: "remote"}},
-		"primary_channel":  {{Value: "TELEGRAM", Label: "TELEGRAM"}, {Value: "DISCORD", Label: "DISCORD"}, {Value: "VK", Label: "VK"}, {Value: "MATTERMOST", Label: "MATTERMOST"}},
+		"primary_channel":  {{Value: "TELEGRAM", Label: "TELEGRAM"}, {Value: "DISCORD", Label: "DISCORD"}, {Value: "VK", Label: "VK"}, {Value: "MATTERMOST", Label: "MATTERMOST"}, {Value: "WEB", Label: "WEB"}},
 	}
 
 	if vals := p.loadDistinctValues(ctx, "student_positions", "nationality_type"); len(vals) > 0 {

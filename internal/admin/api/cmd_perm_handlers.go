@@ -24,6 +24,7 @@ func NewCommandPermHandler(store CommandPermStore, invalidator ...PolicyInvalida
 func (h *CommandPermHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/plugins/{id}/commands/settings", h.handleListSettings)
 	mux.HandleFunc("PUT /api/admin/plugins/{id}/commands/{cmd}/enabled", h.handleSetEnabled)
+	mux.HandleFunc("PUT /api/admin/plugins/{id}/commands/{cmd}/access", h.handleSetAccess)
 	mux.HandleFunc("PUT /api/admin/plugins/{id}/commands/{cmd}/policy", h.handleSetPolicy)
 }
 
@@ -67,6 +68,30 @@ func (h *CommandPermHandler) handleSetEnabled(w http.ResponseWriter, r *http.Req
 
 	if err := h.store.SetCommandEnabled(r.Context(), pluginID, cmd, body.Enabled); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update command setting")
+		return
+	}
+	h.invalidate(pluginID, cmd)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+}
+
+func (h *CommandPermHandler) handleSetAccess(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "requires PostgreSQL")
+		return
+	}
+	pluginID := r.PathValue("id")
+	cmd := r.PathValue("cmd")
+
+	var body struct {
+		AllowUserKeys    bool `json:"allow_user_keys"`
+		AllowServiceKeys bool `json:"allow_service_keys"`
+	}
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+
+	if err := h.store.SetTriggerAccess(r.Context(), pluginID, cmd, body.AllowUserKeys, body.AllowServiceKeys); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update trigger access settings")
 		return
 	}
 	h.invalidate(pluginID, cmd)

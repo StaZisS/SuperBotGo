@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -13,6 +14,8 @@ type CommandSetting struct {
 	PluginID         string    `json:"plugin_id"`
 	CommandName      string    `json:"command_name"`
 	Enabled          bool      `json:"enabled"`
+	AllowUserKeys    bool      `json:"allow_user_keys"`
+	AllowServiceKeys bool      `json:"allow_service_keys"`
 	PolicyExpression string    `json:"policy_expression"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
@@ -20,7 +23,9 @@ type CommandSetting struct {
 
 type CommandPermStore interface {
 	ListCommandSettings(ctx context.Context, pluginID string) ([]CommandSetting, error)
+	GetCommandSetting(ctx context.Context, pluginID, commandName string) (CommandSetting, bool, error)
 	SetCommandEnabled(ctx context.Context, pluginID, commandName string, enabled bool) error
+	SetTriggerAccess(ctx context.Context, pluginID, commandName string, allowUserKeys, allowServiceKeys bool) error
 	SetPolicyExpression(ctx context.Context, pluginID, commandName, expression string) error
 	GetPolicyExpression(ctx context.Context, pluginID, commandName string) (string, error)
 	DeleteCommandSettings(ctx context.Context, pluginID string, commandNames []string) error
@@ -37,7 +42,8 @@ func NewPgCommandPermStore(pool *pgxpool.Pool) *PgCommandPermStore {
 
 func (s *PgCommandPermStore) ListCommandSettings(ctx context.Context, pluginID string) ([]CommandSetting, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, plugin_id, command_name, enabled, COALESCE(policy_expression, ''), created_at, updated_at
+		SELECT id, plugin_id, command_name, enabled, allow_user_keys, allow_service_keys,
+		       COALESCE(policy_expression, ''), created_at, updated_at
 		FROM plugin_command_settings
 		WHERE plugin_id = $1
 		ORDER BY command_name
@@ -50,12 +56,49 @@ func (s *PgCommandPermStore) ListCommandSettings(ctx context.Context, pluginID s
 	var settings []CommandSetting
 	for rows.Next() {
 		var s CommandSetting
-		if err := rows.Scan(&s.ID, &s.PluginID, &s.CommandName, &s.Enabled, &s.PolicyExpression, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(
+			&s.ID,
+			&s.PluginID,
+			&s.CommandName,
+			&s.Enabled,
+			&s.AllowUserKeys,
+			&s.AllowServiceKeys,
+			&s.PolicyExpression,
+			&s.CreatedAt,
+			&s.UpdatedAt,
+		); err != nil {
 			return nil, fmt.Errorf("scan command setting: %w", err)
 		}
 		settings = append(settings, s)
 	}
 	return settings, rows.Err()
+}
+
+func (s *PgCommandPermStore) GetCommandSetting(ctx context.Context, pluginID, commandName string) (CommandSetting, bool, error) {
+	var setting CommandSetting
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, plugin_id, command_name, enabled, allow_user_keys, allow_service_keys,
+		       COALESCE(policy_expression, ''), created_at, updated_at
+		FROM plugin_command_settings
+		WHERE plugin_id = $1 AND command_name = $2
+	`, pluginID, commandName).Scan(
+		&setting.ID,
+		&setting.PluginID,
+		&setting.CommandName,
+		&setting.Enabled,
+		&setting.AllowUserKeys,
+		&setting.AllowServiceKeys,
+		&setting.PolicyExpression,
+		&setting.CreatedAt,
+		&setting.UpdatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return CommandSetting{}, false, nil
+		}
+		return CommandSetting{}, false, fmt.Errorf("get command setting %q/%q: %w", pluginID, commandName, err)
+	}
+	return setting, true, nil
 }
 
 func (s *PgCommandPermStore) SetCommandEnabled(ctx context.Context, pluginID, commandName string, enabled bool) error {
@@ -68,6 +111,21 @@ func (s *PgCommandPermStore) SetCommandEnabled(ctx context.Context, pluginID, co
 	`, pluginID, commandName, enabled)
 	if err != nil {
 		return fmt.Errorf("set command enabled %q/%q: %w", pluginID, commandName, err)
+	}
+	return nil
+}
+
+func (s *PgCommandPermStore) SetTriggerAccess(ctx context.Context, pluginID, commandName string, allowUserKeys, allowServiceKeys bool) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO plugin_command_settings (plugin_id, command_name, enabled, allow_user_keys, allow_service_keys, updated_at)
+		VALUES ($1, $2, true, $3, $4, now())
+		ON CONFLICT (plugin_id, command_name) DO UPDATE SET
+			allow_user_keys = EXCLUDED.allow_user_keys,
+			allow_service_keys = EXCLUDED.allow_service_keys,
+			updated_at = now()
+	`, pluginID, commandName, allowUserKeys, allowServiceKeys)
+	if err != nil {
+		return fmt.Errorf("set trigger access %q/%q: %w", pluginID, commandName, err)
 	}
 	return nil
 }

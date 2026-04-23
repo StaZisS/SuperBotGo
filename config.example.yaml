@@ -80,6 +80,9 @@ admin:
     secret_key: "minioadmin"
     prefix: ""                        # optional key prefix, e.g. "wasm_modules/"
 
+user_auth:
+  session_secret: "CHANGE_ME_USER_SESSION_SECRET"
+
 wasm:
   reconfigure_enabled: true
   rpc_enabled: false

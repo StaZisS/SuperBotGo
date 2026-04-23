@@ -1,12 +1,14 @@
 package trigger
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -25,11 +27,32 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.ResponseWriter.WriteHeader(code)
 }
 
+type HTTPTriggerSetting struct {
+	Enabled          bool
+	AllowUserKeys    bool
+	AllowServiceKeys bool
+	PolicyExpression string
+}
+
+type ServiceKeyPrincipal struct {
+	ID int64
+}
+
+type resolvedHTTPPrincipal struct {
+	authData *model.HTTPAuthData
+}
+
 type HTTPTriggerHandler struct {
 	router   *Router
 	registry *Registry
 	basePath string
 	metrics  *metrics.Metrics
+
+	loadSetting           func(ctx context.Context, pluginID, triggerName string) (HTTPTriggerSetting, bool, error)
+	authenticateUser      func(r *http.Request) (model.GlobalUserID, bool)
+	authenticateUserToken func(ctx context.Context, rawToken string) (model.GlobalUserID, bool, error)
+	authenticateService   func(ctx context.Context, rawToken, pluginID, triggerName string) (ServiceKeyPrincipal, bool, error)
+	evalPolicy            func(ctx context.Context, expression string, userID model.GlobalUserID) (bool, error)
 }
 
 func NewHTTPTriggerHandler(router *Router, registry *Registry) *HTTPTriggerHandler {
@@ -42,6 +65,26 @@ func NewHTTPTriggerHandler(router *Router, registry *Registry) *HTTPTriggerHandl
 
 func (h *HTTPTriggerHandler) SetMetrics(m *metrics.Metrics) {
 	h.metrics = m
+}
+
+func (h *HTTPTriggerHandler) SetSettingLoader(loader func(ctx context.Context, pluginID, triggerName string) (HTTPTriggerSetting, bool, error)) {
+	h.loadSetting = loader
+}
+
+func (h *HTTPTriggerHandler) SetUserAuthenticator(fn func(r *http.Request) (model.GlobalUserID, bool)) {
+	h.authenticateUser = fn
+}
+
+func (h *HTTPTriggerHandler) SetUserTokenAuthenticator(fn func(ctx context.Context, rawToken string) (model.GlobalUserID, bool, error)) {
+	h.authenticateUserToken = fn
+}
+
+func (h *HTTPTriggerHandler) SetServiceAuthenticator(fn func(ctx context.Context, rawToken, pluginID, triggerName string) (ServiceKeyPrincipal, bool, error)) {
+	h.authenticateService = fn
+}
+
+func (h *HTTPTriggerHandler) SetPolicyEvaluator(fn func(ctx context.Context, expression string, userID model.GlobalUserID) (bool, error)) {
+	h.evalPolicy = fn
 }
 
 func (h *HTTPTriggerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -83,13 +126,28 @@ func (h *HTTPTriggerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	apiKey := h.registry.GetAPIKey(pluginID)
-	if apiKey != "" {
-		provided := r.Header.Get("X-Trigger-Key")
-		if provided != apiKey {
-			http.Error(rec, "unauthorized", http.StatusUnauthorized)
+	setting, err := h.resolveSetting(r.Context(), pluginID, triggerName)
+	if err != nil {
+		slog.Error("HTTP trigger: failed to load access setting", "plugin", pluginID, "trigger", triggerName, "error", err)
+		http.Error(rec, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if !setting.Enabled {
+		http.Error(rec, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	principal, statusCode, err := h.resolvePrincipal(r, pluginID, triggerName, setting)
+	if err != nil {
+		if statusCode == 0 {
+			statusCode = http.StatusInternalServerError
+		}
+		if redirectURL, ok := loginRedirectURL(r, statusCode, setting); ok {
+			http.Redirect(rec, r, redirectURL, http.StatusFound)
 			return
 		}
+		http.Error(rec, err.Error(), statusCode)
+		return
 	}
 
 	body, err := io.ReadAll(io.LimitReader(r.Body, 10<<20))
@@ -119,6 +177,7 @@ func (h *HTTPTriggerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Headers:    headers,
 		Body:       string(body),
 		RemoteAddr: r.RemoteAddr,
+		Auth:       principal.authData,
 	}
 	dataJSON, _ := json.Marshal(triggerData)
 
@@ -159,12 +218,161 @@ func (h *HTTPTriggerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if rec.Header().Get("Content-Type") == "" {
 		rec.Header().Set("Content-Type", "application/json")
 	}
-	statusCode := httpResp.StatusCode
+	statusCode = httpResp.StatusCode
 	if statusCode == 0 {
 		statusCode = http.StatusOK
 	}
 	rec.WriteHeader(statusCode)
 	rec.Write([]byte(httpResp.Body))
+}
+
+func (h *HTTPTriggerHandler) resolveSetting(ctx context.Context, pluginID, triggerName string) (HTTPTriggerSetting, error) {
+	setting := HTTPTriggerSetting{
+		Enabled:          true,
+		AllowUserKeys:    true,
+		AllowServiceKeys: false,
+	}
+	if h.loadSetting == nil {
+		return setting, nil
+	}
+	loaded, found, err := h.loadSetting(ctx, pluginID, triggerName)
+	if err != nil {
+		return HTTPTriggerSetting{}, err
+	}
+	if found {
+		return loaded, nil
+	}
+	return setting, nil
+}
+
+func (h *HTTPTriggerHandler) resolvePrincipal(r *http.Request, pluginID, triggerName string, setting HTTPTriggerSetting) (resolvedHTTPPrincipal, int, error) {
+	if token, ok := bearerToken(r); ok {
+		return h.resolveBearerPrincipal(r.Context(), token, pluginID, triggerName, setting)
+	}
+
+	if h.authenticateUser != nil {
+		if userID, ok := h.authenticateUser(r); ok {
+			return h.authorizeUserPrincipal(r.Context(), pluginID, triggerName, setting, userID)
+		}
+	}
+
+	return resolvedHTTPPrincipal{}, http.StatusUnauthorized, fmt.Errorf("authentication required")
+}
+
+func (h *HTTPTriggerHandler) resolveBearerPrincipal(ctx context.Context, rawToken, pluginID, triggerName string, setting HTTPTriggerSetting) (resolvedHTTPPrincipal, int, error) {
+	if h.authenticateUserToken != nil {
+		userID, ok, err := h.authenticateUserToken(ctx, rawToken)
+		if err != nil {
+			return resolvedHTTPPrincipal{}, http.StatusInternalServerError, fmt.Errorf("internal error")
+		}
+		if ok {
+			return h.authorizeUserPrincipal(ctx, pluginID, triggerName, setting, userID)
+		}
+	}
+
+	if h.authenticateService == nil {
+		return resolvedHTTPPrincipal{}, http.StatusUnauthorized, fmt.Errorf("authentication required")
+	}
+	principal, ok, err := h.authenticateService(ctx, rawToken, pluginID, triggerName)
+	if err != nil {
+		return resolvedHTTPPrincipal{}, http.StatusInternalServerError, fmt.Errorf("internal error")
+	}
+	if !ok {
+		return resolvedHTTPPrincipal{}, http.StatusUnauthorized, fmt.Errorf("authentication required")
+	}
+	if !setting.AllowServiceKeys {
+		return resolvedHTTPPrincipal{}, http.StatusForbidden, fmt.Errorf("forbidden")
+	}
+	return resolvedHTTPPrincipal{
+		authData: &model.HTTPAuthData{
+			Kind:         model.HTTPAuthService,
+			ServiceKeyID: principal.ID,
+		},
+	}, 0, nil
+}
+
+func (h *HTTPTriggerHandler) authorizeUserPrincipal(ctx context.Context, pluginID, triggerName string, setting HTTPTriggerSetting, userID model.GlobalUserID) (resolvedHTTPPrincipal, int, error) {
+	if !setting.AllowUserKeys {
+		return resolvedHTTPPrincipal{}, http.StatusForbidden, fmt.Errorf("forbidden")
+	}
+	if setting.PolicyExpression != "" {
+		if h.evalPolicy == nil {
+			return resolvedHTTPPrincipal{}, http.StatusInternalServerError, fmt.Errorf("authorization unavailable")
+		}
+		allowed, err := h.evalPolicy(ctx, setting.PolicyExpression, userID)
+		if err != nil {
+			slog.Warn("HTTP trigger policy expression error",
+				"plugin", pluginID,
+				"trigger", triggerName,
+				"error", err)
+			return resolvedHTTPPrincipal{}, http.StatusForbidden, fmt.Errorf("forbidden")
+		}
+		if !allowed {
+			return resolvedHTTPPrincipal{}, http.StatusForbidden, fmt.Errorf("forbidden")
+		}
+	}
+	return resolvedHTTPPrincipal{
+		authData: &model.HTTPAuthData{
+			Kind:   model.HTTPAuthUser,
+			UserID: userID,
+		},
+	}, 0, nil
+}
+
+func bearerToken(r *http.Request) (string, bool) {
+	value := r.Header.Get("Authorization")
+	if !strings.HasPrefix(value, "Bearer ") {
+		return "", false
+	}
+	token := strings.TrimSpace(strings.TrimPrefix(value, "Bearer "))
+	if token == "" {
+		return "", false
+	}
+	return token, true
+}
+
+func loginRedirectURL(r *http.Request, statusCode int, setting HTTPTriggerSetting) (string, bool) {
+	if statusCode != http.StatusUnauthorized {
+		return "", false
+	}
+	if !setting.AllowUserKeys {
+		return "", false
+	}
+	if _, ok := bearerToken(r); ok {
+		return "", false
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return "", false
+	}
+	if !acceptsHTML(r) {
+		return "", false
+	}
+
+	return "/api/auth/tsu/start?return_to=" + url.QueryEscape(requestReturnTo(r)), true
+}
+
+func acceptsHTML(r *http.Request) bool {
+	for _, value := range r.Header.Values("Accept") {
+		for _, part := range strings.Split(value, ",") {
+			if mediaType := strings.TrimSpace(strings.SplitN(part, ";", 2)[0]); mediaType == "text/html" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func requestReturnTo(r *http.Request) string {
+	if r.URL == nil {
+		return "/"
+	}
+	if raw := r.URL.RequestURI(); raw != "" {
+		return raw
+	}
+	if r.URL.Path == "" {
+		return "/"
+	}
+	return r.URL.Path
 }
 
 func generateID() string {

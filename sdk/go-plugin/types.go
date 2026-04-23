@@ -192,6 +192,13 @@ type httpTriggerData struct {
 	Headers    map[string]string `json:"headers,omitempty"`
 	Body       string            `json:"body,omitempty"`
 	RemoteAddr string            `json:"remote_addr,omitempty"`
+	Auth       *httpAuthData     `json:"auth,omitempty"`
+}
+
+type httpAuthData struct {
+	Kind         string `json:"kind"`
+	UserID       int64  `json:"user_id,omitempty"`
+	ServiceKeyID int64  `json:"service_key_id,omitempty"`
 }
 
 type httpResponseData struct {
