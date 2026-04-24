@@ -305,6 +305,7 @@ export interface UserListItem {
 export interface UserDetail {
   id: number
   primary_channel: string
+  tsu_accounts_id?: string
   locale: string
   role: string
   person_name?: string
@@ -492,9 +493,12 @@ export const api = {
     })
   },
 
-  updatePlugin: (id: string, file: File) => {
+  updatePlugin: (id: string, file: File, changelog?: string) => {
     const form = new FormData()
     form.append('wasm', file)
+    if (changelog && changelog.trim()) {
+      form.append('changelog', changelog.trim())
+    }
     return request<{ status: string }>(`/plugins/${encodeURIComponent(id)}/update`, {
       method: 'POST',
       body: form,

@@ -2,15 +2,22 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 )
 
 const bcryptCost = 12
+
+var (
+	ErrAdminCredentialsAlreadyExist = errors.New("admin credentials already exist for this user")
+	ErrAdminEmailAlreadyUsed        = errors.New("admin email is already used by another user")
+)
 
 type AdminCredential struct {
 	ID           int64     `json:"id"`
@@ -63,6 +70,9 @@ func (s *PgAdminCredStore) Create(ctx context.Context, globalUserID int64, email
 		globalUserID, email, string(hash),
 	).Scan(&cred.ID, &cred.GlobalUserID, &cred.Email, &cred.CreatedAt, &cred.UpdatedAt)
 	if err != nil {
+		if classified := classifyAdminCredentialError(err); classified != nil {
+			return nil, classified
+		}
 		return nil, fmt.Errorf("create admin credentials: %w", err)
 	}
 	return &cred, nil
@@ -108,6 +118,9 @@ func (s *PgAdminCredStore) UpdateEmail(ctx context.Context, globalUserID int64, 
 		`UPDATE admin_credentials SET email = $2, updated_at = now() WHERE global_user_id = $1`,
 		globalUserID, newEmail)
 	if err != nil {
+		if classified := classifyAdminCredentialError(err); classified != nil {
+			return classified
+		}
 		return fmt.Errorf("update email: %w", err)
 	}
 	if result.RowsAffected() == 0 {
@@ -180,4 +193,20 @@ func (s *PgAdminCredStore) HasUser(ctx context.Context, globalUserID int64) (boo
 		SELECT EXISTS(SELECT 1 FROM admin_credentials WHERE global_user_id = $1)
 	`, globalUserID).Scan(&exists)
 	return exists, err
+}
+
+func classifyAdminCredentialError(err error) error {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
+		return nil
+	}
+
+	switch pgErr.ConstraintName {
+	case "admin_credentials_global_user_id_key":
+		return ErrAdminCredentialsAlreadyExist
+	case "admin_credentials_email_key":
+		return ErrAdminEmailAlreadyUsed
+	default:
+		return nil
+	}
 }

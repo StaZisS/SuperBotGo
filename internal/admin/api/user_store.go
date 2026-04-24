@@ -78,13 +78,13 @@ func (s *PgUserStore) GetUser(ctx context.Context, id int64) (*UserDetail, error
 	var u UserDetail
 	var profileJSON []byte
 	err := s.pool.QueryRow(ctx,
-		`SELECT gu.id, gu.primary_channel, COALESCE(gu.locale, ''), gu.role,
+		`SELECT gu.id, gu.primary_channel, gu.tsu_accounts_id, COALESCE(gu.locale, ''), gu.role,
 		        COALESCE(TRIM(CONCAT(pe.last_name, ' ', pe.first_name, ' ', COALESCE(pe.middle_name, ''))), ''),
 		        gu.profile_data, gu.created_at
 		 FROM global_users gu
 		 LEFT JOIN persons pe ON pe.global_user_id = gu.id
 		 WHERE gu.id = $1`, id,
-	).Scan(&u.ID, &u.PrimaryChannel, &u.Locale, &u.Role, &u.PersonName, &profileJSON, &u.CreatedAt)
+	).Scan(&u.ID, &u.PrimaryChannel, &u.TsuAccountsID, &u.Locale, &u.Role, &u.PersonName, &profileJSON, &u.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("user not found")
 	}

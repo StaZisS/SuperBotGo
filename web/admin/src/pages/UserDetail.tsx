@@ -170,6 +170,12 @@ export default function UserDetail() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-2">
+              <Label>TSU Account ID</Label>
+              <div className="min-h-10 rounded-md border bg-muted/30 px-3 py-2 text-sm break-all">
+                {user.tsu_accounts_id || 'Не привязан'}
+              </div>
+            </div>
           </div>
           <Button onClick={handleSave} disabled={saving} size="sm">
             <Save className="mr-1.5 h-4 w-4" />{saving ? 'Сохранение...' : 'Сохранить'}

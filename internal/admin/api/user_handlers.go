@@ -12,6 +12,7 @@ import (
 type UserDetail struct {
 	ID             int64             `json:"id"`
 	PrimaryChannel model.ChannelType `json:"primary_channel"`
+	TsuAccountsID  *string           `json:"tsu_accounts_id,omitempty"`
 	Locale         string            `json:"locale"`
 	Role           string            `json:"role"`
 	PersonName     string            `json:"person_name,omitempty"`

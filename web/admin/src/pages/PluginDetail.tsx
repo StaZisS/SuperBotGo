@@ -161,6 +161,7 @@ export default function PluginDetail() {
   const [actionLoading, setActionLoading] = useState(false)
   const [updatePreview, setUpdatePreview] = useState<PluginUpdatePreviewResponse | null>(null)
   const [updateFile, setUpdateFile] = useState<File | null>(null)
+  const [updateChangelog, setUpdateChangelog] = useState('')
 
   const load = useCallback(() => {
     if (!id) return
@@ -216,6 +217,7 @@ export default function PluginDetail() {
   const resetUpdateSelection = () => {
     setUpdatePreview(null)
     setUpdateFile(null)
+    setUpdateChangelog('')
   }
 
   const handleUpdateFile = async (file: File) => {
@@ -238,7 +240,7 @@ export default function PluginDetail() {
     if (!id) return
     setActionLoading(true)
     try {
-      await api.updatePlugin(id, file)
+      await api.updatePlugin(id, file, updateChangelog)
       toast.success('Плагин обновлён')
       setShowUpdate(false)
       setShowUpdatePreview(false)
@@ -549,6 +551,8 @@ export default function PluginDetail() {
                   open={showUpdatePreview}
                   loading={actionLoading}
                   preview={updatePreview}
+                  changelog={updateChangelog}
+                  onChangelogChange={setUpdateChangelog}
                   onCancel={() => {
                     setShowUpdatePreview(false)
                     resetUpdateSelection()

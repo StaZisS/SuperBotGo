@@ -1,16 +1,12 @@
-import { useEffect, useState } from 'react'
-import { api, AdminCredentialInfo } from '@/api/client'
+import { useCallback, useEffect, useState } from 'react'
+import { api, AdminCredentialInfo, ApiError } from '@/api/client'
 import { toast } from 'sonner'
-import { ShieldCheck, Trash2 } from 'lucide-react'
+import { ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import {
-  AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader,
-  AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction, AlertDialogCancel,
-} from '@/components/ui/alert-dialog'
 import { getErrorMessage } from '@/lib/utils'
 
 export default function AdminAccessCard({ userId }: { userId: number }) {
@@ -22,18 +18,23 @@ export default function AdminAccessCard({ userId }: { userId: number }) {
   const [email, setEmail] = useState('')
   const [saving, setSaving] = useState(false)
 
-  // Form for resetting password
-  const [newPassword, setNewPassword] = useState('')
+  const loadCredential = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await api.getAdminCredential(userId)
+      setHasAccess(res.has_access)
+      setCred(res.credential ?? null)
+    } catch {
+      setHasAccess(false)
+      setCred(null)
+    } finally {
+      setLoading(false)
+    }
+  }, [userId])
 
   useEffect(() => {
-    api.getAdminCredential(userId)
-      .then((res) => {
-        setHasAccess(res.has_access)
-        setCred(res.credential ?? null)
-      })
-      .catch(() => setHasAccess(false))
-      .finally(() => setLoading(false))
-  }, [userId])
+    loadCredential()
+  }, [loadCredential])
 
   const handleGrant = async () => {
     if (!email) return
@@ -48,31 +49,12 @@ export default function AdminAccessCard({ userId }: { userId: number }) {
       setEmail('')
       toast.success('Доступ в админку предоставлен, временный пароль отправлен на email')
     } catch (e: unknown) {
+      if (e instanceof ApiError && e.status === 409 && e.message === 'доступ в админку уже выдан этому пользователю') {
+        await loadCredential()
+      }
       toast.error(getErrorMessage(e))
     } finally {
       setSaving(false)
-    }
-  }
-
-  const handleResetPassword = async () => {
-    if (!newPassword) return
-    try {
-      await api.updateAdminPassword(userId, newPassword)
-      setNewPassword('')
-      toast.success('Пароль сброшен')
-    } catch (e: unknown) {
-      toast.error(getErrorMessage(e))
-    }
-  }
-
-  const handleRevoke = async () => {
-    try {
-      await api.deleteAdminCredential(userId)
-      setHasAccess(false)
-      setCred(null)
-      toast.success('Доступ в админку отозван')
-    } catch (e: unknown) {
-      toast.error(getErrorMessage(e))
     }
   }
 
@@ -93,48 +75,6 @@ export default function AdminAccessCard({ userId }: { userId: number }) {
             <div className="text-sm space-y-1">
               <p><span className="text-muted-foreground">Email:</span> {cred.email}</p>
             </div>
-
-            <div className="flex items-end gap-2">
-              <div className="space-y-2 flex-1">
-                <Label htmlFor="resetPw">Новый временный пароль</Label>
-                <Input
-                  id="resetPw"
-                  type="text"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Минимум 8 символов"
-                />
-              </div>
-              <Button
-                size="sm"
-                onClick={handleResetPassword}
-                disabled={newPassword.length < 8}
-              >
-                Сбросить пароль
-              </Button>
-            </div>
-
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="destructive" size="sm">
-                  <Trash2 className="mr-1.5 h-4 w-4" />Отозвать доступ
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Отозвать доступ в админку</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Пользователь больше не сможет входить в панель администрирования.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Отмена</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleRevoke} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                    Подтвердить
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
           </div>
         ) : (
           <div className="space-y-4">

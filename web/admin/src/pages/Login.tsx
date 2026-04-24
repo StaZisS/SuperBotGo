@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Bot, KeyRound } from 'lucide-react'
+import { useLocation } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -7,12 +8,22 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuth } from '@/hooks/useAuth'
 import { Separator } from '@/components/ui/separator'
 
+function getAuthErrorMessage(search: string): string | null {
+  const code = new URLSearchParams(search).get('auth_error')
+  if (code === 'admin_required') {
+    return 'У вашей учётной записи нет доступа к админке.'
+  }
+  return null
+}
+
 export default function Login() {
   const { login, loginWithTSU, tsuEnabled } = useAuth()
+  const location = useLocation()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const authError = getAuthErrorMessage(location.search)
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -80,8 +91,8 @@ export default function Login() {
                 required
               />
             </div>
-            {error && (
-              <p className="text-sm text-destructive">{error}</p>
+            {(error ?? authError) && (
+              <p className="text-sm text-destructive">{error ?? authError}</p>
             )}
             <Button type="submit" className="w-full" disabled={submitting}>
               <KeyRound className="h-4 w-4 mr-2" />

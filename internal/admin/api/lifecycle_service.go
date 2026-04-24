@@ -337,7 +337,7 @@ func (s *PluginLifecycleService) Delete(ctx context.Context, pluginID string) (L
 	return LifecycleResult{PluginID: pluginID, Status: "deleted"}, nil
 }
 
-func (s *PluginLifecycleService) Update(ctx context.Context, pluginID string, wasmBytes []byte) (LifecycleResult, error) {
+func (s *PluginLifecycleService) Update(ctx context.Context, pluginID string, wasmBytes []byte, changelog string) (LifecycleResult, error) {
 	record, err := s.store.GetPlugin(ctx, pluginID)
 	if err != nil {
 		return LifecycleResult{}, err
@@ -374,6 +374,7 @@ func (s *PluginLifecycleService) Update(ctx context.Context, pluginID string, wa
 		WasmKey:    newKey,
 		WasmHash:   record.WasmHash,
 		ConfigJSON: cloneJSON(record.ConfigJSON),
+		Changelog:  changelog,
 	})
 	s.publish(ctx, pubsub.EventPluginUpdated, pluginID)
 

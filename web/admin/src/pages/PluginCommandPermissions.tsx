@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useEffect, useState, useCallback, useContext } from 'react'
+import { useParams, Link, useBeforeUnload, UNSAFE_NavigationContext as NavigationContext } from 'react-router-dom'
 import { api, CommandSetting, PluginDetail } from '@/api/client'
 import { toast } from 'sonner'
 import RuleBuilder from '@/components/RuleBuilder'
@@ -34,11 +34,48 @@ interface CommandRow {
   hasSetting: boolean
 }
 
+type BlockerTx = {
+  retry: () => void
+}
+
+type HistoryNavigator = {
+  block: (blocker: (tx: BlockerTx) => void) => () => void
+}
+
+function useUnsavedChangesPrompt(when: boolean, message: string) {
+  const navigationContext = useContext(NavigationContext)
+
+  useBeforeUnload(
+    useCallback((event) => {
+      if (!when) return
+      event.preventDefault()
+      event.returnValue = ''
+    }, [when]),
+  )
+
+  useEffect(() => {
+    if (!when) return
+
+    const navigator = navigationContext.navigator as Partial<HistoryNavigator>
+    if (typeof navigator.block !== 'function') return
+
+    const unblock = navigator.block((tx) => {
+      const confirmed = window.confirm(message)
+      if (!confirmed) return
+      unblock()
+      tx.retry()
+    })
+
+    return unblock
+  }, [message, navigationContext, when])
+}
+
 export default function PluginCommandPermissions() {
   const { id } = useParams<{ id: string }>()
   const [plugin, setPlugin] = useState<PluginDetail | null>(null)
   const [rows, setRows] = useState<CommandRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [dirtyRows, setDirtyRows] = useState<string[]>([])
 
   const loadData = useCallback(async () => {
     if (!id) return
@@ -77,6 +114,18 @@ export default function PluginCommandPermissions() {
   }, [id])
 
   useEffect(() => { loadData() }, [loadData])
+
+  const hasUnsavedChanges = dirtyRows.length > 0
+  useUnsavedChangesPrompt(hasUnsavedChanges, 'Есть несохранённые изменения. Уйти со страницы без сохранения?')
+
+  const handleDirtyChange = useCallback((rowName: string, dirty: boolean) => {
+    setDirtyRows((current) => {
+      if (dirty) {
+        return current.includes(rowName) ? current : [...current, rowName]
+      }
+      return current.filter((name) => name !== rowName)
+    })
+  }, [])
 
   const enabledCount = rows.filter((r) => r.enabled).length
   const hasHTTPTriggers = rows.some((r) => r.type === 'http')
@@ -129,8 +178,13 @@ export default function PluginCommandPermissions() {
               )}
             </div>
             <p className="text-sm text-muted-foreground mt-1">
-              Управление доступом к триггерам <strong>{plugin.name || id}</strong> через политики доступа.
+              Управление доступом к триггерам <strong>{plugin.name || id}</strong>.
             </p>
+            {hasUnsavedChanges && (
+              <p className="text-sm text-amber-700 mt-2">
+                Есть несохранённые изменения. Сохраните их перед уходом со страницы.
+              </p>
+            )}
           </div>
           {hasHTTPTriggers && (
             <Button variant="outline" asChild>
@@ -159,7 +213,13 @@ export default function PluginCommandPermissions() {
       ) : (
         <div className="space-y-4">
           {rows.map((row) => (
-            <CommandCard key={row.name} pluginId={id!} row={row} onUpdate={loadData} />
+            <CommandCard
+              key={row.name}
+              pluginId={id!}
+              row={row}
+              onUpdate={loadData}
+              onDirtyChange={handleDirtyChange}
+            />
           ))}
         </div>
       )}
@@ -171,25 +231,42 @@ function CommandCard({
   pluginId,
   row,
   onUpdate,
+  onDirtyChange,
 }: {
   pluginId: string
   row: CommandRow
   onUpdate: () => void
+  onDirtyChange: (rowName: string, dirty: boolean) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const [toggling, setToggling] = useState(false)
-  const [savingAccess, setSavingAccess] = useState(false)
+  const [savingChanges, setSavingChanges] = useState(false)
+  const [allowUserKeys, setAllowUserKeys] = useState(row.allowUserKeys)
+  const [allowServiceKeys, setAllowServiceKeys] = useState(row.allowServiceKeys)
   const [policyExpr, setPolicyExpr] = useState(row.policyExpression)
-  const [savingPolicy, setSavingPolicy] = useState(false)
   const [builderKey, setBuilderKey] = useState(0)
   const [clearOpen, setClearOpen] = useState(false)
+  const policyVisible = row.type !== 'http' || allowUserKeys
+  const isDirty =
+    allowUserKeys !== row.allowUserKeys ||
+    allowServiceKeys !== row.allowServiceKeys ||
+    policyExpr !== row.policyExpression
   const isPublicHTTPTrigger =
     row.type === 'http' &&
-    !row.allowUserKeys &&
-    !row.allowServiceKeys &&
-    row.policyExpression.trim() === ''
+    !allowUserKeys &&
+    !allowServiceKeys &&
+    policyExpr.trim() === ''
 
-  useEffect(() => { setPolicyExpr(row.policyExpression) }, [row.policyExpression])
+  useEffect(() => {
+    setAllowUserKeys(row.allowUserKeys)
+    setAllowServiceKeys(row.allowServiceKeys)
+    setPolicyExpr(row.policyExpression)
+  }, [row.allowUserKeys, row.allowServiceKeys, row.policyExpression])
+
+  useEffect(() => {
+    onDirtyChange(row.name, isDirty)
+    return () => onDirtyChange(row.name, false)
+  }, [isDirty, onDirtyChange, row.name])
 
   const handleToggle = async () => {
     setToggling(true)
@@ -203,35 +280,32 @@ function CommandCard({
     }
   }
 
-  const updateAccess = async (next: { allowUserKeys: boolean; allowServiceKeys: boolean }) => {
-    setSavingAccess(true)
+  const handleSaveChanges = async () => {
+    if (!isDirty) return
+    setSavingChanges(true)
     try {
-      await api.setCommandAccess(pluginId, row.name, {
-        allow_user_keys: next.allowUserKeys,
-        allow_service_keys: next.allowServiceKeys,
-      })
-      onUpdate()
-    } catch {
-      toast.error('Не удалось обновить доступ к HTTP-триггеру')
-    } finally {
-      setSavingAccess(false)
-    }
-  }
-
-  const handleSavePolicy = async () => {
-    setSavingPolicy(true)
-    try {
+      if (row.type === 'http') {
+        await api.setCommandAccess(pluginId, row.name, {
+          allow_user_keys: allowUserKeys,
+          allow_service_keys: allowServiceKeys,
+        })
+      }
       await api.setCommandPolicy(pluginId, row.name, policyExpr)
       onUpdate()
-      toast.success('Политика сохранена')
+      toast.success('Изменения сохранены')
     } catch {
-      toast.error('Не удалось сохранить политику')
+      toast.error('Не удалось сохранить изменения')
     } finally {
-      setSavingPolicy(false)
+      setSavingChanges(false)
     }
   }
 
-  const policyChanged = policyExpr !== row.policyExpression
+  const resetChanges = () => {
+    setAllowUserKeys(row.allowUserKeys)
+    setAllowServiceKeys(row.allowServiceKeys)
+    setPolicyExpr(row.policyExpression)
+    setBuilderKey((k) => k + 1)
+  }
 
   return (
     <Card>
@@ -268,14 +342,17 @@ function CommandCard({
             {isPublicHTTPTrigger && (
               <Badge variant="secondary">public</Badge>
             )}
-            {row.policyExpression && (
+            {policyExpr && (
               <Badge variant="secondary">policy</Badge>
             )}
-            {row.type === 'http' && row.allowUserKeys && (
+            {row.type === 'http' && allowUserKeys && (
               <Badge variant="secondary">user</Badge>
             )}
-            {row.type === 'http' && row.allowServiceKeys && (
+            {row.type === 'http' && allowServiceKeys && (
               <Badge variant="secondary">service</Badge>
+            )}
+            {isDirty && (
+              <Badge variant="outline">не сохранено</Badge>
             )}
             <Switch
               checked={row.enabled}
@@ -306,12 +383,9 @@ function CommandCard({
                         </div>
                       </div>
                       <Switch
-                        checked={row.allowUserKeys}
-                        disabled={savingAccess}
-                        onCheckedChange={(checked) => updateAccess({
-                          allowUserKeys: checked,
-                          allowServiceKeys: row.allowServiceKeys,
-                        })}
+                        checked={allowUserKeys}
+                        disabled={savingChanges}
+                        onCheckedChange={setAllowUserKeys}
                       />
                     </div>
                     <div className="flex items-center justify-between rounded-lg border p-3">
@@ -327,40 +401,37 @@ function CommandCard({
                         </Button>
                       </div>
                       <Switch
-                        checked={row.allowServiceKeys}
-                        disabled={savingAccess}
-                        onCheckedChange={(checked) => updateAccess({
-                          allowUserKeys: row.allowUserKeys,
-                          allowServiceKeys: checked,
-                        })}
+                        checked={allowServiceKeys}
+                        disabled={savingChanges}
+                        onCheckedChange={setAllowServiceKeys}
                       />
                     </div>
                   </div>
-                  <p className="mt-3 text-xs text-muted-foreground">
-                    Если оба переключателя выключены и policy пустая, trigger становится публичным.
-                    В плагин такой запрос приходит с пустым `ctx.HTTP.Auth`.
-                  </p>
                 </div>
 
                 <Separator className="my-3" />
               </>
             )}
 
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-medium">
-                Политика доступа
-                {row.policyExpression
-                  ? <span className="ml-2 text-xs text-primary font-normal">(активна)</span>
-                  : <span className="ml-2 text-xs text-muted-foreground font-normal">{row.type === 'http' ? '(пусто = без дополнительных ограничений для user session)' : '(пусто = доступно всем)'}</span>
-                }
-              </h4>
-            </div>
+            {policyVisible && (
+              <>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-medium">
+                    Политика доступа
+                    {policyExpr
+                      ? <span className="ml-2 text-xs text-primary font-normal">(активна)</span>
+                      : <span className="ml-2 text-xs text-muted-foreground font-normal">{row.type === 'http' ? '(пусто = без дополнительных ограничений для user session)' : '(пусто = доступно всем)'}</span>
+                    }
+                  </h4>
+                </div>
 
-            <RuleBuilder key={builderKey} expression={policyExpr} onChange={setPolicyExpr} />
+                <RuleBuilder key={builderKey} expression={policyExpr} onChange={setPolicyExpr} />
 
-            <Separator className="my-3" />
+                <Separator className="my-3" />
+              </>
+            )}
             <div className="flex justify-end gap-2">
-              {row.policyExpression && (
+              {policyVisible && policyExpr && (
                 <AlertDialog open={clearOpen} onOpenChange={setClearOpen}>
                   <AlertDialogTrigger asChild>
                     <Button variant="outline" size="sm">
@@ -390,12 +461,22 @@ function CommandCard({
                   </AlertDialogContent>
                 </AlertDialog>
               )}
+              {isDirty && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={resetChanges}
+                  disabled={savingChanges}
+                >
+                  Отменить изменения
+                </Button>
+              )}
               <Button
                 size="sm"
-                onClick={handleSavePolicy}
-                disabled={savingPolicy || !policyChanged}
+                onClick={handleSaveChanges}
+                disabled={savingChanges || !isDirty}
               >
-                {savingPolicy ? 'Сохранение...' : 'Сохранить'}
+                {savingChanges ? 'Сохранение...' : 'Сохранить'}
               </Button>
             </div>
           </CardContent>

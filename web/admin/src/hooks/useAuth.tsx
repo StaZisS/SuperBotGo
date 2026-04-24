@@ -4,6 +4,7 @@ interface AuthContextType {
   authenticated: boolean
   loading: boolean
   tsuEnabled: boolean
+  userId: number | null
   login: (email: string, password: string) => Promise<string | null>
   loginWithTSU: () => void
   logout: () => Promise<void>
@@ -15,6 +16,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authenticated, setAuthenticated] = useState(false)
   const [loading, setLoading] = useState(true)
   const [tsuEnabled, setTsuEnabled] = useState(false)
+  const [userId, setUserId] = useState<number | null>(null)
 
   const checkAuth = useCallback(async () => {
     try {
@@ -22,9 +24,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await res.json()
       setAuthenticated(data.authenticated === true)
       setTsuEnabled(data.tsu_enabled === true)
+      setUserId(typeof data.user_id === 'number' ? data.user_id : null)
     } catch {
       setAuthenticated(false)
       setTsuEnabled(false)
+      setUserId(null)
     } finally {
       setLoading(false)
     }
@@ -46,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ email, password }),
       })
       if (res.ok) {
-        setAuthenticated(true)
+        await checkAuth()
         return null
       }
       const data = await res.json()
@@ -54,18 +58,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       return 'Network error'
     }
-  }, [])
+  }, [checkAuth])
 
   const logout = useCallback(async () => {
     try {
       await fetch('/api/admin/auth/logout', { method: 'POST' })
     } finally {
       setAuthenticated(false)
+      setUserId(null)
     }
   }, [])
 
   return (
-    <AuthContext.Provider value={{ authenticated, loading, tsuEnabled, login, loginWithTSU, logout }}>
+    <AuthContext.Provider value={{ authenticated, loading, tsuEnabled, userId, login, loginWithTSU, logout }}>
       {children}
     </AuthContext.Provider>
   )

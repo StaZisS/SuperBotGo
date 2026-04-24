@@ -11,6 +11,8 @@ import type { PluginUpdatePreviewResponse } from '@/api/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog,
   DialogContent,
@@ -26,6 +28,8 @@ interface Props {
   open: boolean
   loading: boolean
   preview: PluginUpdatePreviewResponse
+  changelog: string
+  onChangelogChange: (value: string) => void
   onCancel: () => void
   onConfirm: () => void
 }
@@ -250,6 +254,8 @@ export default function PluginUpdatePreview({
   open,
   loading,
   preview,
+  changelog,
+  onChangelogChange,
   onCancel,
   onConfirm,
 }: Props) {
@@ -327,6 +333,22 @@ export default function PluginUpdatePreview({
 
         <div className="min-h-0 overflow-y-auto px-6 py-5">
           <div className="space-y-5">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Заметка к обновлению</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Label htmlFor="plugin-update-changelog">Комментарий</Label>
+                <Textarea
+                  id="plugin-update-changelog"
+                  value={changelog}
+                  onChange={(e) => onChangelogChange(e.target.value)}
+                  placeholder="Например: обновили RPC-метод, добавили новый trigger, исправили авторизацию"
+                  rows={3}
+                />
+              </CardContent>
+            </Card>
+
             {warnings.length > 0 && (
               <div className="space-y-3">
                 {warnings.map((warning) => (

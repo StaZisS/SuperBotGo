@@ -13,7 +13,7 @@ func main() {
 	wasmplugin.Run(wasmplugin.Plugin{
 		ID:      "schedule",
 		Name:    "University Schedule",
-		Version: "1.5.9",
+		Version: "1.6.1",
 		Config: wasmplugin.ConfigFields(
 			wasmplugin.String("greeting", "Message shown before the schedule").Default("Welcome! Here is your schedule:"),
 		),

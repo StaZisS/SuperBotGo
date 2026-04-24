@@ -414,7 +414,7 @@ func registerAdminRoutes(
 		return model.GlobalUserID(userID), ok
 	})
 	userAuthHandler.RegisterRoutes(adminMux)
-	adminapi.NewAdminCredHandler(adminCredStore, adminMailer).RegisterRoutes(adminMux)
+	adminapi.NewAdminCredHandler(adminCredStore, adminMailer, authHandler).RegisterRoutes(adminMux)
 	adminHandler.RegisterRoutes(adminMux)
 	adminapi.NewCommandPermHandler(stores.cmdPermStore, authorizer).RegisterRoutes(adminMux)
 	adminapi.NewServiceKeyHandler(stores.serviceKeyStore).RegisterRoutes(adminMux)

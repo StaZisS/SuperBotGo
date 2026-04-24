@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 )
@@ -78,7 +79,8 @@ func (h *AdminHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	result, err := h.lifecycle.Update(r.Context(), r.PathValue("id"), wasmBytes)
+	changelog := strings.TrimSpace(r.FormValue("changelog"))
+	result, err := h.lifecycle.Update(r.Context(), r.PathValue("id"), wasmBytes, changelog)
 	if err != nil {
 		slog.Error("admin: failed to update plugin", "id", r.PathValue("id"), "error", err)
 		writeError(w, http.StatusInternalServerError, err.Error())

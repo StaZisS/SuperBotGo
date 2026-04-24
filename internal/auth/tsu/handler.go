@@ -2,8 +2,10 @@ package tsu
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"SuperBotGo/internal/auth/userhttp"
@@ -15,6 +17,7 @@ import (
 const (
 	stateCookieName = "tsu_auth_state"
 	defaultReturnTo = "/"
+	adminAuthError  = "admin_required"
 )
 
 type Handler struct {
@@ -32,6 +35,7 @@ type Handler struct {
 type AdminSessionManager interface {
 	SetSession(w http.ResponseWriter, userID int64)
 	HasAdminAccess(ctx context.Context, userID int64) (bool, error)
+	ClearSession(w http.ResponseWriter)
 }
 
 func NewHandler(
@@ -117,7 +121,11 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(stateCookieName)
 	if err != nil {
 		h.logger.Warn("tsu callback: missing state cookie")
-		http.Error(w, "session expired, please try again", http.StatusBadRequest)
+		writeCallbackStatusPage(w,
+			http.StatusOK,
+			"Сессия входа истекла",
+			"Попробуйте снова начать вход через ТГУ.Аккаунты.",
+		)
 		return
 	}
 
@@ -135,7 +143,11 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 	flow, ok := h.stateStore.Consume(cookie.Value)
 	if !ok {
 		h.logger.Warn("tsu callback: invalid or expired state")
-		http.Error(w, "session expired, please try again", http.StatusBadRequest)
+		writeCallbackStatusPage(w,
+			http.StatusOK,
+			"Сессия входа истекла",
+			"Попробуйте снова начать вход через ТГУ.Аккаунты.",
+		)
 		return
 	}
 
@@ -202,6 +214,14 @@ func (h *Handler) handleWebLoginCallback(w http.ResponseWriter, r *http.Request,
 			http.Redirect(w, r, safeReturnTo, http.StatusFound)
 			return
 		}
+
+		h.logger.Warn("tsu callback: denied admin login for non-admin user",
+			slog.Int64("user_id", int64(userID)),
+			slog.String("return_to", safeReturnTo))
+		h.adminAuth.ClearSession(w)
+		h.sessions.SetSession(w, userID)
+		http.Redirect(w, r, withAuthError(safeReturnTo, adminAuthError), http.StatusFound)
+		return
 	}
 
 	h.sessions.SetSession(w, userID)
@@ -255,6 +275,23 @@ func sanitizeReturnTo(value string) string {
 	return defaultReturnTo
 }
 
+func withAuthError(path string, code string) string {
+	parts := strings.SplitN(path, "?", 2)
+	values := url.Values{}
+	if len(parts) == 2 {
+		var err error
+		values, err = url.ParseQuery(parts[1])
+		if err != nil {
+			return path
+		}
+	}
+	values.Set("auth_error", code)
+	if len(parts) == 1 {
+		return parts[0] + "?" + values.Encode()
+	}
+	return parts[0] + "?" + values.Encode()
+}
+
 const successHTML = `<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -289,6 +326,51 @@ const successHTML = `<!DOCTYPE html>
         <div class="check">&#10004;</div>
         <h1>Аккаунт успешно привязан</h1>
         <p>Можете вернуться в мессенджер.</p>
+    </div>
+</body>
+</html>`
+
+func writeCallbackStatusPage(w http.ResponseWriter, status int, title string, message string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte(fmt.Sprintf(callbackStatusHTML, title, title, message)))
+}
+
+const callbackStatusHTML = `<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>%s</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background: #f5f5f5;
+            color: #171717;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            max-width: 420px;
+        }
+        .icon { font-size: 2.5rem; margin-bottom: 1rem; }
+        h1 { font-size: 1.25rem; margin: 0 0 0.5rem; }
+        p { color: #666; margin: 0; line-height: 1.5; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="icon">&#9888;</div>
+        <h1>%s</h1>
+        <p>%s</p>
     </div>
 </body>
 </html>`

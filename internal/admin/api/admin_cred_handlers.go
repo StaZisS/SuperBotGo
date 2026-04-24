@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 )
@@ -9,10 +10,15 @@ import (
 type AdminCredHandler struct {
 	store  *PgAdminCredStore
 	mailer AdminCredentialMailer
+	auth   adminSessionAuthenticator
 }
 
-func NewAdminCredHandler(store *PgAdminCredStore, mailer AdminCredentialMailer) *AdminCredHandler {
-	return &AdminCredHandler{store: store, mailer: mailer}
+type adminSessionAuthenticator interface {
+	AuthenticateSession(r *http.Request) (int64, bool)
+}
+
+func NewAdminCredHandler(store *PgAdminCredStore, mailer AdminCredentialMailer, auth adminSessionAuthenticator) *AdminCredHandler {
+	return &AdminCredHandler{store: store, mailer: mailer, auth: auth}
 }
 
 func (h *AdminCredHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -89,7 +95,15 @@ func (h *AdminCredHandler) handleCreate(w http.ResponseWriter, r *http.Request) 
 
 	cred, err := h.store.Create(r.Context(), req.GlobalUserID, req.Email, req.Password)
 	if err != nil {
-		writeError(w, http.StatusConflict, "failed to create admin credentials: "+err.Error())
+		if errors.Is(err, ErrAdminCredentialsAlreadyExist) {
+			writeError(w, http.StatusConflict, "доступ в админку уже выдан этому пользователю")
+			return
+		}
+		if errors.Is(err, ErrAdminEmailAlreadyUsed) {
+			writeError(w, http.StatusConflict, "этот email уже используется другим администратором")
+			return
+		}
+		writeError(w, http.StatusConflict, "failed to create admin credentials")
 		return
 	}
 	if generatedPassword {
@@ -106,6 +120,9 @@ func (h *AdminCredHandler) handleUpdatePassword(w http.ResponseWriter, r *http.R
 	userID, err := strconv.ParseInt(r.PathValue("userId"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid user ID")
+		return
+	}
+	if !h.requireSameAdminUser(w, r, userID) {
 		return
 	}
 
@@ -133,6 +150,9 @@ func (h *AdminCredHandler) handleUpdateEmail(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "invalid user ID")
 		return
 	}
+	if !h.requireSameAdminUser(w, r, userID) {
+		return
+	}
 
 	var req struct {
 		Email string `json:"email"`
@@ -146,6 +166,10 @@ func (h *AdminCredHandler) handleUpdateEmail(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := h.store.UpdateEmail(r.Context(), userID, req.Email); err != nil {
+		if errors.Is(err, ErrAdminEmailAlreadyUsed) {
+			writeError(w, http.StatusConflict, "этот email уже используется другим администратором")
+			return
+		}
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
@@ -158,10 +182,31 @@ func (h *AdminCredHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid user ID")
 		return
 	}
+	if !h.requireSameAdminUser(w, r, userID) {
+		return
+	}
 
 	if err := h.store.Delete(r.Context(), userID); err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (h *AdminCredHandler) requireSameAdminUser(w http.ResponseWriter, r *http.Request, targetUserID int64) bool {
+	if h.auth == nil {
+		writeError(w, http.StatusForbidden, "operation is not allowed")
+		return false
+	}
+
+	currentUserID, ok := h.auth.AuthenticateSession(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "session expired")
+		return false
+	}
+	if currentUserID != targetUserID {
+		writeError(w, http.StatusForbidden, "operation is only allowed for your own admin account")
+		return false
+	}
+	return true
 }
