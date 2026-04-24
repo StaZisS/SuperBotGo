@@ -7,8 +7,8 @@ import (
 )
 
 // AdminAuthMiddleware protects /api/admin/* endpoints.
-// It accepts either a valid session cookie (from email+password login)
-// or a Bearer API key (for programmatic access).
+// It accepts either a valid admin session cookie or a Bearer API key
+// (for programmatic access).
 // If no admin credentials exist in the database, all requests are allowed (initial setup).
 type AdminAuthMiddleware struct {
 	apiKey string

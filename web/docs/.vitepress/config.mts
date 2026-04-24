@@ -41,6 +41,7 @@ export default withMermaid(defineConfig({
           text: 'Настройка',
           items: [
             { text: 'Конфигурация', link: '/guide/configuration' },
+            { text: 'Авторизация frontend плагина', link: '/guide/plugin-frontend-auth' },
           ],
         },
       ],
@@ -93,6 +94,8 @@ export default withMermaid(defineConfig({
             { text: 'Файловая подсистема', link: '/architecture/files' },
             { text: 'Авторизация', link: '/architecture/authorization' },
             { text: 'ТГУ.Аккаунты', link: '/architecture/tsu-accounts' },
+            { text: 'Привязка через ТГУ', link: '/architecture/tsu-identity-linking' },
+            { text: 'Админская авторизация', link: '/architecture/admin-auth' },
           ],
         },
       ],

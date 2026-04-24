@@ -20,7 +20,6 @@ export default function AdminAccessCard({ userId }: { userId: number }) {
 
   // Form for granting access
   const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
   const [saving, setSaving] = useState(false)
 
   // Form for resetting password
@@ -37,19 +36,17 @@ export default function AdminAccessCard({ userId }: { userId: number }) {
   }, [userId])
 
   const handleGrant = async () => {
-    if (!email || !password) return
+    if (!email) return
     setSaving(true)
     try {
       const created = await api.createAdminCredential({
         global_user_id: userId,
         email,
-        password,
       })
       setCred(created)
       setHasAccess(true)
       setEmail('')
-      setPassword('')
-      toast.success('Доступ в админку предоставлен')
+      toast.success('Доступ в админку предоставлен, временный пароль отправлен на email')
     } catch (e: unknown) {
       toast.error(getErrorMessage(e))
     } finally {
@@ -142,9 +139,9 @@ export default function AdminAccessCard({ userId }: { userId: number }) {
         ) : (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              У пользователя нет доступа в админку. Назначьте email и временный пароль для входа.
+              У пользователя нет доступа в админку. Укажите email: сервер сгенерирует временный пароль и отправит его по SMTP.
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="adminEmail">Email</Label>
                 <Input
@@ -155,19 +152,9 @@ export default function AdminAccessCard({ userId }: { userId: number }) {
                   placeholder="user@example.com"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="adminPw">Временный пароль</Label>
-                <Input
-                  id="adminPw"
-                  type="text"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Минимум 8 символов"
-                />
-              </div>
             </div>
-            <Button onClick={handleGrant} disabled={saving || !email || password.length < 8} size="sm">
-              {saving ? 'Сохранение...' : 'Предоставить доступ'}
+            <Button onClick={handleGrant} disabled={saving || !email} size="sm">
+              {saving ? 'Сохранение...' : 'Предоставить доступ и отправить пароль'}
             </Button>
           </div>
         )}

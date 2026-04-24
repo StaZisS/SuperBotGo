@@ -7,11 +7,12 @@ import (
 
 // AdminCredHandler manages admin credential CRUD operations.
 type AdminCredHandler struct {
-	store *PgAdminCredStore
+	store  *PgAdminCredStore
+	mailer AdminCredentialMailer
 }
 
-func NewAdminCredHandler(store *PgAdminCredStore) *AdminCredHandler {
-	return &AdminCredHandler{store: store}
+func NewAdminCredHandler(store *PgAdminCredStore, mailer AdminCredentialMailer) *AdminCredHandler {
+	return &AdminCredHandler{store: store, mailer: mailer}
 }
 
 func (h *AdminCredHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -63,9 +64,23 @@ func (h *AdminCredHandler) handleCreate(w http.ResponseWriter, r *http.Request) 
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if req.GlobalUserID == 0 || req.Email == "" || req.Password == "" {
-		writeError(w, http.StatusBadRequest, "global_user_id, email, and password are required")
+	if req.GlobalUserID == 0 || req.Email == "" {
+		writeError(w, http.StatusBadRequest, "global_user_id and email are required")
 		return
+	}
+	generatedPassword := false
+	if req.Password == "" {
+		if h.mailer == nil {
+			writeError(w, http.StatusBadRequest, "password is required when SMTP is not configured")
+			return
+		}
+		password, err := generateTemporaryPassword()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to generate temporary password")
+			return
+		}
+		req.Password = password
+		generatedPassword = true
 	}
 	if len(req.Password) < 8 {
 		writeError(w, http.StatusBadRequest, "password must be at least 8 characters")
@@ -76,6 +91,13 @@ func (h *AdminCredHandler) handleCreate(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		writeError(w, http.StatusConflict, "failed to create admin credentials: "+err.Error())
 		return
+	}
+	if generatedPassword {
+		if err := h.mailer.SendAdminCredentials(r.Context(), req.Email, req.Password); err != nil {
+			_ = h.store.Delete(r.Context(), req.GlobalUserID)
+			writeError(w, http.StatusBadGateway, "failed to send admin credentials email")
+			return
+		}
 	}
 	writeJSON(w, http.StatusCreated, cred)
 }

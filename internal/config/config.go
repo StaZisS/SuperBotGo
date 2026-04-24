@@ -25,6 +25,7 @@ type Config struct {
 	UniversitySync UniversitySyncConfig `koanf:"university_sync"`
 	FileStore      FileStoreConfig      `koanf:"filestore"`
 	TsuAccounts    TsuAccountsConfig    `koanf:"tsu_accounts"`
+	SMTP           SMTPConfig           `koanf:"smtp"`
 }
 
 type WASMConfig struct {
@@ -56,6 +57,14 @@ type TsuAccountsConfig struct {
 	SecretKey     string `koanf:"secret_key"`     // BOT_TSU__ACCOUNTS_SECRET__KEY
 	CallbackURL   string `koanf:"callback_url"`   // public URL for TSU redirect
 	BaseURL       string `koanf:"base_url"`       // https://accounts.tsu.ru
+}
+
+type SMTPConfig struct {
+	Host     string `koanf:"host"`
+	Port     int    `koanf:"port"`
+	Username string `koanf:"username"`
+	Password string `koanf:"password"`
+	From     string `koanf:"from"`
 }
 
 type UniversitySyncConfig struct {
@@ -227,6 +236,9 @@ func Load() (*Config, error) {
 	if cfg.TsuAccounts.BaseURL == "" {
 		cfg.TsuAccounts.BaseURL = "https://accounts.tsu.ru"
 	}
+	if cfg.SMTP.Port == 0 {
+		cfg.SMTP.Port = 587
+	}
 
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -263,6 +275,9 @@ func (c *Config) Validate() error {
 	}
 	if (c.Mattermost.ActionsURL == "") != (c.Mattermost.ActionsSecret == "") {
 		return fmt.Errorf("mattermost.actions_url and mattermost.actions_secret must be set together")
+	}
+	if (c.SMTP.Host == "") != (c.SMTP.From == "") {
+		return fmt.Errorf("smtp.host and smtp.from must be set together")
 	}
 	if c.Mattermost.ActionsPath != "" && !strings.HasPrefix(c.Mattermost.ActionsPath, "/") {
 		return fmt.Errorf("mattermost.actions_path must start with \"/\", got %q", c.Mattermost.ActionsPath)

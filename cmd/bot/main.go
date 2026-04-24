@@ -103,7 +103,7 @@ func main() {
 
 	userSessions := userhttp.NewSessionManager(cfg.UserAuth.SessionSecret, strings.HasPrefix(cfg.TsuAccounts.CallbackURL, "https://"))
 	adminMux, authHandler := registerAdminRoutes(cfg, logger, runtime, stores, blobStore, authorizer, stateMgr, spiceClient, userSessions)
-	tsuAuth := configureTSUAccounts(cfg, stores.userRepo, stores.accountRepo, stores.pool, adminMux, userSessions, logger)
+	tsuAuth := configureTSUAccounts(cfg, stores.userRepo, stores.accountRepo, stores.pool, adminMux, userSessions, authHandler, logger)
 
 	runtime.senderAPI = plugin.NewSenderAPI(runtime.adapterRegistry, userService)
 

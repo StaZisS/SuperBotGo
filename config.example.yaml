@@ -83,6 +83,13 @@ admin:
 user_auth:
   session_secret: "CHANGE_ME_USER_SESSION_SECRET"
 
+smtp:
+  host: "smtp.example.com"
+  port: 587
+  username: "noreply@example.com"
+  password: "SMTP_PASSWORD"
+  from: "noreply@example.com"
+
 wasm:
   reconfigure_enabled: true
   rpc_enabled: false

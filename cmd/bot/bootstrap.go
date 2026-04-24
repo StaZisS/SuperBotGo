@@ -351,7 +351,7 @@ func configureSpiceDB(ctx context.Context, cfg *config.Config, services *postgre
 	return client, nil
 }
 
-func configureTSUAccounts(cfg *config.Config, userRepo *user.PgUserRepo, accountRepo *user.PgAccountRepo, pool *pgxpool.Pool, adminMux *http.ServeMux, sessions *userhttp.SessionManager, logger *slog.Logger) tsuAuthServices {
+func configureTSUAccounts(cfg *config.Config, userRepo *user.PgUserRepo, accountRepo *user.PgAccountRepo, pool *pgxpool.Pool, adminMux *http.ServeMux, sessions *userhttp.SessionManager, adminAuth *adminapi.AuthHandler, logger *slog.Logger) tsuAuthServices {
 	var services tsuAuthServices
 	if cfg.TsuAccounts.ApplicationID == "" || cfg.TsuAccounts.SecretKey == "" {
 		logger.Info("TSU.Accounts not configured, skipping")
@@ -373,7 +373,7 @@ func configureTSUAccounts(cfg *config.Config, userRepo *user.PgUserRepo, account
 
 	personLinker := user.NewPersonAutoLinker(pool)
 	tsuLinker := tsuauth.NewLinker(userRepo, accountRepo, personLinker, logger)
-	tsuHandler := tsuauth.NewHandler(tsuClient, services.stateStore, tsuLinker, userRepo, personLinker, sessions, cfg.TsuAccounts.CallbackURL, logger)
+	tsuHandler := tsuauth.NewHandler(tsuClient, services.stateStore, tsuLinker, userRepo, personLinker, sessions, adminAuth, cfg.TsuAccounts.CallbackURL, logger)
 	tsuHandler.RegisterRoutes(adminMux)
 
 	services.linker = services.stateStore
@@ -409,6 +409,13 @@ func registerAdminRoutes(
 
 	adminMux := http.NewServeMux()
 	adminCredStore := adminapi.NewPgAdminCredStore(stores.pool)
+	adminMailer := adminapi.NewSMTPMailer(adminapi.SMTPMailerConfig{
+		Host:     cfg.SMTP.Host,
+		Port:     cfg.SMTP.Port,
+		Username: cfg.SMTP.Username,
+		Password: cfg.SMTP.Password,
+		From:     cfg.SMTP.From,
+	})
 	authHandler := adminapi.NewAuthHandler(cfg.Admin.APIKey, adminCredStore, userSessions, cfg.TsuAccounts.ApplicationID != "" && cfg.TsuAccounts.SecretKey != "")
 	authHandler.RegisterRoutes(adminMux)
 	userAuthHandler := userhttp.NewHandler(userSessions, stores.userTokenStore)
@@ -417,7 +424,7 @@ func registerAdminRoutes(
 		return model.GlobalUserID(userID), ok
 	})
 	userAuthHandler.RegisterRoutes(adminMux)
-	adminapi.NewAdminCredHandler(adminCredStore).RegisterRoutes(adminMux)
+	adminapi.NewAdminCredHandler(adminCredStore, adminMailer).RegisterRoutes(adminMux)
 	adminHandler.RegisterRoutes(adminMux)
 	adminapi.NewCommandPermHandler(stores.cmdPermStore, authorizer).RegisterRoutes(adminMux)
 	adminapi.NewServiceKeyHandler(stores.serviceKeyStore).RegisterRoutes(adminMux)

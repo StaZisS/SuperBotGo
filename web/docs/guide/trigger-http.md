@@ -83,6 +83,8 @@ await fetch('/api/triggers/http/my-plugin/profile', {
 
 Для обычных API/fetch-запросов поведение не меняется: host возвращает `401`.
 
+Подробный контракт для frontend'ов и admin UI плагинов описан отдельно: [Авторизация frontend'ов плагинов](/guide/plugin-frontend-auth).
+
 ### User bearer token для API-клиентов
 
 Если запросы идут не из браузера, пользователь может сначала получить token из host-сессии:

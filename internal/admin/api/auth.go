@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -161,21 +162,7 @@ func (h *AuthHandler) CredStore() *PgAdminCredStore {
 }
 
 func (h *AuthHandler) Authenticate(r *http.Request) (int64, bool) {
-	if userID, ok := h.AuthenticateSession(r); ok {
-		return userID, true
-	}
-	if h.userAuth == nil {
-		return 0, false
-	}
-	userID, ok := h.userAuth.Authenticate(r)
-	if !ok {
-		return 0, false
-	}
-	hasAccess, err := h.credStore.HasUser(r.Context(), int64(userID))
-	if err != nil || !hasAccess {
-		return 0, false
-	}
-	return int64(userID), true
+	return h.AuthenticateSession(r)
 }
 
 func (h *AuthHandler) AuthenticateSession(r *http.Request) (int64, bool) {
@@ -188,6 +175,10 @@ func (h *AuthHandler) AuthenticateSession(r *http.Request) (int64, bool) {
 
 func (h *AuthHandler) SetSession(w http.ResponseWriter, userID int64) {
 	h.setSessionCookie(w, h.signer.CreateToken(userID, sessionTTL), int(sessionTTL.Seconds()))
+}
+
+func (h *AuthHandler) HasAdminAccess(ctx context.Context, userID int64) (bool, error) {
+	return h.credStore.HasUser(ctx, userID)
 }
 
 func (h *AuthHandler) ClearSession(w http.ResponseWriter) {

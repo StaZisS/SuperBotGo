@@ -24,8 +24,14 @@ type Handler struct {
 	userRepo     user.UserRepository
 	personLinker PersonLinker
 	sessions     *userhttp.SessionManager
+	adminAuth    AdminSessionManager
 	secureCookie bool
 	logger       *slog.Logger
+}
+
+type AdminSessionManager interface {
+	SetSession(w http.ResponseWriter, userID int64)
+	HasAdminAccess(ctx context.Context, userID int64) (bool, error)
 }
 
 func NewHandler(
@@ -35,6 +41,7 @@ func NewHandler(
 	userRepo user.UserRepository,
 	personLinker PersonLinker,
 	sessions *userhttp.SessionManager,
+	adminAuth AdminSessionManager,
 	callbackURL string,
 	logger *slog.Logger,
 ) *Handler {
@@ -45,6 +52,7 @@ func NewHandler(
 		userRepo:     userRepo,
 		personLinker: personLinker,
 		sessions:     sessions,
+		adminAuth:    adminAuth,
 		secureCookie: strings.HasPrefix(callbackURL, "https://"),
 		logger:       logger,
 	}
@@ -179,8 +187,25 @@ func (h *Handler) handleWebLoginCallback(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
+	safeReturnTo := sanitizeReturnTo(returnTo)
+	if strings.HasPrefix(safeReturnTo, "/admin") && h.adminAuth != nil {
+		hasAccess, err := h.adminAuth.HasAdminAccess(r.Context(), int64(userID))
+		if err != nil {
+			h.logger.Error("tsu callback: failed to check admin access",
+				slog.Int64("user_id", int64(userID)),
+				slog.Any("error", err))
+			http.Error(w, "authentication failed, please try again", http.StatusInternalServerError)
+			return
+		}
+		if hasAccess {
+			h.adminAuth.SetSession(w, int64(userID))
+			http.Redirect(w, r, safeReturnTo, http.StatusFound)
+			return
+		}
+	}
+
 	h.sessions.SetSession(w, userID)
-	http.Redirect(w, r, sanitizeReturnTo(returnTo), http.StatusFound)
+	http.Redirect(w, r, safeReturnTo, http.StatusFound)
 }
 
 func (h *Handler) ensureWebUser(ctx context.Context, accountID string) (model.GlobalUserID, error) {

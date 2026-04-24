@@ -715,7 +715,7 @@ export const api = {
   getAdminCredential: (userId: number) =>
       request<{ has_access: boolean; credential?: AdminCredentialInfo }>(`/admins/${userId}`),
 
-  createAdminCredential: (data: { global_user_id: number; email: string; password: string }) =>
+  createAdminCredential: (data: { global_user_id: number; email: string; password?: string }) =>
       request<AdminCredentialInfo>('/admins', { method: 'POST', body: JSON.stringify(data) }),
 
   updateAdminPassword: (userId: number, password: string) =>
