@@ -60,15 +60,15 @@ classDiagram
         <<interface>>
         +NotifyUser(ctx, userID, text, priority)
         +NotifyChat(ctx, channelType, chatID, text, priority)
-        +NotifyStudents(ctx, scope, targetID, text, priority)
+        +NotifyStudents(ctx, scope, targetID, msg, priority)
     }
 
     class permissionStore {
         -mu RWMutex
         -perms map~string, map~string, bool~~
-        +Grant(pluginID, permission)
+        +Grant(pluginID, permissions)
         +Revoke(pluginID)
-        +CheckPermission(pluginID, perm) bool
+        +CheckPermission(pluginID, perm) error
         +List(pluginID) []string
     }
 

@@ -14,10 +14,14 @@
 |---|---|---|
 | `sql.Open` | `("superbot", name) (*sql.DB, error)` | `Database(desc)` |
 | `HTTPRequest` | `(method, url string, headers map[string]string, body string) (*HTTPResponse, error)` | `HTTP(desc)` |
+| `HTTPRequestFor` | `(requirement, method, url string, headers map[string]string, body string) (*HTTPResponse, error)` | `HTTP(desc)` |
 | `HTTPGet` | `(url string) (*HTTPResponse, error)` | `HTTP(desc)` |
 | `HTTPPost` | `(url, contentType, body string) (*HTTPResponse, error)` | `HTTP(desc)` |
 | `CallPlugin` | `(target, method string, params interface{}) ([]byte, error)` | `PluginDep(target, desc)` |
+| `CallPluginInto` | `(target, method string, params interface{}, out interface{}) error` | `PluginDep(target, desc)` |
+| `CallPluginRaw` | `(target, method string, rawParams []byte) ([]byte, error)` | `PluginDep(target, desc)` |
 | `PublishEvent` | `(topic string, payload interface{}) error` | `EventsReq(desc)` |
+| `PublishEventRawJSON` | `(topic string, payload []byte) error` | `EventsReq(desc)` |
 
 ## Методы EventContext
 
@@ -48,6 +52,14 @@
 | `Config` | `(key, fallback string) string` | Значение конфигурации |
 | `Param` | `(key string) string` | Параметр команды |
 | `Locale` | `() string` | Локаль пользователя |
+| `HasFiles` | `() bool` | Есть ли прикреплённые файлы |
+| `Files` | `() []FileRef` | Список прикреплённых файлов |
+| `FileMeta` | `(fileID string) (*FileRef, error)` | Метаданные файла |
+| `FileRead` | `(fileID string, offset, maxBytes int64) ([]byte, bool, error)` | Чтение чанками |
+| `FileReadAll` | `(fileID string) ([]byte, error)` | Чтение файла целиком |
+| `FileURL` | `(fileID string) (string, error)` | Временная ссылка на скачивание |
+| `FileStore` | `(name, mimeType, fileType string, data []byte) (*FileRef, error)` | Сохранение файла |
+| `FileStoreWithTTL` | `(name, mimeType, fileType string, data []byte, ttl time.Duration) (*FileRef, error)` | Сохранение файла с TTL |
 
 ### Уведомления
 
@@ -90,7 +102,9 @@
 | `Integer(key, desc)` | Целочисленное поле |
 | `Number(key, desc)` | Числовое поле (float) |
 | `Bool(key, desc)` | Булево поле |
+| `StringArray(key, desc)` | Массив строк |
 | `Enum(key, desc, values...)` | Перечисление |
+| `HTTPPolicyConfig()` | Готовая схема policy для HTTP requirement |
 
 ### Модификаторы полей
 
@@ -112,7 +126,8 @@
 | `KV(desc)` | `kv` | Key-value хранилище |
 | `NotifyReq(desc)` | `notify` | Отправка уведомлений |
 | `EventsReq(desc)` | `events` | Публикация событий |
-| `PluginDep(target, desc)` | `plugin:<target>` | Вызов другого плагина |
+| `PluginDep(target, desc)` | `plugins:call:<target>` | Вызов другого плагина |
+| `File(desc)` | `file` | Доступ к файловому хранилищу |
 
 ### Методы RequirementBuilder
 
@@ -139,6 +154,8 @@
 | `.LocalizedOptions(prompts, ...Option)` | Локализованные опции |
 | `.DynamicOptions(prompt, fn)` | Динамические опции (callback) |
 | `.PaginatedOptions(prompt, pageSize, fn)` | Пагинированные опции |
+| `.LocalizedDynamicOptions(prompts, fn)` | Динамические опции с локализованным prompt |
+| `.LocalizedPaginatedOptions(prompts, pageSize, fn)` | Пагинированные опции с локализованным prompt |
 | `.Link(url, label)` | Ссылка |
 | `.Image(url)` | Картинка |
 | `.Validate(regex)` | Regex-валидация ввода |
@@ -188,12 +205,16 @@
 | Конструктор / метод | Сигнатура | Описание |
 |---|---|---|
 | `NewMessage` | `(text string) Message` | Создать сообщение с текстовым блоком |
+| `NewLocalizedMessage` | `(texts map[string]string) Message` | Создать сообщение с локализованным текстовым блоком |
 | `.Text` | `(text string) Message` | Добавить текстовый блок |
+| `.LocalizedText` | `(texts map[string]string) Message` | Добавить локализованный текстовый блок |
 | `.StyledText` | `(text string, style TextStyle) Message` | Текст со стилем |
+| `.LocalizedStyledText` | `(texts map[string]string, style TextStyle) Message` | Локализованный текст со стилем |
 | `.Mention` | `(userID string) Message` | Упоминание пользователя |
 | `.File` | `(ref FileRef, caption string) Message` | Файл-вложение |
 | `.Link` | `(url, label string) Message` | Ссылка |
 | `.Image` | `(url string) Message` | Изображение |
+| `.IsEmpty` | `() bool` | Проверка, что сообщение пустое |
 
 ## Миграции
 
@@ -219,4 +240,4 @@
 | `PriorityNormal` | `1` | Стандартное уведомление |
 | `PriorityHigh` | `2` | Важное - с упоминанием |
 | `PriorityCritical` | `3` | Срочное - все каналы |
-| `ProtocolVersion` | `1` | Версия протокола SDK |
+| `ProtocolVersion` | `3` | Версия протокола SDK |

@@ -132,7 +132,7 @@ ctx.NotifyStudents().
 ```
 
 ::: warning Валидация на стороне SDK
-`Send()` вернёт ошибку, если не задан scope (не вызван ни один из методов `Faculty`, `Stream`, `Group` и т.д.) или не задан текст. Host-вызов не произойдёт.
+`Send()` вернёт ошибку, если не задан scope (не вызван ни один из методов `Faculty`, `Stream`, `Group` и т.д.) или не задано сообщение. Host-вызов не произойдёт.
 :::
 
 **Необходимое разрешение:** `notify`
@@ -172,7 +172,6 @@ func main() {
     wasmplugin.Run(wasmplugin.Plugin{
         ID:          "schedule-alerts",
         Name:        "Оповещения по расписанию",
-        Description: "Уведомления студентов об изменениях в расписании",
         Version:     "1.0.0",
         Requirements: []wasmplugin.Requirement{
             wasmplugin.NotifyReq("рассылка студентам об изменениях расписания").Build(),

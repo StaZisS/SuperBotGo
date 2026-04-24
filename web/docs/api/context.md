@@ -109,7 +109,7 @@ ctx.Reply(wasmplugin.NewMessage("Вот расписание").File(ref, "schedu
 |---|---|
 | `ctx.NotifyUser(userID, text, priority)` | Уведомление пользователю с учётом предпочтений |
 | `ctx.NotifyChat(channelType, chatID, text, priority)` | Уведомление в конкретный чат |
-| `ctx.NotifyStudents().Scope(id).Message(t).Send()` | Уведомление студентам по университетской иерархии (builder) |
+| `ctx.NotifyStudents().Stream(id).Message(msg).Send()` | Уведомление студентам по университетской иерархии (builder) |
 
 Подробнее: [Уведомления](/api/notifications)
 
