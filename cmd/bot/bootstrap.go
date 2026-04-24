@@ -234,29 +234,19 @@ func startWasmEventBus(ctx context.Context, logger *slog.Logger, cfg *config.Con
 }
 
 func newBlobStore(ctx context.Context, cfg *config.Config, logger *slog.Logger) (adminapi.BlobStore, error) {
-	switch cfg.Admin.BlobStore {
-	case "s3":
-		store, err := adminapi.NewS3BlobStore(ctx, adminapi.S3BlobStoreConfig{
-			Bucket:    cfg.Admin.S3.Bucket,
-			Region:    cfg.Admin.S3.Region,
-			Endpoint:  cfg.Admin.S3.Endpoint,
-			AccessKey: cfg.Admin.S3.AccessKey,
-			SecretKey: cfg.Admin.S3.SecretKey,
-			Prefix:    cfg.Admin.S3.Prefix,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("create S3 blob store: %w", err)
-		}
-		logger.Info("using S3 blob store", slog.String("bucket", cfg.Admin.S3.Bucket))
-		return store, nil
-	default:
-		store, err := adminapi.NewLocalFSBlobStore(cfg.Admin.ModulesDir)
-		if err != nil {
-			return nil, fmt.Errorf("create blob store: %w", err)
-		}
-		logger.Info("using local filesystem blob store", slog.String("dir", cfg.Admin.ModulesDir))
-		return store, nil
+	store, err := adminapi.NewS3BlobStore(ctx, adminapi.S3BlobStoreConfig{
+		Bucket:    cfg.Admin.S3.Bucket,
+		Region:    cfg.Admin.S3.Region,
+		Endpoint:  cfg.Admin.S3.Endpoint,
+		AccessKey: cfg.Admin.S3.AccessKey,
+		SecretKey: cfg.Admin.S3.SecretKey,
+		Prefix:    cfg.Admin.S3.Prefix,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create S3 blob store: %w", err)
 	}
+	logger.Info("using S3 blob store", slog.String("bucket", cfg.Admin.S3.Bucket))
+	return store, nil
 }
 
 func newRedisClient(ctx context.Context, cfg *config.Config, logger *slog.Logger, cronScheduler *trigger.CronScheduler) (*redis.Client, error) {

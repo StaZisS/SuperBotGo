@@ -204,7 +204,7 @@ wasmplugin.Plugin{
 
 ## Обновление конфигурации без reload {#reconfigure}
 
-Если плагин реализует `OnReconfigure`, host использует отдельный action `reconfigure` вместо повторного `configure`:
+Если плагин реализует `OnReconfigure` и в host включён `wasm.reconfigure_enabled`, host использует отдельный action `reconfigure` вместо полного reload:
 
 ```go
 OnReconfigure: func(previousConfig, nextConfig []byte) error {
@@ -220,4 +220,8 @@ OnReconfigure: func(previousConfig, nextConfig []byte) error {
 2. Вызывает `OnReconfigure(previous, next)`.
 3. Только после успешного apply сохраняет новый config.
 
-Если `OnReconfigure` не реализован, host делает controlled reload того же wasm-бинаря с новым config.
+::: tip Поведение по умолчанию
+`wasm.reconfigure_enabled` по умолчанию включён. Если ключ не задан, используется значение `true`.
+:::
+
+Если `OnReconfigure` не реализован или `wasm.reconfigure_enabled=false`, host применяет новый config через controlled reload того же wasm-бинаря.

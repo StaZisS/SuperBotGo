@@ -198,7 +198,7 @@ func Load() (*Config, error) {
 		cfg.Admin.ModulesDir = "./wasm_modules"
 	}
 	if cfg.Admin.BlobStore == "" {
-		cfg.Admin.BlobStore = "localfs"
+		cfg.Admin.BlobStore = "s3"
 	}
 	if cfg.WASM.EventsBackend == "" {
 		cfg.WASM.EventsBackend = "memory"
@@ -281,6 +281,11 @@ func (c *Config) Validate() error {
 	}
 	if c.Mattermost.ActionsPath != "" && !strings.HasPrefix(c.Mattermost.ActionsPath, "/") {
 		return fmt.Errorf("mattermost.actions_path must start with \"/\", got %q", c.Mattermost.ActionsPath)
+	}
+	switch c.Admin.BlobStore {
+	case "", "s3":
+	default:
+		return fmt.Errorf("admin.blob_store must be \"s3\", got %q", c.Admin.BlobStore)
 	}
 	switch c.WASM.EventsBackend {
 	case "", "memory", "postgres":

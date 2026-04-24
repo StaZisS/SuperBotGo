@@ -10,8 +10,10 @@ SuperBotGo поддерживает запуск нескольких экзем
 |---|---|
 | **Telegram** (long polling) | Telegram вернёт HTTP 409 — только один экземпляр может поллить |
 | **Discord** (gateway) | Все N экземпляров получат каждое событие — N-кратная обработка |
+| **VK** (`longpoll`) | Режим не подходит для multi-instance; для горизонтального масштабирования используйте `callback` |
+| **Mattermost** (websocket) | Все N экземпляров получат одни и те же события — нужна дедупликация |
 
-SuperBotGo решает это тремя механизмами: **webhook-режим** для Telegram, **шардинг** для Discord и **дедупликация** как страховка для обоих.
+SuperBotGo решает это четырьмя механизмами: **webhook-режим** для Telegram, **callback-режим** для VK, **шардинг** для Discord и **дедупликация** для платформ, где событие может увидеть больше одного экземпляра.
 
 ## Telegram: Webhook Mode
 
@@ -100,9 +102,60 @@ Discord **обязывает** использовать шардинг при >2
 При изменении `shard_count` все экземпляры должны быть перезапущены одновременно — Discord требует единого `shard_count` для всех соединений одного бота.
 :::
 
+## VK: Callback Mode
+
+Для single-instance можно использовать `longpoll`, но для горизонтального масштабирования нужен `callback`-режим. В этом режиме VK отправляет HTTP callbacks на публичный endpoint, а load balancer распределяет запросы между экземплярами.
+
+```mermaid
+flowchart LR
+    VK["VK Callback API"] -->|POST /vk/callback| LB["Load Balancer"]
+    LB --> I1["Instance 1"]
+    LB --> I2["Instance 2"]
+    LB --> I3["Instance 3"]
+    I1 & I2 & I3 --> Redis[("Redis<br/>dedup")]
+```
+
+### Конфигурация
+
+```yaml
+vk:
+  token: "YOUR_VK_COMMUNITY_TOKEN"
+  mode: callback
+  callback_url: "https://bot.example.com/vk/callback"
+  callback_path: "/vk/callback"
+```
+
+| Параметр | Обязателен | Описание |
+|---|---|---|
+| `mode` | нет | `longpoll` (по умолчанию) или `callback` |
+| `callback_url` | при `callback` | Публичный URL, который VK вызывает для доставки событий |
+| `callback_path` | нет | Локальный HTTP path, который монтирует SuperBotGo |
+
+::: tip
+Для production с несколькими экземплярами используйте `mode: callback`. `longpoll` оставляйте для dev или single-instance установки.
+:::
+
+## Mattermost: WebSocket + Dedup
+
+Mattermost доставляет события через WebSocket. При нескольких экземплярах каждое подключение получает один и тот же поток событий, поэтому масштабирование здесь опирается на Redis-дедупликацию, а не на шардирование.
+
+```mermaid
+flowchart LR
+    MM["Mattermost WebSocket"] --> I1["Instance 1"]
+    MM --> I2["Instance 2"]
+    MM --> I3["Instance 3"]
+    I1 & I2 & I3 --> Redis[("Redis<br/>dedup")]
+```
+
+Интерактивные действия (`post actions`) приходят уже по HTTP и могут безопасно проходить через load balancer на любой экземпляр, если настроены `actions_url` и `actions_secret`.
+
+::: warning
+У Mattermost в текущей реализации нет отдельного механизма partitioning вроде Discord sharding. При росте нагрузки несколько экземпляров уменьшают SPOF, но не снижают fan-out входящих websocket-событий.
+:::
+
 ## Дедупликация
 
-Даже с webhook и шардингом возможны дубли: Telegram повторяет webhook при таймауте, Discord переотправляет события при реконнекте. SuperBotGo автоматически дедуплицирует обновления через Redis.
+Даже с webhook, callback и шардингом возможны дубли: Telegram повторяет webhook при таймауте, Discord переотправляет события при реконнекте, Mattermost и некоторые multi-connection сценарии дают одинаковые события нескольким экземплярам. SuperBotGo автоматически дедуплицирует обновления через Redis.
 
 ### Как это работает
 
@@ -133,6 +186,12 @@ flowchart LR
 | `telegram.webhook_listen` | `BOT_TELEGRAM_WEBHOOK_LISTEN` | — | Локальный адрес вебхук-сервера |
 | `discord.shard_id` | `BOT_DISCORD_SHARD_ID` | `0` | Индекс шарда |
 | `discord.shard_count` | `BOT_DISCORD_SHARD_COUNT` | `1` | Общее количество шардов |
+| `vk.mode` | `BOT_VK_MODE` | `longpoll` | Режим получения обновлений |
+| `vk.callback_url` | `BOT_VK_CALLBACK_URL` | — | Публичный URL для callback |
+| `vk.callback_path` | `BOT_VK_CALLBACK_PATH` | `/vk/callback` | Локальный path callback handler |
+| `mattermost.actions_url` | `BOT_MATTERMOST_ACTIONS_URL` | — | Публичный URL для interactive actions |
+| `mattermost.actions_path` | `BOT_MATTERMOST_ACTIONS_PATH` | `/mattermost/actions` | Локальный path action handler |
+| `mattermost.actions_secret` | `BOT_MATTERMOST_ACTIONS_SECRET` | — | Секрет валидации interactive actions |
 
 ## Что дальше?
 

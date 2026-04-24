@@ -2,36 +2,43 @@
 layout: home
 
 hero:
-  name: SuperBotGo SDK
-  text: SDK для WASM-плагинов
-  tagline: Создавайте изолированные WASM-плагины для бот-платформы SuperBotGo
+  name: Документация SuperBotGo
+  text: Платформа, плагины, Host API и деплой
+  tagline: Архитектура системы, разработка WASM-плагинов, интеграции, эксплуатация и SDK для разных языков
   actions:
     - theme: brand
-      text: Быстрый старт
+      text: Обзор платформы
+      link: /guide/overview
+    - theme: alt
+      text: Быстрый старт (Go)
       link: /guide/quick-start
     - theme: alt
       text: Справочник API
       link: /api/reference
 
 features:
-  - title: Руководство
-    details: Обзор платформы, создание первого плагина, структура и жизненный цикл.
+  - title: Платформа
+    details: "Как устроен SuperBotGo: каналы, триггеры, плагины, Host API и ключевые системные потоки."
     link: /guide/overview
-    linkText: Начать
-  - title: Триггеры
-    details: Messenger-команды, HTTP-эндпоинты, Cron-расписания, Event Bus.
+    linkText: Открыть
+  - title: Разработка плагинов
+    details: Структура плагина, конфигурация, жизненный цикл и практические сценарии разработки.
+    link: /guide/plugin-structure
+    linkText: Изучить
+  - title: SDK и языки
+    details: "Документация описывает всю систему. Примеры быстрого старта сейчас даны для Go SDK, но модель плагинов не ограничена Go."
+    link: /guide/quick-start
+    linkText: Перейти
+  - title: Триггеры и интеграции
+    details: Messenger-команды, HTTP-эндпоинты, Cron-расписания и Event Bus для межплагинного обмена.
     link: /guide/triggers
     linkText: Подробнее
-  - title: API
-    details: EventContext, Host API (БД, HTTP, KV), уведомления, локализация.
+  - title: API и Host ABI
+    details: "EventContext, Host API, данные, файлы, локализация, уведомления и справочные контракты."
     link: /api/context
     linkText: Справочник
-  - title: Деплой
-    details: Сборка WASM, установка через Admin API, разрешения, миграции.
-    link: /deploy/build
-    linkText: Инструкция
-  - title: Архитектура
-    details: Диаграмма компонентов системы и потоки данных.
+  - title: Архитектура и эксплуатация
+    details: Компоненты системы, авторизация, хранение файлов, миграции, сборка и масштабирование.
     link: /architecture/components
     linkText: Смотреть
 ---

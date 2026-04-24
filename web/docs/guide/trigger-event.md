@@ -97,3 +97,7 @@ wasmplugin.Trigger{
 - `postgres` backend даёт cluster-wide durable delivery, retry и DLQ.
 
 Если включён backend PostgreSQL, событие сначала попадает в очередь `wasm_event_queue`, затем доставляется подписчикам worker-процессом.
+
+::: warning Архитектурная оговорка
+`postgres` backend - это рабочий и прагматичный вариант для текущей реализации, но не специализированный event broker. Если у системы растут объёмы событий, требования к изоляции очередей, throughput, retention или операционной предсказуемости, Event Bus лучше выносить в более подходящий backend или отдельный брокер сообщений.
+:::
