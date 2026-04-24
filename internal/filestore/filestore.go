@@ -8,16 +8,36 @@ import (
 	"SuperBotGo/internal/model"
 )
 
+type FileState string
+
+const (
+	FileStatePending FileState = "pending"
+	FileStateReady   FileState = "ready"
+)
+
+type FileOwnerKind string
+
+const (
+	FileOwnerUser    FileOwnerKind = "user"
+	FileOwnerService FileOwnerKind = "service"
+)
+
 // FileMeta holds the full metadata for a stored file.
 type FileMeta struct {
-	ID        string         `json:"id"`
-	Name      string         `json:"name"`
-	MIMEType  string         `json:"mime_type"`
-	Size      int64          `json:"size"`
-	FileType  model.FileType `json:"file_type"`
-	PluginID  string         `json:"plugin_id,omitempty"` // who stored it ("" for incoming)
-	CreatedAt time.Time      `json:"created_at"`
-	ExpiresAt *time.Time     `json:"expires_at,omitempty"`
+	ID                string             `json:"id"`
+	Name              string             `json:"name"`
+	MIMEType          string             `json:"mime_type"`
+	Size              int64              `json:"size"`
+	FileType          model.FileType     `json:"file_type"`
+	PluginID          string             `json:"plugin_id,omitempty"` // who stored it ("" for incoming)
+	CreatedAt         time.Time          `json:"created_at"`
+	ExpiresAt         *time.Time         `json:"expires_at,omitempty"`
+	State             FileState          `json:"state,omitempty"`
+	ScopePluginID     string             `json:"scope_plugin_id,omitempty"`
+	OwnerKind         FileOwnerKind      `json:"owner_kind,omitempty"`
+	OwnerUserID       model.GlobalUserID `json:"owner_user_id,omitempty"`
+	OwnerServiceKeyID int64              `json:"owner_service_key_id,omitempty"`
+	ExpectedSize      int64              `json:"expected_size,omitempty"`
 }
 
 // Ref converts FileMeta to a lightweight FileRef suitable for passing to plugins.
@@ -51,6 +71,19 @@ type FileStore interface {
 
 	// Cleanup removes expired files. Returns the number of files removed.
 	Cleanup(ctx context.Context) (int, error)
+}
+
+type DirectUpload struct {
+	FileID    string
+	Method    string
+	URL       string
+	Headers   map[string]string
+	ExpiresAt time.Time
+}
+
+type DirectUploadStore interface {
+	CreateDirectUpload(ctx context.Context, meta FileMeta, expiry time.Duration) (DirectUpload, error)
+	CompleteDirectUpload(ctx context.Context, id string) (model.FileRef, error)
 }
 
 // RangeReader is an optional capability for backends that can serve byte

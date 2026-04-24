@@ -102,7 +102,7 @@ func main() {
 	stateMgr.SetMetrics(runtime.metrics)
 
 	userSessions := userhttp.NewSessionManager(cfg.UserAuth.SessionSecret, strings.HasPrefix(cfg.TsuAccounts.CallbackURL, "https://"))
-	adminMux, authHandler := registerAdminRoutes(cfg, logger, runtime, stores, blobStore, authorizer, stateMgr, spiceClient, userSessions)
+	adminMux, authHandler := registerAdminRoutes(cfg, logger, runtime, stores, fileStore, blobStore, authorizer, stateMgr, spiceClient, userSessions)
 	tsuAuth := configureTSUAccounts(cfg, stores.userRepo, stores.accountRepo, stores.pool, adminMux, userSessions, authHandler, logger)
 
 	runtime.senderAPI = plugin.NewSenderAPI(runtime.adapterRegistry, userService)

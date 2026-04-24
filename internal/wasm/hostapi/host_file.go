@@ -31,6 +31,49 @@ type fileMetaResponse struct {
 	Error    string `msgpack:"error,omitempty"`
 }
 
+func currentHTTPAuth(ctx context.Context) *model.HTTPAuthData {
+	auth, ok := ctx.Value(wasmrt.HTTPAuthDataKey{}).(model.HTTPAuthData)
+	if !ok {
+		return nil
+	}
+	return &auth
+}
+
+func authorizeFileAccess(ctx context.Context, pluginID string, meta *filestore.FileMeta) error {
+	if meta == nil {
+		return fmt.Errorf("file metadata is missing")
+	}
+	if meta.State == filestore.FileStatePending {
+		return fmt.Errorf("file %q upload is not complete", meta.ID)
+	}
+	if meta.ScopePluginID != "" && meta.ScopePluginID != pluginID {
+		return fmt.Errorf("file %q is not available to plugin %q", meta.ID, pluginID)
+	}
+	if meta.OwnerKind == "" {
+		return nil
+	}
+
+	auth := currentHTTPAuth(ctx)
+	if auth == nil {
+		return fmt.Errorf("file %q requires an authenticated HTTP trigger context", meta.ID)
+	}
+
+	switch meta.OwnerKind {
+	case filestore.FileOwnerUser:
+		if auth.Kind != model.HTTPAuthUser || auth.UserID != meta.OwnerUserID {
+			return fmt.Errorf("file %q is not available to the current user", meta.ID)
+		}
+	case filestore.FileOwnerService:
+		if auth.Kind != model.HTTPAuthService || auth.ServiceKeyID != meta.OwnerServiceKeyID {
+			return fmt.Errorf("file %q is not available to the current service key", meta.ID)
+		}
+	default:
+		return fmt.Errorf("file %q has unsupported owner kind %q", meta.ID, meta.OwnerKind)
+	}
+
+	return nil
+}
+
 func (h *HostAPI) fileMetaFunc() api.GoModuleFunc {
 	return func(ctx context.Context, mod api.Module, stack []uint64) {
 		pluginID := pluginIDFromContext(ctx)
@@ -61,6 +104,11 @@ func (h *HostAPI) fileMetaFunc() api.GoModuleFunc {
 
 		meta, err := h.deps.FileStore.Meta(ctx, req.FileID)
 		if err != nil {
+			SetHostCallStatus(ctx, "error")
+			writeResult(ctx, mod, stack, fileMetaResponse{Error: err.Error()})
+			return
+		}
+		if err := authorizeFileAccess(ctx, pluginID, meta); err != nil {
 			SetHostCallStatus(ctx, "error")
 			writeResult(ctx, mod, stack, fileMetaResponse{Error: err.Error()})
 			return
@@ -240,6 +288,17 @@ func (h *HostAPI) fileReadFunc() api.GoModuleFunc {
 			returnError(ctx, mod, stack, errDepNotAvailable("FileStore"))
 			return
 		}
+		meta, err := h.deps.FileStore.Meta(ctx, req.FileID)
+		if err != nil {
+			SetHostCallStatus(ctx, "error")
+			writeResult(ctx, mod, stack, fileReadResponse{Error: err.Error()})
+			return
+		}
+		if err := authorizeFileAccess(ctx, pluginID, meta); err != nil {
+			SetHostCallStatus(ctx, "error")
+			writeResult(ctx, mod, stack, fileReadResponse{Error: err.Error()})
+			return
+		}
 
 		resp, err := readFileChunk(ctx, h.deps.FileStore, req.FileID, req.Offset, req.Length)
 		if err != nil {
@@ -276,6 +335,17 @@ func (h *HostAPI) fileReadIntoFunc() api.GoModuleFunc {
 
 		if h.deps.FileStore == nil {
 			returnError(ctx, mod, stack, errDepNotAvailable("FileStore"))
+			return
+		}
+		meta, err := h.deps.FileStore.Meta(ctx, req.FileID)
+		if err != nil {
+			SetHostCallStatus(ctx, "error")
+			writeResult(ctx, mod, stack, fileReadIntoResponse{Error: err.Error()})
+			return
+		}
+		if err := authorizeFileAccess(ctx, pluginID, meta); err != nil {
+			SetHostCallStatus(ctx, "error")
+			writeResult(ctx, mod, stack, fileReadIntoResponse{Error: err.Error()})
 			return
 		}
 		if req.DataLen == 0 {
@@ -352,6 +422,17 @@ func (h *HostAPI) fileURLFunc() api.GoModuleFunc {
 			returnError(ctx, mod, stack, errDepNotAvailable("FileStore"))
 			return
 		}
+		meta, err := h.deps.FileStore.Meta(ctx, req.FileID)
+		if err != nil {
+			SetHostCallStatus(ctx, "error")
+			writeResult(ctx, mod, stack, fileURLResponse{Error: err.Error()})
+			return
+		}
+		if err := authorizeFileAccess(ctx, pluginID, meta); err != nil {
+			SetHostCallStatus(ctx, "error")
+			writeResult(ctx, mod, stack, fileURLResponse{Error: err.Error()})
+			return
+		}
 
 		expiry := time.Duration(req.ExpirySeconds) * time.Second
 		if req.ExpirySeconds <= 0 {
@@ -425,11 +506,13 @@ func (h *HostAPI) fileStoreFunc() api.GoModuleFunc {
 		}
 
 		meta := filestore.FileMeta{
-			Name:     req.Name,
-			MIMEType: req.MIMEType,
-			Size:     int64(len(req.Data)),
-			FileType: model.FileType(req.FileType),
-			PluginID: pluginID,
+			Name:          req.Name,
+			MIMEType:      req.MIMEType,
+			Size:          int64(len(req.Data)),
+			FileType:      model.FileType(req.FileType),
+			PluginID:      pluginID,
+			ScopePluginID: pluginID,
+			State:         filestore.FileStateReady,
 		}
 
 		if req.TTLSeconds > 0 {

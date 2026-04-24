@@ -30,6 +30,7 @@ func (m *AdminAuthMiddleware) Wrap(next http.Handler) http.Handler {
 		// Always allow auth endpoints, TSU OAuth, static files, metrics, and trigger webhooks.
 		if strings.HasPrefix(path, "/api/admin/auth/") ||
 			strings.HasPrefix(path, "/api/auth/") ||
+			strings.HasPrefix(path, "/api/files/") ||
 			strings.HasPrefix(path, "/api/triggers/http/") ||
 			strings.HasPrefix(path, "/oauth/") ||
 			!strings.HasPrefix(path, "/api/") {

@@ -3,6 +3,7 @@ package runtime
 import "encoding/json"
 
 type PluginIDKey struct{}
+type HTTPAuthDataKey struct{}
 
 const MaxSupportedSDKVersion = 3
 

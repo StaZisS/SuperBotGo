@@ -26,6 +26,7 @@ import (
 	"SuperBotGo/internal/chat"
 	"SuperBotGo/internal/config"
 	"SuperBotGo/internal/database"
+	"SuperBotGo/internal/filehttp"
 	"SuperBotGo/internal/filestore"
 	"SuperBotGo/internal/i18n"
 	"SuperBotGo/internal/locale"
@@ -376,6 +377,7 @@ func registerAdminRoutes(
 	logger *slog.Logger,
 	runtime *runtimeServices,
 	stores *postgresServices,
+	fileStore filestore.FileStore,
 	blobStore adminapi.BlobStore,
 	authorizer *authz.Authorizer,
 	stateMgr *state.Manager,
@@ -437,6 +439,22 @@ func registerAdminRoutes(
 	adminapi.NewPositionHandler(positionStore).RegisterRoutes(adminMux)
 	adminapi.NewImportHandler(stores.syncSvc, stores.pool).RegisterRoutes(adminMux)
 	adminapi.NewUniversitySyncHandler(stores.syncSvc).RegisterRoutes(adminMux)
+
+	fileHandler := filehttp.NewHandler(fileStore, cfg.FileStore.MaxFileSize)
+	if userSessions != nil {
+		fileHandler.SetUserAuthenticator(userSessions.Authenticate)
+	}
+	if stores.userTokenStore != nil {
+		fileHandler.SetUserTokenAuthenticator(stores.userTokenStore.AuthenticateUserToken)
+	}
+	fileHandler.SetPluginExists(func(pluginID string) bool {
+		_, ok := runtime.pluginManager.Get(pluginID)
+		return ok
+	})
+	fileHandler.SetPluginAllowsFiles(func(pluginID string) bool {
+		return runtime.hostAPI.HasPermission(pluginID, "file")
+	})
+	fileHandler.RegisterRoutes(adminMux)
 
 	httpTrigger := trigger.NewHTTPTriggerHandler(runtime.triggerRouter, runtime.triggerRegistry)
 	httpTrigger.SetMetrics(runtime.metrics)

@@ -16,6 +16,7 @@ import (
 
 	"SuperBotGo/internal/metrics"
 	"SuperBotGo/internal/model"
+	wasmrt "SuperBotGo/internal/wasm/runtime"
 )
 
 type statusRecorder struct {
@@ -238,6 +239,9 @@ func buildHTTPRequestData(r *http.Request, triggerPath string, principal resolve
 }
 
 func (h *HTTPTriggerHandler) dispatchHTTPEvent(ctx context.Context, event model.Event) (model.HTTPResponseData, error) {
+	if httpData, err := event.HTTP(); err == nil && httpData != nil && httpData.Auth != nil {
+		ctx = context.WithValue(ctx, wasmrt.HTTPAuthDataKey{}, *httpData.Auth)
+	}
 	resp, err := h.router.RouteEvent(ctx, event)
 	if err != nil {
 		return model.HTTPResponseData{}, err

@@ -172,6 +172,10 @@ func (h *HostAPI) GrantPermissions(pluginID string, permissions []string) {
 	h.perms.Grant(pluginID, permissions)
 }
 
+func (h *HostAPI) HasPermission(pluginID, permission string) bool {
+	return h.perms.CheckPermission(pluginID, permission) == nil
+}
+
 func (h *HostAPI) RevokePermissions(pluginID string) {
 	h.perms.Revoke(pluginID)
 	h.httpPolicies.Delete(pluginID)

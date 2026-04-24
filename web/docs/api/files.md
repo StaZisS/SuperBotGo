@@ -4,6 +4,100 @@
 
 Плагины работают **только со ссылками** (`FileRef`) — содержимое файлов не передаётся в event data. Для чтения и записи содержимого используются host-функции.
 
+## Direct upload для HTTP-trigger'ов
+
+Для frontend/API-сценариев не отправляйте файлы в HTTP-trigger через `multipart/form-data`.
+Рекомендуемый поток такой:
+
+1. Инициализировать upload через host API
+2. Загрузить байты напрямую в object storage по `upload_url`
+3. Подтвердить upload и получить `file_id`
+4. Передать `file_id` в JSON-теле HTTP-trigger'а
+
+### Инициализация upload
+
+```http
+POST /api/files/init
+Content-Type: application/json
+Cookie: user_session=...
+
+{
+  "plugin_id": "my-plugin",
+  "name": "report.pdf",
+  "mime_type": "application/pdf",
+  "size": 123456,
+  "file_type": "document"
+}
+```
+
+Ответ:
+
+```json
+{
+  "file_id": "4e7d...",
+  "upload_url": "https://storage.example.com/...",
+  "upload_method": "PUT",
+  "upload_headers": {
+    "Content-Type": "application/pdf"
+  },
+  "expires_at": "2026-04-24T12:34:56Z"
+}
+```
+
+### Загрузка байтов
+
+Клиент загружает файл напрямую в `upload_url`:
+
+```ts
+await fetch(init.upload_url, {
+  method: init.upload_method,
+  headers: init.upload_headers,
+  body: file,
+})
+```
+
+### Подтверждение upload
+
+```http
+POST /api/files/4e7d.../complete
+Cookie: user_session=...
+```
+
+Ответ — обычный `FileRef`:
+
+```json
+{
+  "id": "4e7d...",
+  "name": "report.pdf",
+  "mime_type": "application/pdf",
+  "size": 123456,
+  "file_type": "document"
+}
+```
+
+После этого `file_id` можно передавать в HTTP-trigger:
+
+```ts
+await fetch('/api/triggers/http/my-plugin/import', {
+  method: 'POST',
+  credentials: 'include',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ file_ids: ['4e7d...'] }),
+})
+```
+
+### Удаление незавершённого или ненужного файла
+
+```http
+DELETE /api/files/4e7d...
+Cookie: user_session=...
+```
+
+::: info ACL
+Файлы, загруженные через `/api/files/*`, привязываются к `plugin_id` и текущему пользователю.
+Плагин может читать их через `ctx.FileMeta`, `ctx.FileRead`, `ctx.FileURL` только в HTTP-trigger'ах того же плагина и от имени того же пользователя.
+:::
+
 ## Приём файлов
 
 Когда пользователь отправляет файл с командой, плагин получает массив `FileRef` в событии:

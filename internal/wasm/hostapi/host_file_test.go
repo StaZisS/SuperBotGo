@@ -103,6 +103,58 @@ func TestHostAPISetMaxFileStoreSize(t *testing.T) {
 	}
 }
 
+func TestAuthorizeFileAccessRequiresMatchingHTTPUser(t *testing.T) {
+	ctx := context.WithValue(context.Background(), wasmrt.HTTPAuthDataKey{}, model.HTTPAuthData{
+		Kind:   model.HTTPAuthUser,
+		UserID: 42,
+	})
+	meta := &filestore.FileMeta{
+		ID:            "file-1",
+		State:         filestore.FileStateReady,
+		ScopePluginID: "demo",
+		OwnerKind:     filestore.FileOwnerUser,
+		OwnerUserID:   42,
+	}
+
+	if err := authorizeFileAccess(ctx, "demo", meta); err != nil {
+		t.Fatalf("authorizeFileAccess() error = %v, want nil", err)
+	}
+
+	meta.OwnerUserID = 7
+	if err := authorizeFileAccess(ctx, "demo", meta); err == nil {
+		t.Fatal("expected authorizeFileAccess() to reject mismatched owner")
+	}
+}
+
+func TestAuthorizeFileAccessRejectsPendingUploads(t *testing.T) {
+	ctx := context.WithValue(context.Background(), wasmrt.HTTPAuthDataKey{}, model.HTTPAuthData{
+		Kind:   model.HTTPAuthUser,
+		UserID: 42,
+	})
+	meta := &filestore.FileMeta{
+		ID:            "file-1",
+		State:         filestore.FileStatePending,
+		ScopePluginID: "demo",
+		OwnerKind:     filestore.FileOwnerUser,
+		OwnerUserID:   42,
+	}
+
+	if err := authorizeFileAccess(ctx, "demo", meta); err == nil {
+		t.Fatal("expected authorizeFileAccess() to reject pending upload")
+	}
+}
+
+func TestAuthorizeFileAccessAllowsLegacyFiles(t *testing.T) {
+	meta := &filestore.FileMeta{
+		ID:    "legacy-file",
+		State: filestore.FileStateReady,
+	}
+
+	if err := authorizeFileAccess(context.Background(), "demo", meta); err != nil {
+		t.Fatalf("authorizeFileAccess() error = %v, want nil", err)
+	}
+}
+
 type basicFileStore struct {
 	data      []byte
 	getCalled bool

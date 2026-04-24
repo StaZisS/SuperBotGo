@@ -115,6 +115,54 @@ Authorization: Bearer sbsk_<public>.<secret>
 
 Такой ключ проверяется host-системой и должен иметь scope на конкретный `plugin_id + trigger_name`.
 
+## Загрузка файлов
+
+Для файлового ввода в HTTP-trigger используйте отдельный host upload API, а не `multipart/form-data` внутри trigger endpoint'а.
+
+Рекомендуемый поток:
+
+1. `POST /api/files/init` с `plugin_id`, именем, MIME-типом и размером
+2. Прямая загрузка байтов по `upload_url`
+3. `POST /api/files/{id}/complete`
+4. Вызов HTTP-trigger с JSON, содержащим `file_id` или массив `file_ids`
+
+Пример:
+
+```ts
+const init = await fetch('/api/files/init', {
+  method: 'POST',
+  credentials: 'include',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    plugin_id: 'my-plugin',
+    name: file.name,
+    mime_type: file.type || 'application/octet-stream',
+    size: file.size,
+    file_type: 'document',
+  }),
+}).then((r) => r.json())
+
+await fetch(init.upload_url, {
+  method: init.upload_method,
+  headers: init.upload_headers,
+  body: file,
+})
+
+const stored = await fetch(`/api/files/${init.file_id}/complete`, {
+  method: 'POST',
+  credentials: 'include',
+}).then((r) => r.json())
+
+await fetch('/api/triggers/http/my-plugin/import', {
+  method: 'POST',
+  credentials: 'include',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ file_ids: [stored.id] }),
+})
+```
+
+Внутри плагина дальше используйте обычные `ctx.FileMeta`, `ctx.FileRead`, `ctx.FileReadAll`, `ctx.FileURL`.
+
 ## Поля ctx.HTTP
 
 | Поле | Тип | Описание |
