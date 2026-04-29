@@ -2,6 +2,9 @@
 # Copy this file to config.yaml and fill in your values.
 # All values can be overridden via environment variables with BOT_ prefix:
 #   BOT_DATABASE_HOST=db  BOT_TELEGRAM_TOKEN=123:ABC  etc.
+# Mapping rule:
+#   dot between sections -> single underscore, literal underscore in key -> double underscore
+#   user_auth.session_secret -> BOT_USER__AUTH_SESSION__SECRET
 
 default_locale: en
 
@@ -79,6 +82,12 @@ admin:
     access_key: "minioadmin"
     secret_key: "minioadmin"
     prefix: ""                        # optional key prefix, e.g. "wasm_modules/"
+
+tsu_accounts:
+  application_id: ""          # set together with secret_key to enable TSU.Accounts login
+  secret_key: ""
+  callback_url: ""            # public URL for TSU redirect, e.g. "https://bot.example.com/oauth/login"
+  base_url: "https://accounts.kreosoft.space"
 
 user_auth:
   session_secret: ""  # set in production so user sessions survive restarts

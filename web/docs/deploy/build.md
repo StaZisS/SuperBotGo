@@ -143,6 +143,7 @@ Requirements: []wasmplugin.Requirement{
 
 ## Что дальше?
 
+- [Конфигурация платформы](/deploy/configuration) - `config.yaml`, `BOT_*`, БД, Redis, каналы, S3 и auth
 - [Миграции](/deploy/migrations) - управление данными при обновлении версий
 - [KV Store](/api/kv-store) - хранение данных между вызовами
 - [Host API](/api/host-api) - полный список доступных функций

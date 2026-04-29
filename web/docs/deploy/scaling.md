@@ -43,9 +43,9 @@ telegram:
 
 ```bash
 BOT_TELEGRAM_MODE=webhook
-BOT_TELEGRAM_WEBHOOK_URL=https://bot.example.com/tg/webhook
-BOT_TELEGRAM_WEBHOOK_SECRET=random-secret-string
-BOT_TELEGRAM_WEBHOOK_LISTEN=:8443
+BOT_TELEGRAM_WEBHOOK__URL=https://bot.example.com/tg/webhook
+BOT_TELEGRAM_WEBHOOK__SECRET=random-secret-string
+BOT_TELEGRAM_WEBHOOK__LISTEN=:8443
 ```
 
 | Параметр | Обязателен | Описание |
@@ -96,7 +96,7 @@ discord:
 Discord **обязывает** использовать шардинг при >2500 серверов. Но включить его можно на любом масштабе для повышения отказоустойчивости.
 :::
 
-Каждый экземпляр должен получить уникальный `shard_id` через конфиг или переменную окружения `BOT_DISCORD_SHARD_ID`.
+Каждый экземпляр должен получить уникальный `shard_id` через конфиг или переменную окружения `BOT_DISCORD_SHARD__ID`.
 
 ::: warning
 При изменении `shard_count` все экземпляры должны быть перезапущены одновременно — Discord требует единого `shard_count` для всех соединений одного бота.
@@ -181,20 +181,21 @@ flowchart LR
 | Параметр | Env | По умолчанию | Описание |
 |---|---|---|---|
 | `telegram.mode` | `BOT_TELEGRAM_MODE` | `polling` | Режим получения обновлений |
-| `telegram.webhook_url` | `BOT_TELEGRAM_WEBHOOK_URL` | — | Публичный URL для webhook |
-| `telegram.webhook_secret` | `BOT_TELEGRAM_WEBHOOK_SECRET` | — | Секрет для валидации |
-| `telegram.webhook_listen` | `BOT_TELEGRAM_WEBHOOK_LISTEN` | — | Локальный адрес вебхук-сервера |
-| `discord.shard_id` | `BOT_DISCORD_SHARD_ID` | `0` | Индекс шарда |
-| `discord.shard_count` | `BOT_DISCORD_SHARD_COUNT` | `1` | Общее количество шардов |
+| `telegram.webhook_url` | `BOT_TELEGRAM_WEBHOOK__URL` | — | Публичный URL для webhook |
+| `telegram.webhook_secret` | `BOT_TELEGRAM_WEBHOOK__SECRET` | — | Секрет для валидации |
+| `telegram.webhook_listen` | `BOT_TELEGRAM_WEBHOOK__LISTEN` | — | Локальный адрес вебхук-сервера |
+| `discord.shard_id` | `BOT_DISCORD_SHARD__ID` | `0` | Индекс шарда |
+| `discord.shard_count` | `BOT_DISCORD_SHARD__COUNT` | `1` | Общее количество шардов |
 | `vk.mode` | `BOT_VK_MODE` | `longpoll` | Режим получения обновлений |
-| `vk.callback_url` | `BOT_VK_CALLBACK_URL` | — | Публичный URL для callback |
-| `vk.callback_path` | `BOT_VK_CALLBACK_PATH` | `/vk/callback` | Локальный path callback handler |
-| `mattermost.actions_url` | `BOT_MATTERMOST_ACTIONS_URL` | — | Публичный URL для interactive actions |
-| `mattermost.actions_path` | `BOT_MATTERMOST_ACTIONS_PATH` | `/mattermost/actions` | Локальный path action handler |
-| `mattermost.actions_secret` | `BOT_MATTERMOST_ACTIONS_SECRET` | — | Секрет валидации interactive actions |
+| `vk.callback_url` | `BOT_VK_CALLBACK__URL` | — | Публичный URL для callback |
+| `vk.callback_path` | `BOT_VK_CALLBACK__PATH` | `/vk/callback` | Локальный path callback handler |
+| `mattermost.actions_url` | `BOT_MATTERMOST_ACTIONS__URL` | — | Публичный URL для interactive actions |
+| `mattermost.actions_path` | `BOT_MATTERMOST_ACTIONS__PATH` | `/mattermost/actions` | Локальный path action handler |
+| `mattermost.actions_secret` | `BOT_MATTERMOST_ACTIONS__SECRET` | — | Секрет валидации interactive actions |
 
 ## Что дальше?
 
+- [Конфигурация платформы](/deploy/configuration) - полный справочник `BOT_*` и `config.yaml`
 - [Сборка и установка](/deploy/build) — компиляция WASM-плагинов
 - [Компоненты системы](/architecture/components) — общая архитектура
 - [Миграции](/deploy/migrations) — управление схемой БД
