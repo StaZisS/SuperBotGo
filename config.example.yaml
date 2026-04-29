@@ -14,8 +14,8 @@ university_sync:
   token: ""              # auth token for external system
 
 spicedb:
-  endpoint: "localhost:50051"
-  token: "my-secret-token"    
+  endpoint: ""              # e.g. "localhost:50051" for local docker-compose
+  token: ""                 # must match SpiceDB --grpc-preshared-key when endpoint is set
   insecure: true
 
 database:
@@ -32,26 +32,26 @@ redis:
   db: 0
 
 telegram:
-  token: "YOUR_TELEGRAM_BOT_TOKEN"
+  token: ""                  # set BOT_TELEGRAM_TOKEN or leave empty to disable Telegram
   mode: polling              # "polling" or "webhook"
   # webhook_url: ""          # required when mode=webhook, e.g. "https://bot.example.com/tg/webhook"
   # webhook_secret: ""       # optional secret token for webhook request validation
   # webhook_listen: ":8443"  # local address for webhook HTTP server
 
 discord:
-  token: "YOUR_DISCORD_BOT_TOKEN"
+  token: ""                  # set BOT_DISCORD_TOKEN or leave empty to disable Discord
   shard_id: 0                # 0-indexed shard identifier (default 0)
   shard_count: 1             # total number of shards (1 = no sharding)
 
 vk:
-  token: "YOUR_VK_COMMUNITY_TOKEN"
+  token: ""                     # set BOT_VK_TOKEN or leave empty to disable VK
   mode: longpoll                # "longpoll" or "callback"
   # callback_url: ""           # required when mode=callback, e.g. "https://bot.example.com/vk/callback"
   callback_path: "/vk/callback" # local HTTP path handled by SuperBotGo
 
 mattermost:
-  url: "https://mattermost.example.com"
-  token: "YOUR_MATTERMOST_BOT_TOKEN"
+  url: ""                       # e.g. "https://mattermost.example.com"
+  token: ""                    # set BOT_MATTERMOST_TOKEN or leave empty to disable Mattermost
   # actions_url: ""            # public URL for interactive button callbacks, e.g. "https://bot.example.com/mattermost/actions"
   actions_path: "/mattermost/actions" # local HTTP path handled by SuperBotGo
   # actions_secret: ""         # shared secret embedded into interactive action callbacks
@@ -71,7 +71,7 @@ admin:
   port: 8080
   modules_dir: ./wasm_modules
   blob_store: s3
-  api_key: "YOUR_ADMIN_API_KEY"  # required for admin API authentication
+  api_key: ""  # optional Bearer API key for admin API automation
   s3:
     bucket: "wasm-plugins"
     region: "us-east-1"
@@ -81,14 +81,14 @@ admin:
     prefix: ""                        # optional key prefix, e.g. "wasm_modules/"
 
 user_auth:
-  session_secret: "CHANGE_ME_USER_SESSION_SECRET"
+  session_secret: ""  # set in production so user sessions survive restarts
 
 smtp:
-  host: "smtp.example.com"
+  host: ""
   port: 587
-  username: "noreply@example.com"
-  password: "SMTP_PASSWORD"
-  from: "noreply@example.com"
+  username: ""
+  password: ""
+  from: ""
 
 wasm:
   reconfigure_enabled: true

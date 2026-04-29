@@ -178,73 +178,70 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("unmarshalling config: %w", err)
 	}
 
-	// Defaults
-	if cfg.DefaultLocale == "" {
-		cfg.DefaultLocale = "en"
-	}
-	if cfg.Database.Port == 0 {
-		cfg.Database.Port = 5432
-	}
-	if cfg.Database.SSLMode == "" {
-		cfg.Database.SSLMode = "prefer"
-	}
-	if cfg.Redis.Addr == "" {
-		cfg.Redis.Addr = "localhost:6379"
-	}
-	if cfg.Admin.Port == 0 {
-		cfg.Admin.Port = 8080
-	}
-	if cfg.Admin.ModulesDir == "" {
-		cfg.Admin.ModulesDir = "./wasm_modules"
-	}
-	if cfg.Admin.BlobStore == "" {
-		cfg.Admin.BlobStore = "s3"
-	}
-	if cfg.WASM.EventsBackend == "" {
-		cfg.WASM.EventsBackend = "memory"
-	}
-	if cfg.Telegram.Mode == "" {
-		cfg.Telegram.Mode = "polling"
-	}
-	if cfg.VK.Mode == "" {
-		cfg.VK.Mode = "longpoll"
-	}
-	if cfg.VK.CallbackPath == "" {
-		cfg.VK.CallbackPath = "/vk/callback"
-	}
-	if cfg.Discord.ShardCount <= 0 {
-		cfg.Discord.ShardCount = 1
-	}
-	if cfg.Mattermost.ActionsPath == "" {
-		cfg.Mattermost.ActionsPath = "/mattermost/actions"
-	}
-	if cfg.FileStore.DefaultTTL == "" {
-		cfg.FileStore.DefaultTTL = "24h"
-	}
-	if cfg.FileStore.MaxFileSize <= 0 {
-		cfg.FileStore.MaxFileSize = 50 * 1024 * 1024 // 50MB
-	}
-
-	// Defaults for SpiceDB
-	if cfg.SpiceDB.Endpoint == "" {
-		cfg.SpiceDB.Endpoint = "localhost:50051"
-	}
-	if cfg.SpiceDB.Token == "" {
-		cfg.SpiceDB.Token = "my-secret-token" // Дефолтный токен для Docker
-	}
-
-	if cfg.TsuAccounts.BaseURL == "" {
-		cfg.TsuAccounts.BaseURL = "https://accounts.tsu.ru"
-	}
-	if cfg.SMTP.Port == 0 {
-		cfg.SMTP.Port = 587
-	}
+	cfg.applyDefaults()
 
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 
 	return &cfg, nil
+}
+
+func (c *Config) applyDefaults() {
+	if c.DefaultLocale == "" {
+		c.DefaultLocale = "en"
+	}
+	if c.Database.Port == 0 {
+		c.Database.Port = 5432
+	}
+	if c.Database.SSLMode == "" {
+		c.Database.SSLMode = "prefer"
+	}
+	if c.Redis.Addr == "" {
+		c.Redis.Addr = "localhost:6379"
+	}
+	if c.Admin.Port == 0 {
+		c.Admin.Port = 8080
+	}
+	if c.Admin.ModulesDir == "" {
+		c.Admin.ModulesDir = "./wasm_modules"
+	}
+	if c.Admin.BlobStore == "" {
+		c.Admin.BlobStore = "s3"
+	}
+	if c.WASM.EventsBackend == "" {
+		c.WASM.EventsBackend = "memory"
+	}
+	if c.Telegram.Mode == "" {
+		c.Telegram.Mode = "polling"
+	}
+	if c.VK.Mode == "" {
+		c.VK.Mode = "longpoll"
+	}
+	if c.VK.CallbackPath == "" {
+		c.VK.CallbackPath = "/vk/callback"
+	}
+	if c.Discord.ShardCount <= 0 {
+		c.Discord.ShardCount = 1
+	}
+	if c.Mattermost.ActionsPath == "" {
+		c.Mattermost.ActionsPath = "/mattermost/actions"
+	}
+	if c.FileStore.DefaultTTL == "" {
+		c.FileStore.DefaultTTL = "24h"
+	}
+	if c.FileStore.MaxFileSize <= 0 {
+		c.FileStore.MaxFileSize = 50 * 1024 * 1024 // 50MB
+	}
+	if c.SpiceDB.Endpoint == "" && c.SpiceDB.Token != "" {
+		c.SpiceDB.Endpoint = "localhost:50051"
+	}
+	if c.TsuAccounts.BaseURL == "" {
+		c.TsuAccounts.BaseURL = "https://accounts.kreosoft.space"
+	}
+	if c.SMTP.Port == 0 {
+		c.SMTP.Port = 587
+	}
 }
 
 func (c *Config) Validate() error {
@@ -270,6 +267,18 @@ func (c *Config) Validate() error {
 	if c.Discord.ShardID < 0 || c.Discord.ShardID >= c.Discord.ShardCount {
 		return fmt.Errorf("discord.shard_id (%d) must be in range [0, %d)", c.Discord.ShardID, c.Discord.ShardCount)
 	}
+	if (c.SpiceDB.Endpoint == "") != (c.SpiceDB.Token == "") {
+		return fmt.Errorf("spicedb.endpoint and spicedb.token must be set together")
+	}
+	if (c.TsuAccounts.ApplicationID == "") != (c.TsuAccounts.SecretKey == "") {
+		return fmt.Errorf("tsu_accounts.application_id and tsu_accounts.secret_key must be set together")
+	}
+	if (c.Admin.S3.AccessKey == "") != (c.Admin.S3.SecretKey == "") {
+		return fmt.Errorf("admin.s3.access_key and admin.s3.secret_key must be set together")
+	}
+	if (c.FileStore.S3.AccessKey == "") != (c.FileStore.S3.SecretKey == "") {
+		return fmt.Errorf("filestore.s3.access_key and filestore.s3.secret_key must be set together")
+	}
 	if (c.Mattermost.URL == "") != (c.Mattermost.Token == "") {
 		return fmt.Errorf("mattermost.url and mattermost.token must be set together")
 	}
@@ -292,7 +301,73 @@ func (c *Config) Validate() error {
 	default:
 		return fmt.Errorf("wasm.events_backend must be \"memory\" or \"postgres\", got %q", c.WASM.EventsBackend)
 	}
+	if err := c.validateNoPlaceholderValues(); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (c *Config) validateNoPlaceholderValues() error {
+	values := []struct {
+		field string
+		value string
+	}{
+		{"database.password", c.Database.Password},
+		{"redis.password", c.Redis.Password},
+		{"telegram.token", c.Telegram.Token},
+		{"telegram.webhook_secret", c.Telegram.WebhookSecret},
+		{"discord.token", c.Discord.Token},
+		{"vk.token", c.VK.Token},
+		{"mattermost.token", c.Mattermost.Token},
+		{"mattermost.actions_secret", c.Mattermost.ActionsSecret},
+		{"admin.api_key", c.Admin.APIKey},
+		{"admin.s3.access_key", c.Admin.S3.AccessKey},
+		{"admin.s3.secret_key", c.Admin.S3.SecretKey},
+		{"user_auth.session_secret", c.UserAuth.SessionSecret},
+		{"spicedb.token", c.SpiceDB.Token},
+		{"university_sync.token", c.UniversitySync.Token},
+		{"filestore.s3.access_key", c.FileStore.S3.AccessKey},
+		{"filestore.s3.secret_key", c.FileStore.S3.SecretKey},
+		{"tsu_accounts.application_id", c.TsuAccounts.ApplicationID},
+		{"tsu_accounts.secret_key", c.TsuAccounts.SecretKey},
+		{"smtp.username", c.SMTP.Username},
+		{"smtp.password", c.SMTP.Password},
+	}
+
+	for _, item := range values {
+		if isPlaceholderValue(item.value) {
+			return fmt.Errorf("%s contains placeholder value; set a real value or leave it empty", item.field)
+		}
+	}
+	return nil
+}
+
+func isPlaceholderValue(value string) bool {
+	normalized := strings.TrimSpace(value)
+	if normalized == "" {
+		return false
+	}
+
+	lower := strings.ToLower(normalized)
+	upper := strings.ToUpper(normalized)
+	if strings.HasPrefix(upper, "YOUR_") ||
+		strings.HasPrefix(upper, "CHANGE_ME") ||
+		strings.HasPrefix(upper, "REPLACE_ME") ||
+		strings.HasPrefix(lower, "your-") {
+		return true
+	}
+
+	switch lower {
+	case "change-me", "changeme", "replace-me", "replaceme", "todo":
+		return true
+	}
+
+	switch upper {
+	case "API_KEY", "PASSWORD", "SECRET", "SMTP_PASSWORD", "TOKEN":
+		return true
+	}
+
+	return false
 }
 
 func isFileNotFound(err error) bool {

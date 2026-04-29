@@ -248,6 +248,7 @@ sequenceDiagram
 - в callback mode бот публикует HTTP route через `RouteRegistrar`
 - payload кнопки парсится в `CallbackInput`
 - изображения из `ImageBlock` не загружаются во VK как вложения, а добавляются в текст списком URL
+- рендерер отправляет plain text и, если нужны стили, отдельный `format_data` для `messages.send` вместо HTML-тегов
 
 ### Mattermost
 

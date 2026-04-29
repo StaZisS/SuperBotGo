@@ -1,8 +1,10 @@
 package vk
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf16"
 
 	"SuperBotGo/internal/channel"
 	"SuperBotGo/internal/model"
@@ -22,10 +24,11 @@ type buttonPayload struct {
 }
 
 type RenderedMessage struct {
-	Text      string
-	Keyboard  *vkobject.MessagesKeyboard
-	ImageURLs []string
-	FileRefs  []model.FileRef
+	Text       string
+	FormatData *vkFormatData
+	Keyboard   *vkobject.MessagesKeyboard
+	ImageURLs  []string
+	FileRefs   []model.FileRef
 }
 
 type Renderer struct{}
@@ -34,61 +37,79 @@ func NewRenderer() *Renderer {
 	return &Renderer{}
 }
 
-type formatter struct{}
-
-func (formatter) FormatText(b model.TextBlock) string {
-	switch b.Style {
-	case model.StyleHeader:
-		return wrapStyledLines(b.Text, "*", "*")
-	case model.StyleSubheader:
-		return wrapStyledLines(b.Text, "_", "_")
-	case model.StyleCode:
-		return formatVKCode(b.Text)
-	case model.StyleQuote:
-		return prefixLines(b.Text, "> ")
-	default:
-		return b.Text
-	}
+type vkFormatData struct {
+	Version int            `json:"version"`
+	Items   []vkFormatItem `json:"items,omitempty"`
 }
 
-func (formatter) FormatMention(b model.MentionBlock) string {
-	username := b.Username
-	if username == "" {
-		username = "user"
-	}
-	return fmt.Sprintf("[id%s|%s]", b.UserID, username)
+func (d vkFormatData) ToJSON() string {
+	raw, _ := json.Marshal(d)
+	return string(raw)
 }
 
-func (formatter) FormatLink(b model.LinkBlock) string {
-	if b.Label == "" || b.Label == b.URL {
-		return b.URL
-	}
-	return fmt.Sprintf("%s: %s", b.Label, b.URL)
+type vkFormatItem struct {
+	Type   string `json:"type"`
+	Offset int    `json:"offset"`
+	Length int    `json:"length"`
+	URL    string `json:"url,omitempty"`
 }
 
-func (formatter) FormatOptionsPrompt(prompt string) string {
-	return prompt
+type renderedFragment struct {
+	Text        string
+	FormatItems []vkFormatItem
 }
 
 func (r *Renderer) Render(msg model.Message) RenderedMessage {
-	parts := channel.RenderBlocks(msg, formatter{})
-	options, extraText := normalizeVKOptions(parts.Options)
+	fragments := make([]renderedFragment, 0, len(msg.Blocks))
+	imageURLs := make([]string, 0)
+	fileRefs := make([]model.FileRef, 0)
+	var options *model.OptionsBlock
 
-	textParts := make([]string, 0, len(parts.TextParts)+len(extraText))
-	textParts = append(textParts, parts.TextParts...)
-	textParts = append(textParts, extraText...)
+	for _, block := range msg.Blocks {
+		switch b := block.(type) {
+		case model.TextBlock:
+			fragments = append(fragments, renderTextFragment(b))
+		case model.MentionBlock:
+			fragments = append(fragments, renderMentionFragment(b))
+		case model.LinkBlock:
+			fragments = append(fragments, renderLinkFragment(b))
+		case model.ImageBlock:
+			imageURLs = append(imageURLs, b.URL)
+		case model.OptionsBlock:
+			if b.Prompt != "" {
+				fragments = append(fragments, renderedFragment{Text: b.Prompt})
+			}
 
-	text := strings.Join(textParts, "\n")
-	if len([]rune(text)) > vkMaxMessageLength {
-		runes := []rune(text)
-		text = string(runes[:vkMaxMessageLength-3]) + "..."
+			normalized, extraText := normalizeVKOptions(&b)
+			options = normalized
+			for _, line := range extraText {
+				fragments = append(fragments, renderedFragment{Text: line})
+			}
+		case model.FileBlock:
+			fileRefs = append(fileRefs, b.FileRef)
+			if b.Caption != "" {
+				fragments = append(fragments, renderTextFragment(model.TextBlock{Text: b.Caption}))
+			}
+		}
+	}
+
+	text, formatData := assembleFragments(fragments)
+	if runeCount(text) > vkMaxMessageLength {
+		text, formatData = truncateRenderedText(text, formatData, vkMaxMessageLength)
+	}
+
+	var formatDataPtr *vkFormatData
+	if len(formatData.Items) > 0 {
+		formatCopy := formatData
+		formatDataPtr = &formatCopy
 	}
 
 	return RenderedMessage{
-		Text:      text,
-		Keyboard:  buildKeyboard(options),
-		ImageURLs: parts.ImageURLs,
-		FileRefs:  parts.FileRefs,
+		Text:       text,
+		FormatData: formatDataPtr,
+		Keyboard:   buildKeyboard(options),
+		ImageURLs:  imageURLs,
+		FileRefs:   fileRefs,
 	}
 }
 
@@ -203,21 +224,6 @@ func runeCount(s string) int {
 	return len([]rune(s))
 }
 
-func wrapStyledLines(text, prefix, suffix string) string {
-	if text == "" {
-		return ""
-	}
-
-	lines := strings.Split(text, "\n")
-	for i, line := range lines {
-		if line == "" {
-			continue
-		}
-		lines[i] = prefix + line + suffix
-	}
-	return strings.Join(lines, "\n")
-}
-
 func prefixLines(text, prefix string) string {
 	if text == "" {
 		return ""
@@ -230,12 +236,139 @@ func prefixLines(text, prefix string) string {
 	return strings.Join(lines, "\n")
 }
 
-func formatVKCode(text string) string {
+func renderTextFragment(b model.TextBlock) renderedFragment {
+	switch b.Style {
+	case model.StyleHeader:
+		return renderStyledLinesFragment(b.Text, "bold")
+	case model.StyleSubheader:
+		return renderStyledLinesFragment(b.Text, "italic")
+	case model.StyleQuote:
+		return renderedFragment{Text: prefixLines(b.Text, "> ")}
+	default:
+		return renderedFragment{Text: b.Text}
+	}
+}
+
+func renderStyledLinesFragment(text, formatType string) renderedFragment {
+	fragment := renderedFragment{Text: text}
 	if text == "" {
-		return ""
+		return fragment
 	}
-	if strings.Contains(text, "\n") {
-		return fmt.Sprintf("```\n%s\n```", text)
+
+	lines := strings.Split(text, "\n")
+	offset := 0
+	for i, line := range lines {
+		if line != "" {
+			fragment.FormatItems = append(fragment.FormatItems, vkFormatItem{
+				Type:   formatType,
+				Offset: offset,
+				Length: utf16Len(line),
+			})
+		}
+
+		offset += utf16Len(line)
+		if i < len(lines)-1 {
+			offset++
+		}
 	}
-	return fmt.Sprintf("`%s`", text)
+
+	return fragment
+}
+
+func renderMentionFragment(b model.MentionBlock) renderedFragment {
+	username := b.Username
+	if username == "" {
+		username = "user"
+	}
+
+	return renderedFragment{
+		Text: fmt.Sprintf("[id%s|%s]", b.UserID, username),
+	}
+}
+
+func renderLinkFragment(b model.LinkBlock) renderedFragment {
+	text := b.Label
+	if text == "" {
+		text = b.URL
+	}
+
+	fragment := renderedFragment{Text: text}
+	if text == "" || b.URL == "" {
+		return fragment
+	}
+
+	fragment.FormatItems = append(fragment.FormatItems, vkFormatItem{
+		Type:   "url",
+		Offset: 0,
+		Length: utf16Len(text),
+		URL:    b.URL,
+	})
+	return fragment
+}
+
+func assembleFragments(fragments []renderedFragment) (string, vkFormatData) {
+	var text strings.Builder
+	formatData := vkFormatData{Version: 1}
+	offset := 0
+
+	for i, fragment := range fragments {
+		if i > 0 {
+			text.WriteByte('\n')
+			offset++
+		}
+
+		text.WriteString(fragment.Text)
+		for _, item := range fragment.FormatItems {
+			shifted := item
+			shifted.Offset += offset
+			formatData.Items = append(formatData.Items, shifted)
+		}
+
+		offset += utf16Len(fragment.Text)
+	}
+
+	return text.String(), formatData
+}
+
+func truncateRenderedText(text string, formatData vkFormatData, limit int) (string, vkFormatData) {
+	if limit <= 0 || runeCount(text) <= limit {
+		return text, formatData
+	}
+
+	runes := []rune(text)
+	if limit <= 3 {
+		text = string(runes[:limit])
+		formatData.Items = clipFormatItems(formatData.Items, utf16Len(text))
+		return text, formatData
+	}
+
+	prefix := string(runes[:limit-3])
+	text = prefix + "..."
+	formatData.Items = clipFormatItems(formatData.Items, utf16Len(prefix))
+	return text, formatData
+}
+
+func clipFormatItems(items []vkFormatItem, maxUnits int) []vkFormatItem {
+	clipped := make([]vkFormatItem, 0, len(items))
+	for _, item := range items {
+		if item.Offset >= maxUnits {
+			continue
+		}
+
+		end := item.Offset + item.Length
+		if end > maxUnits {
+			item.Length = maxUnits - item.Offset
+		}
+		if item.Length <= 0 {
+			continue
+		}
+
+		clipped = append(clipped, item)
+	}
+
+	return clipped
+}
+
+func utf16Len(text string) int {
+	return len(utf16.Encode([]rune(text)))
 }

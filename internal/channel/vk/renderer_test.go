@@ -1,6 +1,7 @@
 package vk
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -19,33 +20,78 @@ func TestVKRenderer_RenderStyledText(t *testing.T) {
 	}
 
 	rendered := renderer.Render(msg)
-	want := strings.Join([]string{
-		"*Header*",
-		"_Subheader_",
+	wantText := strings.Join([]string{
+		"Header",
+		"Subheader",
 		"> line 1",
 		"> line 2",
-		"`echo hi`",
+		"echo hi",
 	}, "\n")
 
-	if rendered.Text != want {
-		t.Fatalf("Render().Text = %q, want %q", rendered.Text, want)
+	if rendered.Text != wantText {
+		t.Fatalf("Render().Text = %q, want %q", rendered.Text, wantText)
 	}
+
+	assertFormatData(t, rendered.FormatData, []vkFormatItem{
+		{Type: "bold", Offset: 0, Length: utf16Len("Header")},
+		{Type: "italic", Offset: utf16Len("Header\n"), Length: utf16Len("Subheader")},
+	})
 }
 
-func TestVKRenderer_RenderMultilineCode(t *testing.T) {
+func TestVKRenderer_RenderLinkAndPlainSymbols(t *testing.T) {
 	renderer := NewRenderer()
-	msg := model.NewStyledTextMessage("first()\nsecond()", model.StyleCode)
+	msg := model.Message{
+		Blocks: []model.ContentBlock{
+			model.TextBlock{Text: "2 < 3 & 5", Style: model.StylePlain},
+			model.TextBlock{Text: "bold <tag>", Style: model.StyleHeader},
+			model.LinkBlock{URL: "https://example.com?q=1&x=2", Label: "Open <site>"},
+		},
+	}
 
 	rendered := renderer.Render(msg)
-	want := "```\nfirst()\nsecond()\n```"
-	if rendered.Text != want {
-		t.Fatalf("Render().Text = %q, want %q", rendered.Text, want)
+	wantText := strings.Join([]string{
+		"2 < 3 & 5",
+		"bold <tag>",
+		"Open <site>",
+	}, "\n")
+
+	if rendered.Text != wantText {
+		t.Fatalf("Render().Text = %q, want %q", rendered.Text, wantText)
 	}
+
+	assertFormatData(t, rendered.FormatData, []vkFormatItem{
+		{
+			Type:   "bold",
+			Offset: utf16Len("2 < 3 & 5\n"),
+			Length: utf16Len("bold <tag>"),
+		},
+		{
+			Type:   "url",
+			Offset: utf16Len("2 < 3 & 5\nbold <tag>\n"),
+			Length: utf16Len("Open <site>"),
+			URL:    "https://example.com?q=1&x=2",
+		},
+	})
+}
+
+func TestVKRenderer_UsesUTF16Offsets(t *testing.T) {
+	renderer := NewRenderer()
+	msg := model.Message{
+		Blocks: []model.ContentBlock{
+			model.TextBlock{Text: "🙂", Style: model.StylePlain},
+			model.TextBlock{Text: "Жир", Style: model.StyleHeader},
+		},
+	}
+
+	rendered := renderer.Render(msg)
+	assertFormatData(t, rendered.FormatData, []vkFormatItem{
+		{Type: "bold", Offset: 3, Length: utf16Len("Жир")},
+	})
 }
 
 func TestVKRenderer_RenderTruncatesToVKLimit(t *testing.T) {
 	renderer := NewRenderer()
-	msg := model.NewTextMessage(strings.Repeat("а", vkMaxMessageLength+10))
+	msg := model.NewStyledTextMessage(strings.Repeat("а", vkMaxMessageLength+10), model.StyleHeader)
 
 	rendered := renderer.Render(msg)
 	if got := runeCount(rendered.Text); got != vkMaxMessageLength {
@@ -54,6 +100,10 @@ func TestVKRenderer_RenderTruncatesToVKLimit(t *testing.T) {
 	if !strings.HasSuffix(rendered.Text, "...") {
 		t.Fatalf("Render().Text = %q, want suffix %q", rendered.Text[len(rendered.Text)-6:], "...")
 	}
+
+	assertFormatData(t, rendered.FormatData, []vkFormatItem{
+		{Type: "bold", Offset: 0, Length: vkMaxMessageLength - 3},
+	})
 }
 
 func TestVKButtonLabel_StripsDescriptionWhenLabelTooLong(t *testing.T) {
@@ -118,5 +168,19 @@ func TestNormalizeVKOptions_CommandLabelsStayInTextButButtonsAreShort(t *testing
 	}
 	if extraText[0] != "/link — Account Linking" {
 		t.Fatalf("extraText[0] = %q", extraText[0])
+	}
+}
+
+func assertFormatData(t *testing.T, got *vkFormatData, want []vkFormatItem) {
+	t.Helper()
+
+	if got == nil {
+		t.Fatal("expected format data, got nil")
+	}
+	if got.Version != 1 {
+		t.Fatalf("format data version = %d, want 1", got.Version)
+	}
+	if !reflect.DeepEqual(got.Items, want) {
+		t.Fatalf("format data items = %#v, want %#v", got.Items, want)
 	}
 }

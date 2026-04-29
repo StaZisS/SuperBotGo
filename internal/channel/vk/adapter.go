@@ -81,6 +81,9 @@ func (a *Adapter) sendMessage(ctx context.Context, chatID string, msg model.Mess
 	if text != "" {
 		params["message"] = text
 	}
+	if rendered.FormatData != nil {
+		params["format_data"] = rendered.FormatData
+	}
 	if len(attachments) > 0 {
 		params["attachment"] = strings.Join(attachments, ",")
 	}
