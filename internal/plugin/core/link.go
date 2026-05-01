@@ -8,7 +8,31 @@ import (
 	"SuperBotGo/internal/state"
 )
 
-// TsuAuthLinker generates a TSU.Accounts authentication URL for account linking.
+type LinkResultKind string
+
+const (
+	LinkErrorKind         LinkResultKind = "error"
+	LinkCodeGeneratedKind LinkResultKind = "code_generated"
+	LinkLinkedKind        LinkResultKind = "linked"
+)
+
+type LinkResult struct {
+	Kind    LinkResultKind
+	Code    string
+	Message string
+	Account *model.ChannelAccount
+}
+
+type LinkError struct {
+	Code    string
+	Message string
+}
+
+type AccountLinker interface {
+	InitiateLinking(ctx context.Context, userID model.GlobalUserID) LinkResult
+	CompleteLinking(ctx context.Context, userID model.GlobalUserID, code string) LinkResult
+}
+
 type TsuAuthLinker interface {
 	GenerateAuthURL(userID model.GlobalUserID) (string, error)
 }

@@ -2,32 +2,39 @@ package notification
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"SuperBotGo/internal/channel"
 	"SuperBotGo/internal/model"
 )
 
-// UserService resolves a global user by ID.
 type UserService interface {
 	GetUser(ctx context.Context, id model.GlobalUserID) (*model.GlobalUser, error)
 }
 
-// StudentResolver resolves a university hierarchy scope to a list of global user IDs.
 type StudentResolver interface {
 	ResolveStudentUsers(ctx context.Context, scope string, targetID int64) ([]model.GlobalUserID, error)
 }
 
-// NotifyAPI is the high-level notification service that respects user preferences
-// (channel priority, mute mentions, work hours) when delivering messages.
 type NotifyAPI struct {
 	adapters *channel.AdapterRegistry
 	users    UserService
 	prefs    PrefsRepository
 	students StudentResolver
+
+	mu        sync.Mutex
+	scheduled []scheduledMsg
+}
+
+type scheduledMsg struct {
+	userID    model.GlobalUserID
+	msg       model.Message
+	priority  model.NotifyPriority
+	sendAt    time.Time
+	createdAt time.Time
 }
 
 func NewNotifyAPI(
@@ -36,152 +43,151 @@ func NewNotifyAPI(
 	prefs PrefsRepository,
 	students StudentResolver,
 ) *NotifyAPI {
-	return &NotifyAPI{
+	api := &NotifyAPI{
 		adapters: adapters,
 		users:    users,
 		prefs:    prefs,
 		students: students,
 	}
+
+	go api.startWorker(context.Background())
+
+	return api
 }
 
-// NotifyUser sends a notification to a user with priority-aware delivery.
-func (n *NotifyAPI) NotifyUser(ctx context.Context, userID model.GlobalUserID, msg model.Message, priority model.NotifyPriority) error {
+func (n *NotifyAPI) NotifyUser(
+	ctx context.Context,
+	userID model.GlobalUserID,
+	msg model.Message,
+	priority model.NotifyPriority,
+) error {
+
 	user, err := n.users.GetUser(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("notify: get user %d: %w", userID, err)
-	}
-	if user == nil {
-		return fmt.Errorf("notify: user %d not found", userID)
+	if err != nil || user == nil {
+		return fmt.Errorf("user not found: %w", err)
 	}
 
 	prefs, err := n.prefs.GetPrefs(ctx, userID)
 	if err != nil {
-		return fmt.Errorf("notify: get prefs for user %d: %w", userID, err)
+		return err
 	}
 	if prefs == nil {
 		prefs = defaultPrefs(userID, user.PrimaryChannel)
 	}
 
+	if priority == model.PriorityLow && !isWithinWorkHours(prefs) {
+		n.schedule(userID, msg, priority, prefs)
+		return nil
+	}
+
 	opts := n.buildSendOptions(prefs, priority)
 
+	return n.sendToUser(ctx, user, msg, priority, opts)
+}
+
+func (n *NotifyAPI) sendToUser(
+	ctx context.Context,
+	user *model.GlobalUser,
+	msg model.Message,
+	priority model.NotifyPriority,
+	opts model.SendOptions,
+) error {
+
 	if priority == model.PriorityCritical {
-		var sendErrs []error
 		for _, acc := range user.Accounts {
-			msgCopy := n.maybeInjectMention(msg, acc.ChannelUserID, prefs, priority)
-			if err := n.adapters.SendToUserWithOpts(ctx, acc.ChannelType, acc.ChannelUserID, msgCopy, opts); err != nil {
-				slog.Error("notify: partial failure sending to user",
-					slog.Int64("user_id", int64(userID)),
-					slog.String("channel", string(acc.ChannelType)),
-					slog.Any("error", err))
-				sendErrs = append(sendErrs, fmt.Errorf("%s: %w", acc.ChannelType, err))
-			}
-		}
-		if len(sendErrs) > 0 {
-			return fmt.Errorf("notify: user %d critical send failed on %d/%d channels: %w",
-				userID, len(sendErrs), len(user.Accounts), errors.Join(sendErrs...))
+			_ = n.adapters.SendToUserWithOpts(
+				ctx,
+				acc.ChannelType,
+				acc.ChannelUserID,
+				msg,
+				opts,
+			)
 		}
 		return nil
 	}
 
-	targetChannel, platformID := n.resolveChannel(user, prefs)
+	ch, id := n.resolveChannel(user)
 
-	msg = n.maybeInjectMention(msg, platformID, prefs, priority)
-	return n.adapters.SendToUserWithOpts(ctx, targetChannel, platformID, msg, opts)
+	return n.adapters.SendToUserWithOpts(ctx, ch, id, msg, opts)
 }
 
-// NotifyChat sends a notification to a specific chat with priority-aware delivery.
-func (n *NotifyAPI) NotifyChat(ctx context.Context, channelType model.ChannelType, chatID string, msg model.Message, priority model.NotifyPriority) error {
-	opts := model.SendOptions{
-		Silent: priority == model.PriorityLow,
-	}
-	return n.adapters.SendToChatWithOpts(ctx, channelType, chatID, msg, opts)
+func (n *NotifyAPI) schedule(
+	userID model.GlobalUserID,
+	msg model.Message,
+	priority model.NotifyPriority,
+	prefs *model.NotificationPrefs,
+) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	n.scheduled = append(n.scheduled, scheduledMsg{
+		userID:    userID,
+		msg:       msg,
+		priority:  priority,
+		sendAt:    nextWorkTime(prefs),
+		createdAt: time.Now(),
+	})
+
+	slog.Info("message scheduled",
+		slog.Int64("user_id", int64(userID)),
+		slog.Time("send_at", nextWorkTime(prefs)),
+	)
 }
 
-// NotifyStudents sends a priority-aware notification to all students within
-// the given university hierarchy scope.
-// It continues sending to remaining users even if some fail.
-func (n *NotifyAPI) NotifyStudents(ctx context.Context, scope string, targetID int64, msg model.Message, priority model.NotifyPriority) error {
-	userIDs, err := n.students.ResolveStudentUsers(ctx, scope, targetID)
-	if err != nil {
-		return fmt.Errorf("notify: resolve students for %s/%d: %w", scope, targetID, err)
-	}
+func (n *NotifyAPI) startWorker(ctx context.Context) {
+	ticker := time.NewTicker(1 * time.Minute)
 
-	var sendErrs []error
-	for _, uid := range userIDs {
-		if err := n.NotifyUser(ctx, uid, msg, priority); err != nil {
-			slog.Error("notify: partial failure sending to student",
-				slog.String("scope", scope),
-				slog.Int64("target_id", targetID),
-				slog.Int64("user_id", int64(uid)),
-				slog.Any("error", err))
-			sendErrs = append(sendErrs, fmt.Errorf("user %d: %w", uid, err))
+	for {
+		select {
+		case <-ticker.C:
+			n.process(ctx)
+		case <-ctx.Done():
+			return
 		}
 	}
-	if len(sendErrs) > 0 {
-		return fmt.Errorf("notify: students %s/%d broadcast failed on %d/%d users: %w",
-			scope, targetID, len(sendErrs), len(userIDs), errors.Join(sendErrs...))
-	}
-	return nil
 }
 
-// buildSendOptions determines Silent and StripMentions based on prefs and priority.
-func (n *NotifyAPI) buildSendOptions(prefs *model.NotificationPrefs, priority model.NotifyPriority) model.SendOptions {
-	var opts model.SendOptions
+func (n *NotifyAPI) process(ctx context.Context) {
+	now := time.Now()
 
-	if priority == model.PriorityLow && !isWithinWorkHours(prefs) {
-		opts.Silent = true
-	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
 
-	if prefs.MuteMentions && priority < model.PriorityCritical {
-		opts.StripMentions = true
-	}
+	var rest []scheduledMsg
 
-	return opts
-}
-
-// resolveChannel picks the target channel based on user preferences.
-func (n *NotifyAPI) resolveChannel(user *model.GlobalUser, prefs *model.NotificationPrefs) (model.ChannelType, model.PlatformUserID) {
-	accountMap := make(map[model.ChannelType]model.PlatformUserID, len(user.Accounts))
-	for _, acc := range user.Accounts {
-		accountMap[acc.ChannelType] = acc.ChannelUserID
-	}
-
-	for _, ch := range prefs.ChannelPriority {
-		if pid, ok := accountMap[ch]; ok {
-			return ch, pid
+	for _, m := range n.scheduled {
+		if m.sendAt.Before(now) {
+			_ = n.NotifyUser(ctx, m.userID, m.msg, m.priority)
+		} else {
+			rest = append(rest, m)
 		}
 	}
 
-	if pid, ok := accountMap[user.PrimaryChannel]; ok {
-		return user.PrimaryChannel, pid
-	}
-
-	if len(user.Accounts) > 0 {
-		acc := user.Accounts[0]
-		return acc.ChannelType, acc.ChannelUserID
-	}
-
-	return user.PrimaryChannel, ""
+	n.scheduled = rest
 }
 
-func (n *NotifyAPI) maybeInjectMention(msg model.Message, platformUserID model.PlatformUserID, prefs *model.NotificationPrefs, priority model.NotifyPriority) model.Message {
-	if priority < model.PriorityHigh {
-		return msg
-	}
-	if prefs.MuteMentions && priority < model.PriorityCritical {
-		return msg
+func nextWorkTime(prefs *model.NotificationPrefs) time.Time {
+	now := time.Now()
+
+	if prefs.WorkHoursStart == nil {
+		return now.Add(1 * time.Minute)
 	}
 
-	for _, block := range msg.Blocks {
-		if m, ok := block.(model.MentionBlock); ok && m.UserID == string(platformUserID) {
-			return msg
+	loc := time.UTC
+	if prefs.Timezone != "" {
+		if l, err := time.LoadLocation(prefs.Timezone); err == nil {
+			loc = l
 		}
 	}
 
-	blocks := make([]model.ContentBlock, 0, len(msg.Blocks)+1)
-	blocks = append(blocks, model.MentionBlock{UserID: string(platformUserID)})
-	blocks = append(blocks, msg.Blocks...)
-	return model.Message{Blocks: blocks}
+	start := time.Date(now.Year(), now.Month(), now.Day(),
+		*prefs.WorkHoursStart, 0, 0, 0, loc)
+
+	if now.Before(start) {
+		return start
+	}
+
+	return start.Add(24 * time.Hour)
 }
 
 func isWithinWorkHours(prefs *model.NotificationPrefs) bool {
@@ -189,29 +195,38 @@ func isWithinWorkHours(prefs *model.NotificationPrefs) bool {
 		return true
 	}
 
-	tz := prefs.Timezone
-	if tz == "" {
-		tz = "UTC"
-	}
-	loc, err := time.LoadLocation(tz)
-	if err != nil {
-		return true
-	}
-
-	hour := time.Now().In(loc).Hour()
-	start, end := *prefs.WorkHoursStart, *prefs.WorkHoursEnd
+	now := time.Now().UTC().Hour()
+	start := *prefs.WorkHoursStart
+	end := *prefs.WorkHoursEnd
 
 	if start <= end {
-		return hour >= start && hour < end
+		return now >= start && now < end
 	}
-	return hour >= start || hour < end
+	return now >= start || now < end
 }
 
-func defaultPrefs(userID model.GlobalUserID, primaryChannel model.ChannelType) *model.NotificationPrefs {
+func (n *NotifyAPI) buildSendOptions(
+	prefs *model.NotificationPrefs,
+	priority model.NotifyPriority,
+) model.SendOptions {
+
+	return model.SendOptions{
+		Silent: priority == model.PriorityLow,
+	}
+}
+
+func (n *NotifyAPI) resolveChannel(user *model.GlobalUser) (model.ChannelType, model.PlatformUserID) {
+	if len(user.Accounts) > 0 {
+		acc := user.Accounts[0]
+		return acc.ChannelType, acc.ChannelUserID
+	}
+	return user.PrimaryChannel, ""
+}
+
+func defaultPrefs(userID model.GlobalUserID, primary model.ChannelType) *model.NotificationPrefs {
 	return &model.NotificationPrefs{
 		GlobalUserID:    userID,
-		ChannelPriority: []model.ChannelType{primaryChannel},
-		MuteMentions:    false,
+		ChannelPriority: []model.ChannelType{primary},
 		Timezone:        "UTC",
 	}
 }
