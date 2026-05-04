@@ -13,10 +13,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { getErrorMessage } from '@/lib/utils'
 
 function formatDate(value?: string) {
-  if (!value) return 'never'
+  if (!value) return 'никогда'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString()
+  return date.toLocaleString('ru-RU')
 }
 
 export default function ChangePasswordDialog() {
@@ -174,7 +174,7 @@ export default function ChangePasswordDialog() {
                   id="tokenName"
                   value={tokenName}
                   onChange={(e) => setTokenName(e.target.value)}
-                  placeholder="CLI token"
+                  placeholder="Например: CLI"
                 />
               </div>
               <div className="grid gap-2">
@@ -221,16 +221,16 @@ export default function ChangePasswordDialog() {
                   <div className="min-w-0 space-y-1">
                     <div className="font-medium">{token.name}</div>
                     <div className="text-xs text-muted-foreground break-all">
-                      public_id: {token.public_id}
+                      открытый ID: {token.public_id}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      created: {formatDate(token.created_at)}
+                      создан: {formatDate(token.created_at)}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      last used: {formatDate(token.last_used_at)}
+                      последнее использование: {formatDate(token.last_used_at)}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      expires: {formatDate(token.expires_at)}
+                      истекает: {formatDate(token.expires_at)}
                     </div>
                   </div>
                   <Button type="button" variant="outline" size="icon" onClick={() => handleDeleteToken(token.id)}>

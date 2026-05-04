@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import CascadingSelect, { CascadeLevel } from '@/components/CascadingSelect'
+import { HelpTooltip } from '@/components/AdminHelp'
 
 // ---- Cascade levels ----
 
@@ -332,10 +333,24 @@ const TABS: { key: string; label: string; config: EntityTabConfig }[] = [
 export default function UniversityHierarchy() {
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Структура университета</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-bold">Структура университета</h1>
+          <HelpTooltip>
+            Эти справочники формируют университетский контекст для политик доступа: факультеты,
+            кафедры, программы, потоки, группы и подгруппы.
+          </HelpTooltip>
+        </div>
+      </div>
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Управление иерархией</CardTitle>
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-base">Управление иерархией</CardTitle>
+            <HelpTooltip>
+              Для дочерних сущностей сначала выберите родителя в каскадном фильтре:
+              например факультет перед кафедрой или поток перед группой.
+            </HelpTooltip>
+          </div>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="faculties">

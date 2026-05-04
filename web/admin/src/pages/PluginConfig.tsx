@@ -15,6 +15,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { HelpTooltip } from '@/components/AdminHelp'
 
 interface ConfigSchema {
   type?: string
@@ -136,7 +137,13 @@ export default function PluginConfig() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Настройка: {plugin.name || plugin.id}</CardTitle>
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle className="text-lg">Настройка: {plugin.name || plugin.id}</CardTitle>
+            <HelpTooltip>
+              Форма построена из настроек, которые объявил плагин. Сохранённые
+              значения сразу используются плагином без загрузки нового файла.
+            </HelpTooltip>
+          </div>
           <CardDescription>{plugin.id}</CardDescription>
         </CardHeader>
 

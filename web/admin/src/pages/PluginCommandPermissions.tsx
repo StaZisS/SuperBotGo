@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { ChevronRight, ArrowLeft, Shield } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { HelpTooltip } from '@/components/AdminHelp'
 
 interface CommandRow {
   name: string
@@ -171,6 +172,10 @@ export default function PluginCommandPermissions() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-semibold">Права доступа к триггерам</h1>
+              <HelpTooltip>
+                Здесь настраивается доступность точек запуска: включены ли они,
+                кто может вызывать HTTP-адреса и какая политика доступа применяется.
+              </HelpTooltip>
               {rows.length > 0 && (
                 <Badge variant="secondary" className="font-normal">
                   {enabledCount} из {rows.length} включены
@@ -186,13 +191,15 @@ export default function PluginCommandPermissions() {
               </p>
             )}
           </div>
-          {hasHTTPTriggers && (
-            <Button variant="outline" asChild>
-              <Link to="/admin/http/service-keys">
-                Service keys
-              </Link>
-            </Button>
-          )}
+          <div className="flex flex-wrap justify-end gap-2">
+            {hasHTTPTriggers && (
+              <Button variant="outline" asChild>
+                <Link to="/admin/http/service-keys">
+                  Сервисные ключи
+                </Link>
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -340,16 +347,16 @@ function CommandCard({
           </CollapsibleTrigger>
           <div className="flex items-center gap-3">
             {isPublicHTTPTrigger && (
-              <Badge variant="secondary">public</Badge>
+              <Badge variant="secondary">публичный</Badge>
             )}
             {policyExpr && (
-              <Badge variant="secondary">policy</Badge>
+              <Badge variant="secondary">политика</Badge>
             )}
             {row.type === 'http' && allowUserKeys && (
-              <Badge variant="secondary">user</Badge>
+              <Badge variant="secondary">сессия</Badge>
             )}
             {row.type === 'http' && allowServiceKeys && (
-              <Badge variant="secondary">service</Badge>
+              <Badge variant="secondary">ключ</Badge>
             )}
             {isDirty && (
               <Badge variant="outline">не сохранено</Badge>
@@ -373,13 +380,19 @@ function CommandCard({
             {row.type === 'http' && (
               <>
                 <div className="mb-4">
-                  <h4 className="text-sm font-medium mb-3">Кто может вызывать trigger</h4>
+                  <div className="mb-3 flex items-center gap-2">
+                    <h4 className="text-sm font-medium">Кто может вызывать HTTP-точку</h4>
+                    <HelpTooltip>
+                      Для HTTP-точки можно отдельно разрешить вызовы по пользовательской
+                      сессии и по сервисным ключам внешних систем.
+                    </HelpTooltip>
+                  </div>
                   <div className="space-y-3">
                     <div className="flex items-center justify-between rounded-lg border p-3">
                       <div>
-                        <div className="text-sm font-medium">User session</div>
+                        <div className="text-sm font-medium">Пользовательская сессия</div>
                         <div className="text-xs text-muted-foreground">
-                          Доступ по пользовательской cookie-сессии host-системы
+                          Доступ для пользователя, который уже вошёл в систему
                         </div>
                       </div>
                       <Switch
@@ -390,13 +403,13 @@ function CommandCard({
                     </div>
                     <div className="flex items-center justify-between rounded-lg border p-3">
                       <div>
-                        <div className="text-sm font-medium">Service key</div>
+                        <div className="text-sm font-medium">Сервисный ключ</div>
                         <div className="text-xs text-muted-foreground">
-                          Доступ по bearer service-key с разрешённым scope на этот trigger
+                          Доступ для внешней системы с ключом, которому разрешена эта HTTP-точка
                         </div>
                         <Button variant="link" size="sm" asChild className="h-auto px-0 mt-1">
                           <Link to="/admin/http/service-keys">
-                            Управление ключами и scope
+                            Управление ключами
                           </Link>
                         </Button>
                       </div>
@@ -418,9 +431,13 @@ function CommandCard({
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="text-sm font-medium">
                     Политика доступа
+                    <HelpTooltip className="ml-1 h-6 w-6 align-middle">
+                      Выражение проверяется перед запуском точки. Пустая строка означает,
+                      что дополнительная политика не применяется.
+                    </HelpTooltip>
                     {policyExpr
                       ? <span className="ml-2 text-xs text-primary font-normal">(активна)</span>
-                      : <span className="ml-2 text-xs text-muted-foreground font-normal">{row.type === 'http' ? '(пусто = без дополнительных ограничений для user session)' : '(пусто = доступно всем)'}</span>
+                      : <span className="ml-2 text-xs text-muted-foreground font-normal">{row.type === 'http' ? '(пусто = без дополнительных ограничений для пользовательской сессии)' : '(пусто = доступно всем)'}</span>
                     }
                   </h4>
                 </div>
@@ -442,7 +459,7 @@ function CommandCard({
                     <AlertDialogHeader>
                       <AlertDialogTitle>Очистить политику?</AlertDialogTitle>
                       <AlertDialogDescription>
-                        Политика доступа будет удалена. Команда станет доступна всем пользователям.
+                        Политика доступа будет удалена. Точка запуска станет доступна всем пользователям.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>

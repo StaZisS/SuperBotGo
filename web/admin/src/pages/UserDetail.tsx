@@ -17,6 +17,7 @@ import {
 import { formatDate, getErrorMessage } from '@/lib/utils'
 import UserPositions from '@/components/UserPositions'
 import AdminAccessCard from '@/components/AdminAccessCard'
+import { HelpTooltip } from '@/components/AdminHelp'
 
 export default function UserDetail() {
   const { id } = useParams<{ id: string }>()
@@ -106,9 +107,15 @@ export default function UserDetail() {
           <Button variant="ghost" size="sm" asChild className="mb-2 -ml-2">
             <Link to="/admin/users"><ArrowLeft className="mr-1 h-4 w-4" />Назад</Link>
           </Button>
-          <h2 className="text-lg font-semibold">
-            {user.person_name || `Пользователь #${user.id}`}
-          </h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-semibold">
+              {user.person_name || `Пользователь #${user.id}`}
+            </h2>
+            <HelpTooltip>
+              Здесь редактируется глобальный пользователь: роль, локаль, привязанные аккаунты,
+              учебные позиции и отдельный доступ к системной админке.
+            </HelpTooltip>
+          </div>
           {user.created_at && (
             <p className="text-sm text-muted-foreground">Создан {formatDate(user.created_at)}</p>
           )}

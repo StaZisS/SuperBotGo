@@ -20,6 +20,7 @@ import {
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog'
 import { cn, formatRelativeDate, getErrorMessage } from '@/lib/utils'
+import { HelpTooltip } from '@/components/AdminHelp'
 
 function LoadingSkeleton() {
   return (
@@ -127,7 +128,13 @@ export default function PluginVersions() {
             </Link>
           </Button>
         </div>
-        <h2 className="text-lg font-semibold">История версий</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-lg font-semibold">История версий</h2>
+          <HelpTooltip>
+            Версии сохраняют файл плагина, контрольную сумму, настройки и выданные
+            разрешения. Откат возвращает плагин к выбранной сохранённой версии.
+          </HelpTooltip>
+        </div>
         <p className="text-sm text-muted-foreground">
           {versions.length} {versions.length === 1 ? 'версия' : versions.length < 5 ? 'версии' : 'версий'}
         </p>

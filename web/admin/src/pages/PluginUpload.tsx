@@ -27,6 +27,7 @@ import {
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog'
 import { cn, compareVersions, getErrorMessage } from '@/lib/utils'
+import { HelpTooltip } from '@/components/AdminHelp'
 
 const steps = [
   { num: 1, label: 'Загрузка файла' },
@@ -155,7 +156,14 @@ export default function PluginUpload() {
             Назад
           </Link>
         </Button>
-        <h2 className="text-lg font-semibold">Загрузка плагина</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-lg font-semibold">Загрузка плагина</h2>
+          <HelpTooltip>
+            После выбора файла админка покажет, что будет установлено: название, версию,
+            точки запуска, ресурсы и обязательные настройки. Установка начнётся только после
+            кнопки «Установить».
+          </HelpTooltip>
+        </div>
         <p className="text-sm text-muted-foreground mt-1">
           Загрузите .wasm файл для установки нового плагина
         </p>
@@ -205,9 +213,15 @@ export default function PluginUpload() {
 
             {triggers.length > 0 && (
               <div>
-                <h4 className="text-sm font-medium text-muted-foreground mb-2">
-                  Триггеры ({triggers.length})
-                </h4>
+                <div className="mb-2 flex items-center gap-2">
+                  <h4 className="text-sm font-medium text-muted-foreground">
+                    Триггеры ({triggers.length})
+                  </h4>
+                  <HelpTooltip>
+                    Точка запуска показывает, как именно будет запускаться плагин: из мессенджера,
+                    по HTTP, по расписанию или по событию.
+                  </HelpTooltip>
+                </div>
                 <div className="space-y-1">
                   {triggers.map((t) => (
                     <div
@@ -246,7 +260,13 @@ export default function PluginUpload() {
 
             {hasConfigSchema && (
               <div>
-                <h4 className="text-sm font-medium text-muted-foreground mb-2">Конфигурация</h4>
+                <div className="mb-2 flex items-center gap-2">
+                  <h4 className="text-sm font-medium text-muted-foreground">Конфигурация</h4>
+                  <HelpTooltip>
+                    Эти поля объявлены плагином как обязательные или доступные настройки.
+                    Заполненные значения будут сохранены вместе с установкой.
+                  </HelpTooltip>
+                </div>
                 <JsonSchemaForm
                   schema={meta.config_schema as Record<string, unknown>}
                   value={configValues}

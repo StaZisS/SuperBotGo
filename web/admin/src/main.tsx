@@ -15,6 +15,7 @@ import UserList from './pages/UserList'
 import UserDetail from './pages/UserDetail'
 import UniversityHierarchy from './pages/UniversityHierarchy'
 import Login from './pages/Login'
+import Onboarding from './pages/Onboarding'
 import { AuthProvider, useAuth } from './hooks/useAuth'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -42,6 +43,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <RequireAuth>
           <Routes>
             <Route element={<Layout />}>
+              <Route path="/admin/onboarding" element={<Onboarding />} />
               <Route path="/admin/users" element={<UserList />} />
               <Route path="/admin/users/:id" element={<UserDetail />} />
               <Route path="/admin/plugins" element={<PluginList />} />

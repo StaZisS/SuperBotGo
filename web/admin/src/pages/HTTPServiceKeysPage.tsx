@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { Copy, KeyRound, Loader2, Plus, ShieldCheck, Trash2 } from 'lucide-react'
+import { HelpTooltip } from '@/components/AdminHelp'
 
 type HTTPTriggerOption = {
   pluginId: string
@@ -173,7 +174,7 @@ export default function HTTPServiceKeysPage() {
       setCreateOpen(false)
       resetCreateForm()
       await loadKeys()
-      toast.success('Service key создан')
+      toast.success('Сервисный ключ создан')
     } catch (e: unknown) {
       toast.error(getErrorMessage(e))
     } finally {
@@ -185,7 +186,7 @@ export default function HTTPServiceKeysPage() {
     try {
       await api.deleteServiceKey(id)
       setKeys((prev) => prev.filter((key) => key.id !== id))
-      toast.success('Service key удалён')
+      toast.success('Сервисный ключ удалён')
     } catch (e: unknown) {
       toast.error(getErrorMessage(e))
     } finally {
@@ -207,12 +208,19 @@ export default function HTTPServiceKeysPage() {
     <div>
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">HTTP Service Keys</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight">HTTP-сервисные ключи</h1>
+            <HelpTooltip>
+              Сервисный ключ - токен для вызова HTTP-точек внешней системой. Он не даёт
+              доступ к админке и ограничивается выбранными точками запуска.
+            </HelpTooltip>
+          </div>
           <p className="text-muted-foreground mt-1">
-            Ключи для server-to-server доступа к HTTP trigger по bearer token. Scope задаётся на конкретный trigger.
+            Ключи для внешних систем, которым нужно вызвать конкретные HTTP-точки плагинов.
           </p>
         </div>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="h-4 w-4 mr-2" />
@@ -221,16 +229,21 @@ export default function HTTPServiceKeysPage() {
           </DialogTrigger>
           <DialogContent className="max-w-3xl">
             <DialogHeader>
-              <DialogTitle>Новый service key</DialogTitle>
+              <DialogTitle>Новый сервисный ключ</DialogTitle>
               <DialogDescription>
-                Выбери HTTP trigger, к которым ключ получит доступ. Сам ключ сработает только если у trigger включён
-                `Service key` на странице прав.
+                Выберите HTTP-точки, к которым ключ получит доступ. Ключ сработает только
+                если для этой точки включён доступ по сервисному ключу на странице прав.
               </DialogDescription>
             </DialogHeader>
 
             <div className="grid gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="service-key-name">Название</Label>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="service-key-name">Название</Label>
+                  <HelpTooltip>
+                    Человекочитаемое имя для аудита. На работу токена не влияет.
+                  </HelpTooltip>
+                </div>
                 <Input
                   id="service-key-name"
                   placeholder="Например: CRM integration"
@@ -240,7 +253,13 @@ export default function HTTPServiceKeysPage() {
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="service-key-expiry">Истекает</Label>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="service-key-expiry">Истекает</Label>
+                  <HelpTooltip>
+                    Если указать дату, токен перестанет работать после этого времени.
+                    Для постоянных интеграций поле можно оставить пустым.
+                  </HelpTooltip>
+                </div>
                 <Input
                   id="service-key-expiry"
                   type="datetime-local"
@@ -252,13 +271,19 @@ export default function HTTPServiceKeysPage() {
 
               <div className="grid gap-2">
                 <div className="flex items-center justify-between">
-                  <Label>Scope на HTTP trigger</Label>
+                  <div className="flex items-center gap-2">
+                    <Label>Область доступа</Label>
+                    <HelpTooltip>
+                      Область доступа ограничивает токен конкретными HTTP-точками. Дополнительно
+                      на странице прав точки должен быть включён доступ по сервисному ключу.
+                    </HelpTooltip>
+                  </div>
                   <span className="text-xs text-muted-foreground">Выбрано: {selectedScopeCount}</span>
                 </div>
 
                 {triggerOptions.length === 0 ? (
                   <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                    Нет доступных HTTP trigger. Сначала добавь их в плагины.
+                    Нет доступных HTTP-точек запуска. Сначала добавьте их в плагины.
                   </div>
                 ) : (
                   <div className="max-h-[360px] overflow-y-auto space-y-4 rounded-lg border p-4">
@@ -268,7 +293,7 @@ export default function HTTPServiceKeysPage() {
                           <div className="font-medium">{group.pluginName}</div>
                           <Button variant="link" size="sm" asChild className="h-auto p-0">
                             <Link to={`/admin/plugins/${group.pluginId}/permissions`} onClick={() => setCreateOpen(false)}>
-                              Права trigger
+                              Права точки
                             </Link>
                           </Button>
                         </div>
@@ -319,7 +344,8 @@ export default function HTTPServiceKeysPage() {
               </Button>
             </DialogFooter>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
 
       {createdKey && (
@@ -327,10 +353,11 @@ export default function HTTPServiceKeysPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-emerald-900">
               <ShieldCheck className="h-5 w-5" />
-              Token показан только один раз
+              Токен показан только один раз
             </CardTitle>
             <CardDescription className="text-emerald-900/80">
-              Сохрани bearer token сейчас. Позже в списке будет доступен только `public_id`, но не секретная часть.
+              Сохраните токен сейчас. Позже в списке будет доступен только открытый
+              идентификатор, но не секретная часть.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -338,7 +365,7 @@ export default function HTTPServiceKeysPage() {
             <div className="flex gap-2">
               <Button onClick={handleCopyToken}>
                 <Copy className="h-4 w-4 mr-2" />
-                Скопировать token
+                Скопировать токен
               </Button>
               <Button variant="outline" onClick={() => setCreatedKey(null)}>
                 Скрыть
@@ -353,9 +380,9 @@ export default function HTTPServiceKeysPage() {
           <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
             <div className="flex items-center gap-2">
               <KeyRound className="h-4 w-4" />
-              Bearer token format: <span className="font-mono text-foreground">sbsk_&lt;public&gt;.&lt;secret&gt;</span>
+              Формат токена: <span className="font-mono text-foreground">sbsk_&lt;public&gt;.&lt;secret&gt;</span>
             </div>
-            <div>Для работы ключа нужны оба условия: scope на этом trigger и включённый `Service key` в правах trigger.</div>
+            <div>Для работы ключа нужны оба условия: выбранная HTTP-точка и включённый доступ по сервисному ключу в правах точки.</div>
           </div>
         </CardContent>
       </Card>
@@ -382,9 +409,9 @@ export default function HTTPServiceKeysPage() {
             <div className="rounded-full bg-muted w-16 h-16 mx-auto mb-4 flex items-center justify-center">
               <KeyRound className="h-8 w-8 text-muted-foreground" />
             </div>
-            <h3 className="text-lg font-semibold mb-1">Service keys ещё не созданы</h3>
+            <h3 className="text-lg font-semibold mb-1">Сервисные ключи ещё не созданы</h3>
             <p className="text-sm text-muted-foreground max-w-md mx-auto">
-              Создай ключ для внешней системы и назначь ему scope на нужные HTTP trigger.
+              Создайте ключ для внешней системы и назначьте ему нужные HTTP-точки.
             </p>
           </CardContent>
         </Card>
@@ -433,11 +460,11 @@ function ServiceKeyCard({
           <CardTitle className="flex items-center gap-2">
             <span>{serviceKey.name}</span>
             <Badge variant={serviceKey.active ? 'secondary' : 'outline'}>
-              {serviceKey.active ? 'active' : 'inactive'}
+              {serviceKey.active ? 'активен' : 'отключён'}
             </Badge>
           </CardTitle>
           <CardDescription className="mt-1">
-            public_id: <span className="font-mono text-foreground">{serviceKey.public_id}</span>
+            открытый ID: <span className="font-mono text-foreground">{serviceKey.public_id}</span>
           </CardDescription>
         </div>
 
@@ -450,7 +477,7 @@ function ServiceKeyCard({
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Удалить service key?</AlertDialogTitle>
+              <AlertDialogTitle>Удалить сервисный ключ?</AlertDialogTitle>
               <AlertDialogDescription>
                 Ключ `{serviceKey.name}` перестанет работать сразу. Восстановить его будет нельзя.
               </AlertDialogDescription>
@@ -483,7 +510,7 @@ function ServiceKeyCard({
         </div>
 
         <div>
-          <div className="text-sm font-medium mb-2">Scopes</div>
+          <div className="text-sm font-medium mb-2">Область доступа</div>
           <div className="space-y-2">
             {serviceKey.scopes.map((scope) => {
               const option = optionMap.get(scopeKey(scope))

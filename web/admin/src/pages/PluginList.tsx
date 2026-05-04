@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/table'
 import { Search, Package, Upload, FilterX } from 'lucide-react'
 import ChannelStatusCard from '@/components/ChannelStatusCard'
+import { HelpTooltip } from '@/components/AdminHelp'
 
 export default function PluginList() {
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
@@ -59,17 +60,25 @@ export default function PluginList() {
       {/* Page header */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Плагины</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight">Плагины</h1>
+            <HelpTooltip>
+              Плагин - это установленный модуль бота с точками запуска, настройками
+              и статусом. Отсюда открываются карточка плагина, права, версии и настройка.
+            </HelpTooltip>
+          </div>
           <p className="text-muted-foreground mt-1">
             Управление установленными плагинами бота
           </p>
         </div>
-        <Button asChild>
-          <Link to="/admin/plugins/upload">
-            <Upload className="h-4 w-4 mr-2" />
-            Загрузить плагин
-          </Link>
-        </Button>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button asChild>
+            <Link to="/admin/plugins/upload">
+              <Upload className="h-4 w-4 mr-2" />
+              Загрузить плагин
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <div className="mb-6">

@@ -52,6 +52,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { formatDate, getErrorMessage } from '@/lib/utils'
+import { HelpTooltip } from '@/components/AdminHelp'
 
 function describeCron(expr: string): string {
   const parts = expr.trim().split(/\s+/)
@@ -86,10 +87,10 @@ const triggerIcon: Record<string, typeof Clock> = {
 }
 
 const triggerLabel: Record<string, string> = {
-  messenger: 'Command',
-  cron: 'Cron',
+  messenger: 'Команда',
+  cron: 'Расписание',
   http: 'HTTP',
-  event: 'Event',
+  event: 'Событие',
 }
 
 function TriggerBadge({ type }: { type: string }) {
@@ -303,9 +304,11 @@ export default function PluginDetail() {
               Назад
             </Link>
           </Button>
-          <h2 className="text-lg font-semibold truncate">
-            {plugin.name || plugin.id}
-          </h2>
+          <div className="flex min-w-0 items-center gap-2">
+            <h2 className="truncate text-lg font-semibold">
+              {plugin.name || plugin.id}
+            </h2>
+          </div>
           <p className="text-sm text-muted-foreground">
             {plugin.id}
             {plugin.version && <span> &middot; v{plugin.version}</span>}
@@ -386,9 +389,15 @@ export default function PluginDetail() {
             <>
               <Separator />
               <div>
-                <h4 className="text-sm font-medium mb-2">
-                  Триггеры ({allTriggers.length})
-                </h4>
+                <div className="mb-2 flex items-center gap-2">
+                  <h4 className="text-sm font-medium">
+                    Триггеры ({allTriggers.length})
+                  </h4>
+                  <HelpTooltip>
+                    Точка запуска - способ вызвать плагин: команда в мессенджере,
+                    HTTP-адрес, расписание или событие.
+                  </HelpTooltip>
+                </div>
                 <div className="space-y-1">
                   {allTriggers.map((t) => {
                     const Icon = triggerIcon[t.type] || Zap
@@ -462,7 +471,13 @@ export default function PluginDetail() {
       {/* Actions */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Действия</CardTitle>
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-base">Действия</CardTitle>
+            <HelpTooltip>
+              Управление ниже влияет на включение плагина, обновление, удаление,
+              права точек запуска и значения параметров без пересборки файла.
+            </HelpTooltip>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Navigation group */}

@@ -32,6 +32,7 @@ import {
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { HelpTooltip } from '@/components/AdminHelp'
 
 const CHANNEL_SHORT: Record<string, string> = { TELEGRAM: 'TG', DISCORD: 'DC', VK: 'VK', MATTERMOST: 'MM' }
 
@@ -387,7 +388,13 @@ export default function UserList() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Пользователи</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-bold">Пользователи</h1>
+          <HelpTooltip>
+            Глобальные пользователи объединяют аккаунты из мессенджеров, роль, локаль и
+            учебные данные, которые затем используются в политиках доступа.
+          </HelpTooltip>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -450,6 +457,10 @@ export default function UserList() {
           <CardTitle className="flex items-center gap-2 text-base">
             <FileSpreadsheet className="h-4 w-4" />
             Импорт студентов из Excel
+            <HelpTooltip>
+              Импорт создаёт или обновляет учебные позиции студентов. Эти данные нужны для
+              проверок доступа по группам, потокам и другим университетским признакам.
+            </HelpTooltip>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">

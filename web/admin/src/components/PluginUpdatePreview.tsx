@@ -343,7 +343,7 @@ export default function PluginUpdatePreview({
                   id="plugin-update-changelog"
                   value={changelog}
                   onChange={(e) => onChangelogChange(e.target.value)}
-                  placeholder="Например: обновили RPC-метод, добавили новый trigger, исправили авторизацию"
+                  placeholder="Например: обновили RPC-метод, добавили новую точку запуска, исправили авторизацию"
                   rows={3}
                 />
               </CardContent>

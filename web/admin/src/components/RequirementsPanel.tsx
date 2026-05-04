@@ -1,5 +1,6 @@
 import { Badge } from '@/components/ui/badge'
 import { Database, Globe, HardDrive, Bell, Radio, Puzzle, Archive, FileUp } from 'lucide-react'
+import { HelpTooltip } from '@/components/AdminHelp'
 
 export interface Requirement {
   type: string
@@ -26,7 +27,13 @@ export default function RequirementsPanel({ requirements }: Props) {
   if (requirements.length === 0) {
     return (
       <div className="space-y-2">
-        <h3 className="text-sm font-medium text-gray-700">Требования</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-medium text-gray-700">Требования</h3>
+          <HelpTooltip>
+            Ресурсы, которые плагин явно запросил: база данных, HTTP, KV, файлы,
+            уведомления, события или доступ к другому плагину.
+          </HelpTooltip>
+        </div>
         <p className="text-sm text-muted-foreground">Плагин не требует дополнительных ресурсов.</p>
       </div>
     )
@@ -34,7 +41,13 @@ export default function RequirementsPanel({ requirements }: Props) {
 
   return (
     <div className="space-y-2">
-      <h3 className="text-sm font-medium text-gray-700">Требования</h3>
+      <div className="flex items-center gap-2">
+        <h3 className="text-sm font-medium text-gray-700">Требования</h3>
+        <HelpTooltip>
+          Платформа проверяет эти заявки при работе плагина. Если ресурс не указан
+          в списке, соответствующий доступ будет отклонён.
+        </HelpTooltip>
+      </div>
       {requirements.map((req, i) => {
         const meta = TYPE_META[req.type] || { label: req.type, icon: null }
         return (

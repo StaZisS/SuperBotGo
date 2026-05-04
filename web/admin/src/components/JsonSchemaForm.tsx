@@ -7,6 +7,7 @@ import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { HelpTooltip } from '@/components/AdminHelp'
 
 interface SchemaProperty {
   type?: string
@@ -140,11 +141,17 @@ function FieldRenderer({
   const fieldId = `field-${name}`
 
   const label = (
-    <Label htmlFor={fieldId} className="mb-1 block">
-      {name}
-      {required && <span className="text-destructive ml-1">*</span>}
-      {prop.description && <span className="text-xs text-muted-foreground ml-2">{prop.description}</span>}
-    </Label>
+    <div className="mb-1 flex items-center gap-1.5">
+      <Label htmlFor={fieldId}>
+        {name}
+        {required && <span className="text-destructive ml-1">*</span>}
+      </Label>
+      {prop.description && (
+        <HelpTooltip className="h-6 w-6">
+          {prop.description}
+        </HelpTooltip>
+      )}
+    </div>
   )
 
   const errorHint = error ? (
@@ -186,10 +193,16 @@ function FieldRenderer({
           onCheckedChange={(checked) => onChange(checked)}
           disabled={readOnly}
         />
-        <Label htmlFor={fieldId} className="cursor-pointer">
-          {name}
-          {prop.description && <span className="text-xs text-muted-foreground ml-2">{prop.description}</span>}
-        </Label>
+        <div className="flex items-center gap-1.5">
+          <Label htmlFor={fieldId} className="cursor-pointer">
+            {name}
+          </Label>
+          {prop.description && (
+            <HelpTooltip className="h-6 w-6">
+              {prop.description}
+            </HelpTooltip>
+          )}
+        </div>
       </div>
     )
   }

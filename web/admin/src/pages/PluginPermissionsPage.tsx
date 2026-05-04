@@ -7,6 +7,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TYPE_META } from '@/components/RequirementsPanel'
+import { HelpTooltip } from '@/components/AdminHelp'
 
 export default function PluginPermissionsPage() {
   const { id } = useParams<{ id: string }>()
@@ -67,7 +68,13 @@ export default function PluginPermissionsPage() {
             Назад
           </Link>
         </div>
-        <h2 className="text-lg font-semibold">Требования плагина</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-lg font-semibold">Требования плагина</h2>
+          <HelpTooltip>
+            Ресурсы, которые плагин запросил у платформы: база данных, файлы,
+            уведомления, HTTP-запросы или доступ к другим плагинам.
+          </HelpTooltip>
+        </div>
         <p className="text-sm text-muted-foreground">{plugin?.name || id}</p>
       </div>
 
