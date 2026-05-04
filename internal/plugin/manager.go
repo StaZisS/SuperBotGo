@@ -108,7 +108,12 @@ func (m *Manager) ListUserPlugins(excludeIDs ...string) []PluginInfo {
 		cmds := p.Commands()
 		commands := make([]PluginCommand, len(cmds))
 		for i, c := range cmds {
-			commands[i] = PluginCommand{Name: c.Name, Description: c.Description, Requirements: c.Requirements}
+			commands[i] = PluginCommand{
+				Name:         c.Name,
+				Descriptions: copyStringMap(c.Descriptions),
+				Description:  c.Description,
+				Requirements: c.Requirements,
+			}
 		}
 		result = append(result, PluginInfo{
 			ID:       p.ID(),
@@ -121,4 +126,15 @@ func (m *Manager) ListUserPlugins(excludeIDs ...string) []PluginInfo {
 		return result[i].Name < result[j].Name
 	})
 	return result
+}
+
+func copyStringMap(src map[string]string) map[string]string {
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make(map[string]string, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }

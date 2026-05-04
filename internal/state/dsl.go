@@ -54,7 +54,8 @@ func (ConditionalBranchNode) commandNode() {}
 
 type CommandDefinition struct {
 	Name            string
-	Description     string
+	Descriptions    map[string]string
+	Description     string // Deprecated: use Descriptions for user-facing command text.
 	Requirements    *model.RoleRequirements
 	Nodes           []CommandNode
 	PreservesDialog bool

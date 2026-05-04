@@ -10,6 +10,10 @@ import (
 
 func StartCommand() *state.CommandDefinition {
 	return state.NewCommand("start").
+		LocalizedDescription(map[string]string{
+			"en": "Welcome message",
+			"ru": "Приветствие",
+		}).
 		Description("Welcome message").
 		Build()
 }

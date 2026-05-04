@@ -8,6 +8,7 @@ import (
 type CommandBuilder struct {
 	name            string
 	description     string
+	descriptions    map[string]string
 	requirements    *model.RoleRequirements
 	nodes           []CommandNode
 	preservesDialog bool
@@ -17,8 +18,17 @@ func NewCommand(name string) *CommandBuilder {
 	return &CommandBuilder{name: name}
 }
 
+// Description sets a single-locale fallback for older command definitions.
+//
+// Deprecated: use LocalizedDescription for user-facing command text.
 func (b *CommandBuilder) Description(d string) *CommandBuilder {
 	b.description = d
+	return b
+}
+
+// LocalizedDescription sets locale-specific user-facing command text.
+func (b *CommandBuilder) LocalizedDescription(descriptions map[string]string) *CommandBuilder {
+	b.descriptions = descriptions
 	return b
 }
 
@@ -59,6 +69,7 @@ func (b *CommandBuilder) ConditionalBranch(configure func(*ConditionalBranchBuil
 func (b *CommandBuilder) Build() *CommandDefinition {
 	return &CommandDefinition{
 		Name:            b.name,
+		Descriptions:    b.descriptions,
 		Description:     b.description,
 		Requirements:    b.requirements,
 		Nodes:           b.nodes,

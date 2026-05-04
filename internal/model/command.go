@@ -23,10 +23,11 @@ type CommandRequest struct {
 // CommandCandidate describes one plugin's claim on a command alias.
 // Used during disambiguation when multiple plugins register the same short name.
 type CommandCandidate struct {
-	PluginID    string
-	CommandName string // short alias
-	FQName      string // plugin_id.command_name
-	Description string
+	PluginID     string
+	CommandName  string // short alias
+	FQName       string // plugin_id.command_name
+	Descriptions map[string]string
+	Description  string // Deprecated: use Descriptions for user-facing command text.
 }
 
 type DialogState struct {

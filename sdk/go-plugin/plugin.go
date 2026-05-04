@@ -9,7 +9,7 @@ package wasmplugin
 // The host checks this to ensure compatibility with the loaded plugin.
 // Bump this when the protocol between host and plugin changes
 // (e.g. new env vars, new response fields, changed JSON schema).
-const ProtocolVersion = 3
+const ProtocolVersion = 4
 
 // SQLMigration describes a single SQL schema migration step.
 // Migrations are declared in the Plugin struct and serialized as part of
@@ -91,9 +91,10 @@ const (
 // Trigger declares a trigger source this plugin responds to.
 // For messenger triggers this also describes the interactive command flow.
 type Trigger struct {
-	Name        string
-	Type        TriggerType
-	Description string
+	Name         string
+	Type         TriggerType
+	Descriptions map[string]string
+	Description  string // Deprecated: use Descriptions for user-facing trigger text.
 
 	// Messenger-specific: interactive command flow (node tree with
 	// branching, pagination, dynamic options, conditions).

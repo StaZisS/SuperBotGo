@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"SuperBotGo/internal/i18n"
+	"SuperBotGo/internal/locale"
 	"SuperBotGo/internal/model"
 	"SuperBotGo/internal/plugin"
 	"SuperBotGo/internal/state"
@@ -28,6 +29,10 @@ var hiddenCommands = map[string]struct{}{
 
 func PluginsCommand(lister PluginLister) *state.CommandDefinition {
 	return state.NewCommand("plugins").
+		LocalizedDescription(map[string]string{
+			"en": "Browse available plugins",
+			"ru": "Обзор плагинов",
+		}).
 		Description("Browse available plugins").
 		Step("plugin", func(s *state.StepBuilder) {
 			s.Prompt(func(p *state.PromptBuilder) {
@@ -91,10 +96,7 @@ func (p *Plugin) handlePlugins(ctx context.Context, m *model.MessengerTriggerDat
 			continue
 		}
 		fqName := info.ID + "." + cmd.Name
-		label := "/" + cmd.Name
-		if cmd.Description != "" {
-			label += " — " + cmd.Description
-		}
+		label := commandMenuLabel(cmd, m.Locale)
 		options = append(options, model.Option{Label: label, Value: "/" + fqName})
 	}
 
@@ -141,4 +143,14 @@ func (p *Plugin) isCommandAllowed(ctx context.Context, userID model.GlobalUserID
 		return false
 	}
 	return ok
+}
+
+func commandMenuLabel(cmd plugin.PluginCommand, loc string) string {
+	if label := locale.ResolveText(cmd.Descriptions, loc); label != "" {
+		return label
+	}
+	if cmd.Description != "" {
+		return cmd.Description
+	}
+	return cmd.Name
 }

@@ -191,3 +191,46 @@ func TestResolveCommand_CollisionFQNames(t *testing.T) {
 		t.Error("missing candidate pluginB.dup")
 	}
 }
+
+func TestResolveCommand_CollisionCarriesLocalizedDescriptions(t *testing.T) {
+	t.Parallel()
+
+	pluginA := &mockPlugin{
+		id: "pluginA",
+		commands: []*state.CommandDefinition{{
+			Name: "dup",
+			Descriptions: map[string]string{
+				"en": "Run A",
+				"ru": "Запуск A",
+			},
+			Description: "Run A",
+		}},
+	}
+	pluginB := &mockPlugin{
+		id:       "pluginB",
+		commands: []*state.CommandDefinition{{Name: "dup", Description: "Run B"}},
+	}
+
+	mgr := NewManager()
+	mgr.Register(pluginA)
+	mgr.Register(pluginB)
+
+	_, _, candidates := mgr.ResolveCommand("dup")
+	if len(candidates) != 2 {
+		t.Fatalf("expected 2 candidates, got %d", len(candidates))
+	}
+
+	for _, c := range candidates {
+		if c.PluginID != "pluginA" {
+			continue
+		}
+		if c.Descriptions["ru"] != "Запуск A" {
+			t.Errorf("Descriptions[ru] = %q, want %q", c.Descriptions["ru"], "Запуск A")
+		}
+		if c.Description != "Run A" {
+			t.Errorf("Description = %q, want %q", c.Description, "Run A")
+		}
+		return
+	}
+	t.Fatal("candidate for pluginA not found")
+}

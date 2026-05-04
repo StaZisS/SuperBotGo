@@ -240,4 +240,4 @@
 | `PriorityNormal` | `1` | Стандартное уведомление |
 | `PriorityHigh` | `2` | Важное - с упоминанием |
 | `PriorityCritical` | `3` | Срочное - все каналы |
-| `ProtocolVersion` | `3` | Версия протокола SDK |
+| `ProtocolVersion` | `4` | Версия протокола SDK |

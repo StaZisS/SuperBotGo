@@ -5,7 +5,7 @@ import "encoding/json"
 type PluginIDKey struct{}
 type HTTPAuthDataKey struct{}
 
-const MaxSupportedSDKVersion = 3
+const MaxSupportedSDKVersion = 4
 
 const ActionMigrate = "migrate"
 const ActionReconfigure = "reconfigure"
@@ -61,14 +61,15 @@ type MigrationDef struct {
 }
 
 type TriggerDef struct {
-	Name        string    `json:"name"`
-	Type        string    `json:"type"`
-	Description string    `json:"description,omitempty"`
-	Path        string    `json:"path,omitempty"`
-	Methods     []string  `json:"methods,omitempty"`
-	Schedule    string    `json:"schedule,omitempty"`
-	Topic       string    `json:"topic,omitempty"`
-	Nodes       []NodeDef `json:"nodes,omitempty"`
+	Name         string            `json:"name"`
+	Type         string            `json:"type"`
+	Descriptions map[string]string `json:"descriptions,omitempty"`
+	Description  string            `json:"description,omitempty"` // Deprecated: use Descriptions for user-facing trigger text.
+	Path         string            `json:"path,omitempty"`
+	Methods      []string          `json:"methods,omitempty"`
+	Schedule     string            `json:"schedule,omitempty"`
+	Topic        string            `json:"topic,omitempty"`
+	Nodes        []NodeDef         `json:"nodes,omitempty"`
 }
 
 type OptionDef struct {

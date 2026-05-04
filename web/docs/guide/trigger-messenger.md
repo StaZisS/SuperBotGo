@@ -6,13 +6,18 @@ Messenger-триггер регистрирует slash-команду в мес
 
 ```go
 wasmplugin.Trigger{
-    Name:        "hello",
-    Type:        wasmplugin.TriggerMessenger,
-    Description: "Описание для списка команд",
-    Nodes:       []wasmplugin.Node{...}, // шаги (опционально)
-    Handler:     func(ctx *wasmplugin.EventContext) error { ... },
+    Name: "hello",
+    Type: wasmplugin.TriggerMessenger,
+    Descriptions: map[string]string{
+        "ru": "Описание для списка команд",
+        "en": "Command list text",
+    },
+    Nodes:   []wasmplugin.Node{...}, // шаги (опционально)
+    Handler: func(ctx *wasmplugin.EventContext) error { ... },
 }
 ```
+
+`Description` оставлено как fallback для старых плагинов и считается deprecated. Для текста команды в меню используйте `Descriptions`; имя slash-команды остаётся только техническим значением кнопки.
 
 ## Простая команда
 
@@ -20,9 +25,12 @@ wasmplugin.Trigger{
 
 ```go
 wasmplugin.Trigger{
-    Name:        "ping",
-    Type:        wasmplugin.TriggerMessenger,
-    Description: "Проверить, жив ли бот",
+    Name: "ping",
+    Type: wasmplugin.TriggerMessenger,
+    Descriptions: map[string]string{
+        "ru": "Проверить, жив ли бот",
+        "en": "Check bot health",
+    },
     Handler: func(ctx *wasmplugin.EventContext) error {
         ctx.Reply(wasmplugin.NewMessage("pong!"))
         return nil
@@ -38,9 +46,12 @@ wasmplugin.Trigger{
 
 ```go
 wasmplugin.Trigger{
-    Name:        "greet",
-    Type:        wasmplugin.TriggerMessenger,
-    Description: "Поприветствовать",
+    Name: "greet",
+    Type: wasmplugin.TriggerMessenger,
+    Descriptions: map[string]string{
+        "ru": "Поприветствовать",
+        "en": "Greet someone",
+    },
     Nodes: []wasmplugin.Node{
         wasmplugin.NewStep("name").
             Text("Как вас зовут?", wasmplugin.StylePlain),
@@ -368,9 +379,12 @@ import wasmplugin "github.com/StaZisS/SuperBotGo/sdk/go-plugin"
 
 func searchCommand() wasmplugin.Trigger {
     return wasmplugin.Trigger{
-        Name:        "search",
-        Type:        wasmplugin.TriggerMessenger,
-        Description: "Поиск по разным критериям",
+        Name: "search",
+        Type: wasmplugin.TriggerMessenger,
+        Descriptions: map[string]string{
+            "ru": "Поиск по разным критериям",
+            "en": "Search by different criteria",
+        },
         Nodes: []wasmplugin.Node{
             // 1. Выбор критерия поиска
             wasmplugin.NewStep("what").

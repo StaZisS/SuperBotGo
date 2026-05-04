@@ -209,9 +209,9 @@ func main() {
 
         Triggers: []wasmplugin.Trigger{
             {
-                Name:        "hello",
-                Type:        wasmplugin.TriggerMessenger,
-                Description: "Приветствие",
+                Name:         "hello",
+                Type:         wasmplugin.TriggerMessenger,
+                Descriptions: catalog.L("commands.hello"),
                 Nodes: []wasmplugin.Node{
                     wasmplugin.NewStep("name").
                         LocalizedText(catalog.L("enter_name"), wasmplugin.StylePlain),

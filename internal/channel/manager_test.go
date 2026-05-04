@@ -249,6 +249,15 @@ func firstTextBlock(msg model.Message) string {
 	return ""
 }
 
+func firstOptionsBlock(msg model.Message) *model.OptionsBlock {
+	for _, b := range msg.Blocks {
+		if ob, ok := b.(model.OptionsBlock); ok {
+			return &ob
+		}
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Tests for OnUpdate — text command
 // ---------------------------------------------------------------------------
@@ -470,11 +479,23 @@ func TestHandleCommand_Ambiguous_SendsDisambiguation(t *testing.T) {
 	mgr, deps := newTestManager()
 
 	candidates := []model.CommandCandidate{
-		{PluginID: "pluginA", CommandName: "start", FQName: "pluginA.start", Description: "Start A"},
+		{
+			PluginID:    "pluginA",
+			CommandName: "start",
+			FQName:      "pluginA.start",
+			Descriptions: map[string]string{
+				"en": "Start A",
+				"ru": "Запуск A",
+			},
+			Description: "Start A",
+		},
 		{PluginID: "pluginB", CommandName: "start", FQName: "pluginB.start", Description: "Start B"},
 	}
 	deps.plugins.ResolveCommandFn = func(_ string) (string, *state.CommandDefinition, []model.CommandCandidate) {
 		return "", nil, candidates
+	}
+	deps.userService.FindOrCreateUserFn = func(_ context.Context, _ model.ChannelType, _ model.PlatformUserID, _ ...string) (*model.GlobalUser, error) {
+		return &model.GlobalUser{ID: 1, Locale: "ru-RU"}, nil
 	}
 
 	err := mgr.OnUpdate(context.Background(), makeUpdate("/start"))
@@ -486,15 +507,18 @@ func TestHandleCommand_Ambiguous_SendsDisambiguation(t *testing.T) {
 	if len(msgs) != 1 {
 		t.Fatalf("expected 1 disambiguation message, got %d", len(msgs))
 	}
-	// Verify the message contains an OptionsBlock.
-	hasOptions := false
-	for _, b := range msgs[0].msg.Blocks {
-		if _, ok := b.(model.OptionsBlock); ok {
-			hasOptions = true
-		}
+	ob := firstOptionsBlock(msgs[0].msg)
+	if ob == nil {
+		t.Fatal("disambiguation message should contain an OptionsBlock")
 	}
-	if !hasOptions {
-		t.Error("disambiguation message should contain an OptionsBlock")
+	if ob.Options[0].Label != "Запуск A" {
+		t.Errorf("option[0].Label = %q, want %q", ob.Options[0].Label, "Запуск A")
+	}
+	if ob.Options[0].Value != "/pluginA.start" {
+		t.Errorf("option[0].Value = %q, want %q", ob.Options[0].Value, "/pluginA.start")
+	}
+	if ob.Options[1].Label != "Start B" {
+		t.Errorf("option[1].Label = %q, want %q", ob.Options[1].Label, "Start B")
 	}
 }
 

@@ -12,6 +12,7 @@ type PluginInfo struct {
 // PluginCommand describes a single command within a plugin.
 type PluginCommand struct {
 	Name         string
-	Description  string
+	Descriptions map[string]string
+	Description  string                  // Deprecated: use Descriptions for user-facing command text.
 	Requirements *model.RoleRequirements // nil = no restriction
 }

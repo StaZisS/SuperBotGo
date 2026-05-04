@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"SuperBotGo/internal/locale"
 	"SuperBotGo/internal/wasm/registry"
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 )
@@ -418,13 +419,14 @@ func describeSchemaProperty(v any) string {
 
 func describeTrigger(trigger wasmrt.TriggerDef) string {
 	var parts []string
+	description := triggerDisplayDescription(trigger)
 	switch trigger.Type {
 	case "messenger":
 		if trigger.Name != "" {
 			parts = append(parts, "/"+trigger.Name)
 		}
-		if trigger.Description != "" {
-			parts = append(parts, trigger.Description)
+		if description != "" {
+			parts = append(parts, description)
 		}
 	case "http":
 		if len(trigger.Methods) > 0 {
@@ -433,29 +435,36 @@ func describeTrigger(trigger wasmrt.TriggerDef) string {
 		if trigger.Path != "" {
 			parts = append(parts, trigger.Path)
 		}
-		if trigger.Description != "" {
-			parts = append(parts, trigger.Description)
+		if description != "" {
+			parts = append(parts, description)
 		}
 	case "cron":
 		if trigger.Schedule != "" {
 			parts = append(parts, trigger.Schedule)
 		}
-		if trigger.Description != "" {
-			parts = append(parts, trigger.Description)
+		if description != "" {
+			parts = append(parts, description)
 		}
 	case "event":
 		if trigger.Topic != "" {
 			parts = append(parts, trigger.Topic)
 		}
-		if trigger.Description != "" {
-			parts = append(parts, trigger.Description)
+		if description != "" {
+			parts = append(parts, description)
 		}
 	default:
-		if trigger.Description != "" {
-			parts = append(parts, trigger.Description)
+		if description != "" {
+			parts = append(parts, description)
 		}
 	}
 	return strings.Join(parts, " • ")
+}
+
+func triggerDisplayDescription(trigger wasmrt.TriggerDef) string {
+	if description := locale.ResolveText(trigger.Descriptions, locale.Default()); description != "" {
+		return description
+	}
+	return trigger.Description
 }
 
 func describeRequirement(req wasmrt.RequirementDef) string {

@@ -47,8 +47,9 @@ func (wp *WasmPlugin) Commands() []*state.CommandDefinition {
 			continue
 		}
 		def := &state.CommandDefinition{
-			Name:        t.Name,
-			Description: t.Description,
+			Name:         t.Name,
+			Descriptions: copyStringMap(t.Descriptions),
+			Description:  t.Description,
 		}
 
 		def.Nodes = wp.commandNodes(t.Nodes)
@@ -56,6 +57,17 @@ func (wp *WasmPlugin) Commands() []*state.CommandDefinition {
 		defs = append(defs, def)
 	}
 	return defs
+}
+
+func copyStringMap(src map[string]string) map[string]string {
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make(map[string]string, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }
 
 func (wp *WasmPlugin) commandNodes(defs []wasmrt.NodeDef) []state.CommandNode {

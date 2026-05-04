@@ -4,10 +4,13 @@
 
 ```go
 wasmplugin.Trigger{
-    Name:        "имя",
-    Type:        wasmplugin.TriggerMessenger, // или TriggerHTTP, TriggerCron, TriggerEvent
-    Description: "описание",
-    Handler:     func(ctx *wasmplugin.EventContext) error { ... },
+    Name: "имя",
+    Type: wasmplugin.TriggerMessenger, // или TriggerHTTP, TriggerCron, TriggerEvent
+    Descriptions: map[string]string{
+        "ru": "описание",
+        "en": "description",
+    },
+    Handler: func(ctx *wasmplugin.EventContext) error { ... },
 }
 ```
 
@@ -22,7 +25,7 @@ wasmplugin.Trigger{
 | [Cron](/guide/trigger-cron) | `TriggerCron` | Действия по расписанию | `Schedule` |
 | [Event](/guide/trigger-event) | `TriggerEvent` | Подписка на события от других плагинов | `Topic` |
 
-У всех триггеров доступны общие поля: `Name`, `Type`, `Description`, `Handler`.
+У всех триггеров доступны общие поля: `Name`, `Type`, `Descriptions`, `Handler`. `Description` оставлено как deprecated fallback для старых плагинов.
 
 ## Данные контекста
 

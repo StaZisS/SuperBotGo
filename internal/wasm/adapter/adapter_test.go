@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"SuperBotGo/internal/model"
@@ -110,6 +111,37 @@ func TestBranchNodeRoundTrip(t *testing.T) {
 	fullParams := model.OptionMap{"mode": "by_date", "building": "1", "room": "101", "date": "2026-03-25"}
 	if !cmdDef.IsComplete(state.StepContext{Params: fullParams}) {
 		t.Fatalf("by_date path with date filled should be complete")
+	}
+}
+
+func TestCommandsCarriesLocalizedDescriptions(t *testing.T) {
+	wp := &WasmPlugin{
+		meta: wasmrt.PluginMeta{
+			Triggers: []wasmrt.TriggerDef{
+				{
+					Name: "hello",
+					Type: "messenger",
+					Descriptions: map[string]string{
+						"en": "Say hello",
+						"ru": "Поздороваться",
+					},
+					Description: "Say hello",
+				},
+				{Name: "hook", Type: "http", Description: "Webhook"},
+			},
+		},
+	}
+
+	commands := wp.Commands()
+	if len(commands) != 1 {
+		t.Fatalf("Commands() len = %d, want 1", len(commands))
+	}
+	if commands[0].Description != "Say hello" {
+		t.Errorf("Description = %q, want %q", commands[0].Description, "Say hello")
+	}
+	want := map[string]string{"en": "Say hello", "ru": "Поздороваться"}
+	if !reflect.DeepEqual(commands[0].Descriptions, want) {
+		t.Errorf("Descriptions = %#v, want %#v", commands[0].Descriptions, want)
 	}
 }
 

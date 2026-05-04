@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"reflect"
 	"sync"
 	"testing"
 
@@ -172,6 +173,42 @@ func TestManager_All_ReturnsCopy(t *testing.T) {
 	all2 := mgr.All()
 	if len(all2) != 2 {
 		t.Errorf("internal map was mutated: expected 2, got %d", len(all2))
+	}
+}
+
+func TestManager_ListUserPluginsCarriesLocalizedDescriptions(t *testing.T) {
+	t.Parallel()
+
+	mgr := NewManager()
+	mgr.Register(&mockPlugin{
+		id:      "demo",
+		name:    "Demo",
+		version: "1.0.0",
+		commands: []*state.CommandDefinition{
+			{
+				Name: "hello",
+				Descriptions: map[string]string{
+					"en": "Say hello",
+					"ru": "Поздороваться",
+				},
+				Description: "Say hello",
+			},
+		},
+	})
+
+	plugins := mgr.ListUserPlugins()
+	if len(plugins) != 1 {
+		t.Fatalf("ListUserPlugins() len = %d, want 1", len(plugins))
+	}
+	if len(plugins[0].Commands) != 1 {
+		t.Fatalf("commands len = %d, want 1", len(plugins[0].Commands))
+	}
+	want := map[string]string{"en": "Say hello", "ru": "Поздороваться"}
+	if !reflect.DeepEqual(plugins[0].Commands[0].Descriptions, want) {
+		t.Errorf("Descriptions = %#v, want %#v", plugins[0].Commands[0].Descriptions, want)
+	}
+	if plugins[0].Commands[0].Description != "Say hello" {
+		t.Errorf("Description = %q, want %q", plugins[0].Commands[0].Description, "Say hello")
 	}
 }
 

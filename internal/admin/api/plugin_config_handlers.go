@@ -119,7 +119,11 @@ func (h *AdminHandler) handleGetPlugin(w http.ResponseWriter, r *http.Request) {
 		resp["status"] = "active"
 		cmds := make([]cmdInfo, 0, len(p.Commands()))
 		for _, def := range p.Commands() {
-			cmds = append(cmds, cmdInfo{Name: def.Name, Description: def.Description})
+			cmds = append(cmds, cmdInfo{
+				Name:         def.Name,
+				Descriptions: def.Descriptions,
+				Description:  def.Description,
+			})
 		}
 		resp["commands"] = cmds
 	}

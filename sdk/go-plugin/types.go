@@ -21,14 +21,15 @@ type rpcMethodDef struct {
 }
 
 type triggerDef struct {
-	Name        string    `json:"name"`
-	Type        string    `json:"type"`
-	Description string    `json:"description,omitempty"`
-	Path        string    `json:"path,omitempty"`
-	Methods     []string  `json:"methods,omitempty"`
-	Schedule    string    `json:"schedule,omitempty"`
-	Topic       string    `json:"topic,omitempty"`
-	Nodes       []nodeDef `json:"nodes,omitempty"`
+	Name         string            `json:"name"`
+	Type         string            `json:"type"`
+	Descriptions map[string]string `json:"descriptions,omitempty"`
+	Description  string            `json:"description,omitempty"` // Deprecated: use Descriptions for user-facing trigger text.
+	Path         string            `json:"path,omitempty"`
+	Methods      []string          `json:"methods,omitempty"`
+	Schedule     string            `json:"schedule,omitempty"`
+	Topic        string            `json:"topic,omitempty"`
+	Nodes        []nodeDef         `json:"nodes,omitempty"`
 }
 
 type optionDef struct {

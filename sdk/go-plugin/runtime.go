@@ -62,13 +62,14 @@ func handleMeta(p Plugin) {
 
 	for _, t := range p.Triggers {
 		td := triggerDef{
-			Name:        t.Name,
-			Type:        t.Type,
-			Description: t.Description,
-			Path:        t.Path,
-			Methods:     t.Methods,
-			Schedule:    t.Schedule,
-			Topic:       t.Topic,
+			Name:         t.Name,
+			Type:         t.Type,
+			Descriptions: t.Descriptions,
+			Description:  t.Description,
+			Path:         t.Path,
+			Methods:      t.Methods,
+			Schedule:     t.Schedule,
+			Topic:        t.Topic,
 		}
 
 		if t.Type == TriggerMessenger && len(t.Nodes) > 0 {

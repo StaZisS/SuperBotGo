@@ -63,9 +63,12 @@ func main() {
         Version: "1.0.0",
         Triggers: []wasmplugin.Trigger{
             {
-                Name:        "hello",
-                Type:        wasmplugin.TriggerMessenger,
-                Description: "Приветствие",
+                Name: "hello",
+                Type: wasmplugin.TriggerMessenger,
+                Descriptions: map[string]string{
+                    "ru": "Приветствие",
+                    "en": "Greeting",
+                },
                 Handler: func(ctx *wasmplugin.EventContext) error {
                     ctx.Reply(wasmplugin.NewMessage("Привет, мир!"))
                     return nil

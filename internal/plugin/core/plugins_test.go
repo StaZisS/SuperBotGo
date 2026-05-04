@@ -98,18 +98,27 @@ func findTextBlock(msg model.Message, style model.TextStyle) *model.TextBlock {
 // Tests
 // ---------------------------------------------------------------------------
 
-func TestHandlePlugins_ShowsCommandsWithFQNames(t *testing.T) {
+func TestHandlePlugins_ShowsLocalizedCommandTextAndRoutesByFQName(t *testing.T) {
 	t.Parallel()
 
 	lister := &stubLister{plugins: []plugin.PluginInfo{
 		{ID: "sched", Name: "Schedule", Commands: []plugin.PluginCommand{
-			{Name: "view", Description: "View schedule"},
+			{
+				Name: "view",
+				Descriptions: map[string]string{
+					"en": "View schedule",
+					"ru": "Посмотреть расписание",
+				},
+				Description: "View schedule",
+			},
 			{Name: "find", Description: "Search"},
 		}},
 	}}
 	p, adapter := newTestPlugin(lister, nil)
 
-	err := p.handlePlugins(context.Background(), triggerData("sched"))
+	data := triggerData("sched")
+	data.Locale = "ru-RU"
+	err := p.handlePlugins(context.Background(), data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,8 +138,11 @@ func TestHandlePlugins_ShowsCommandsWithFQNames(t *testing.T) {
 	if ob.Options[1].Value != "/sched.find" {
 		t.Errorf("option[1].Value = %q, want %q", ob.Options[1].Value, "/sched.find")
 	}
-	if ob.Options[0].Label != "/view — View schedule" {
-		t.Errorf("option[0].Label = %q, want %q", ob.Options[0].Label, "/view — View schedule")
+	if ob.Options[0].Label != "Посмотреть расписание" {
+		t.Errorf("option[0].Label = %q, want %q", ob.Options[0].Label, "Посмотреть расписание")
+	}
+	if ob.Options[1].Label != "Search" {
+		t.Errorf("option[1].Label = %q, want %q", ob.Options[1].Label, "Search")
 	}
 }
 

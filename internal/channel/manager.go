@@ -433,10 +433,7 @@ func (m *ChannelManager) buildDisambiguationMessage(userID model.GlobalUserID, c
 
 	options := make([]model.Option, len(sorted))
 	for i, c := range sorted {
-		label := c.FQName
-		if c.Description != "" {
-			label = c.FQName + " — " + c.Description
-		}
+		label := disambiguationLabel(c, loc)
 		if c.PluginID == focusPlugin && focusPlugin != "" && i == 0 {
 			label = "⟶ " + label
 		}
@@ -457,6 +454,19 @@ func (m *ChannelManager) buildDisambiguationMessage(userID model.GlobalUserID, c
 			},
 		},
 	}
+}
+
+func disambiguationLabel(c model.CommandCandidate, loc string) string {
+	if label := locale.ResolveText(c.Descriptions, loc); label != "" {
+		return label
+	}
+	if c.Description != "" {
+		return c.Description
+	}
+	if c.PluginID != "" {
+		return c.PluginID
+	}
+	return c.FQName
 }
 
 func (m *ChannelManager) recordFocus(userID model.GlobalUserID, pluginID string) {

@@ -39,8 +39,9 @@ type installResponse struct {
 }
 
 type cmdInfo struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Name         string            `json:"name"`
+	Descriptions map[string]string `json:"descriptions,omitempty"`
+	Description  string            `json:"description"` // Deprecated: use descriptions for user-facing command text.
 }
 
 type StateManagerRegistrar interface {

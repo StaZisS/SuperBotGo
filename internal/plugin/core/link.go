@@ -39,6 +39,10 @@ type TsuAuthLinker interface {
 
 func LinkCommand() *state.CommandDefinition {
 	return state.NewCommand("link").
+		LocalizedDescription(map[string]string{
+			"en": "Account linking",
+			"ru": "Привязка аккаунта",
+		}).
 		Description("Account Linking").
 		Build()
 }

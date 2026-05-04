@@ -15,6 +15,10 @@ type DialogReader interface {
 
 func ResumeCommand() *state.CommandDefinition {
 	return state.NewCommand("resume").
+		LocalizedDescription(map[string]string{
+			"en": "Resume active command on this platform",
+			"ru": "Продолжить активную команду",
+		}).
 		Description("Resume active command on this platform").
 		PreservesDialog().
 		Build()

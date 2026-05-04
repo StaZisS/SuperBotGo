@@ -60,10 +60,11 @@ func (m *Manager) ResolveCommand(input string) (pluginID string, def *state.Comm
 		candidates = make([]model.CommandCandidate, len(matches))
 		for i, mt := range matches {
 			candidates[i] = model.CommandCandidate{
-				PluginID:    mt.pluginID,
-				CommandName: mt.def.Name,
-				FQName:      mt.pluginID + "." + mt.def.Name,
-				Description: mt.def.Description,
+				PluginID:     mt.pluginID,
+				CommandName:  mt.def.Name,
+				FQName:       mt.pluginID + "." + mt.def.Name,
+				Descriptions: copyStringMap(mt.def.Descriptions),
+				Description:  mt.def.Description,
 			}
 		}
 		return "", nil, candidates

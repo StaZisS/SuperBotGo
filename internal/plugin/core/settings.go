@@ -24,6 +24,10 @@ type UserLocaleUpdater interface {
 
 func SettingsCommand() *state.CommandDefinition {
 	return state.NewCommand("settings").
+		LocalizedDescription(map[string]string{
+			"en": "User settings",
+			"ru": "Настройки пользователя",
+		}).
 		Description("User Settings").
 		Step("action", func(s *state.StepBuilder) {
 			s.Prompt(func(p *state.PromptBuilder) {
