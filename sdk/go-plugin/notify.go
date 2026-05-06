@@ -71,6 +71,11 @@ func (ctx *EventContext) NotifyUser(userID int64, text string, priority int) err
 	return nil
 }
 
+// NotifyRecipient sends one rich notification to a single user.
+func (ctx *EventContext) NotifyRecipient(userID int64, msg Message, priority int) error {
+	return ctx.NotifyUsers([]int64{userID}, msg, priority)
+}
+
 // NotifyChat sends a priority-aware notification to a specific chat.
 func (ctx *EventContext) NotifyChat(channelType, chatID, text string, priority int) error {
 	var resp notifyResp
@@ -109,6 +114,82 @@ func (ctx *EventContext) NotifyUsers(userIDs []int64, msg Message, priority int)
 		return fmt.Errorf("notify_users: %s", resp.Error)
 	}
 	return nil
+}
+
+// NotifyRecipients returns a builder for sending a rich notification to specific users.
+//
+// Usage:
+//
+//	ctx.NotifyRecipients().
+//	    Teacher(teacherUserID).
+//	    Message(wasmplugin.NewMessage("Проверьте замену в расписании")).
+//	    Priority(wasmplugin.PriorityHigh).
+//	    Send()
+func (ctx *EventContext) NotifyRecipients() *RecipientNotifyBuilder {
+	return &RecipientNotifyBuilder{
+		ctx:      ctx,
+		priority: PriorityNormal,
+		seen:     make(map[int64]struct{}),
+	}
+}
+
+// RecipientNotifyBuilder constructs a direct user notification via method chaining.
+type RecipientNotifyBuilder struct {
+	ctx      *EventContext
+	userIDs  []int64
+	msg      Message
+	priority int
+	seen     map[int64]struct{}
+}
+
+// User adds one global user ID as a recipient.
+func (b *RecipientNotifyBuilder) User(userID int64) *RecipientNotifyBuilder {
+	if userID <= 0 {
+		return b
+	}
+	if _, ok := b.seen[userID]; ok {
+		return b
+	}
+	b.seen[userID] = struct{}{}
+	b.userIDs = append(b.userIDs, userID)
+	return b
+}
+
+// Teacher adds a teacher by global user ID. It is an alias for User that makes
+// teacher-targeted notifications read naturally in plugin code.
+func (b *RecipientNotifyBuilder) Teacher(userID int64) *RecipientNotifyBuilder {
+	return b.User(userID)
+}
+
+// Users adds multiple global user IDs as recipients.
+func (b *RecipientNotifyBuilder) Users(userIDs ...int64) *RecipientNotifyBuilder {
+	for _, userID := range userIDs {
+		b.User(userID)
+	}
+	return b
+}
+
+// Message sets the notification message.
+func (b *RecipientNotifyBuilder) Message(msg Message) *RecipientNotifyBuilder {
+	b.msg = msg
+	return b
+}
+
+// Priority sets the notification priority. Defaults to PriorityNormal.
+func (b *RecipientNotifyBuilder) Priority(p int) *RecipientNotifyBuilder {
+	b.priority = p
+	return b
+}
+
+// Send executes the notification. Returns an error if recipients or message are not set.
+func (b *RecipientNotifyBuilder) Send() error {
+	if len(b.userIDs) == 0 {
+		return fmt.Errorf("notify_recipients: no user IDs provided")
+	}
+	if b.msg.IsEmpty() {
+		return fmt.Errorf("notify_recipients: message not set")
+	}
+	return b.ctx.NotifyUsers(b.userIDs, b.msg, b.priority)
 }
 
 // NotifyStudents returns a builder for sending a priority-aware notification
