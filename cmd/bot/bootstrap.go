@@ -89,6 +89,7 @@ type postgresServices struct {
 	adminBus           *pubsub.Bus
 	chatRegistry       chat.Registry
 	notifPrefsRepo     *notification.PgPrefsRepo
+	notifScheduleStore *notification.PgScheduledStore
 }
 
 type tsuAuthServices struct {
@@ -282,6 +283,11 @@ func newPostgresServices(ctx context.Context, cfg *config.Config, logger *slog.L
 		return nil, fmt.Errorf("run database migrations: %w", err)
 	}
 
+	notifScheduleStore := notification.NewPgScheduledStore(pool)
+	if err := notifScheduleStore.EnsureSchema(ctx); err != nil {
+		return nil, err
+	}
+
 	services := &postgresServices{
 		pool:               pool,
 		connString:         connString,
@@ -299,6 +305,7 @@ func newPostgresServices(ctx context.Context, cfg *config.Config, logger *slog.L
 		adminBus:           pubsub.NewBus(pool, connString, generateInstanceID()),
 		chatRegistry:       chat.NewPgRegistry(pool),
 		notifPrefsRepo:     notification.NewPgPrefsRepo(pool),
+		notifScheduleStore: notifScheduleStore,
 	}
 
 	logger.Info("using PostgreSQL stores")

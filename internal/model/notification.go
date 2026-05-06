@@ -4,10 +4,10 @@ package model
 type NotifyPriority int
 
 const (
-	PriorityLow      NotifyPriority = iota // Informational, silent outside work hours
+	PriorityLow      NotifyPriority = iota // Informational, delayed outside work hours
 	PriorityNormal                         // Standard notification with sound
 	PriorityHigh                           // Important — auto-mention user
-	PriorityCritical                       // Urgent — mention, all channels, never silent
+	PriorityCritical                       // Urgent — mention, all channels, never delayed
 )
 
 // NotificationPrefs stores per-user notification preferences.

@@ -138,6 +138,10 @@ func (h *HostAPI) RegisterHostModule(ctx context.Context, rt *wasmrt.Runtime) er
 		[]api.ValueType{api.ValueTypeI32, api.ValueTypeI32},
 		[]api.ValueType{api.ValueTypeI64})
 
+	builder = h.registerFunc(builder, "notify_users", h.notifyUsersFunc(),
+		[]api.ValueType{api.ValueTypeI32, api.ValueTypeI32},
+		[]api.ValueType{api.ValueTypeI64})
+
 	builder = h.registerFunc(builder, "notify_chat", h.notifyChatFunc(),
 		[]api.ValueType{api.ValueTypeI32, api.ValueTypeI32},
 		[]api.ValueType{api.ValueTypeI64})

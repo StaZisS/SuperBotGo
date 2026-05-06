@@ -3,7 +3,9 @@ package notification
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	"SuperBotGo/internal/channel"
 	"SuperBotGo/internal/model"
@@ -229,7 +231,7 @@ func TestIsWithinWorkHours_OvernightWrap(t *testing.T) {
 
 // --- Tests for buildSendOptions ---
 
-func TestBuildSendOptions_LowOutsideWorkHours(t *testing.T) {
+func TestBuildSendOptions_LowOutsideWorkHoursDoesNotUseSilent(t *testing.T) {
 	t.Parallel()
 
 	// Empty work hours window so isWithinWorkHours returns false.
@@ -243,8 +245,8 @@ func TestBuildSendOptions_LowOutsideWorkHours(t *testing.T) {
 	api := &NotifyAPI{}
 	opts := api.buildSendOptions(prefs, model.PriorityLow)
 
-	if !opts.Silent {
-		t.Error("expected Silent=true for low priority outside work hours")
+	if opts.Silent {
+		t.Error("expected Silent=false because outside-work-hours messages are delayed instead")
 	}
 }
 
@@ -312,7 +314,7 @@ func TestNotifyChat(t *testing.T) {
 	}
 }
 
-func TestNotifyChat_LowPrioritySilent(t *testing.T) {
+func TestNotifyChat_LowPrioritySendsImmediately(t *testing.T) {
 	t.Parallel()
 
 	adapter := &mockAdapter{
@@ -325,11 +327,44 @@ func TestNotifyChat_LowPrioritySilent(t *testing.T) {
 	reg := newRegistryWithAdapters(adapter)
 	api := NewNotifyAPI(reg, nil, nil, nil)
 
-	// Low priority should result in Silent=true in SendOptions passed to SendToChatWithOpts.
-	// The adapter does not implement SilentSender, so it falls through to normal send.
 	err := api.NotifyChat(context.Background(), model.ChannelTelegram, "chat-1", model.NewTextMessage("low"), model.PriorityLow)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestShouldDelayOutsideWorkHoursForNonCritical(t *testing.T) {
+	t.Parallel()
+
+	start, end := 0, 0
+	prefs := &model.NotificationPrefs{
+		WorkHoursStart: &start,
+		WorkHoursEnd:   &end,
+		Timezone:       "UTC",
+	}
+	now := time.Date(2026, 5, 6, 12, 0, 0, 0, time.UTC)
+
+	if !shouldDelayAt(model.PriorityNormal, prefs, now) {
+		t.Fatal("expected normal priority notification to be delayed outside work hours")
+	}
+	if shouldDelayAt(model.PriorityCritical, prefs, now) {
+		t.Fatal("expected critical priority notification to bypass delay")
+	}
+}
+
+func TestIsWithinWorkHoursUsesTimezone(t *testing.T) {
+	t.Parallel()
+
+	start, end := 17, 18
+	prefs := &model.NotificationPrefs{
+		WorkHoursStart: &start,
+		WorkHoursEnd:   &end,
+		Timezone:       "Asia/Tomsk",
+	}
+	now := time.Date(2026, 5, 6, 10, 30, 0, 0, time.UTC)
+
+	if !isWithinWorkHoursAt(prefs, now) {
+		t.Fatal("expected 10:30 UTC to be inside 17:00-18:00 Asia/Tomsk work hours")
 	}
 }
 
@@ -460,5 +495,168 @@ func TestNotifyUser_DefaultPrefsWhenNil(t *testing.T) {
 	}
 	if capturedPlatformID != "tg-1" {
 		t.Errorf("sent to platform ID = %s, want tg-1 (primary channel default)", capturedPlatformID)
+	}
+}
+
+func TestNotifyUser_DelaysOutsideWorkHours(t *testing.T) {
+	t.Parallel()
+
+	sends := 0
+	adapter := &mockAdapter{
+		channelType: model.ChannelTelegram,
+		sendToUserFn: func(_ context.Context, _ model.PlatformUserID, _ model.Message) error {
+			sends++
+			return nil
+		},
+	}
+
+	users := &mockUserService{
+		getUserFn: func(_ context.Context, _ model.GlobalUserID) (*model.GlobalUser, error) {
+			return &model.GlobalUser{
+				ID:             1,
+				PrimaryChannel: model.ChannelTelegram,
+				Accounts: []model.ChannelAccount{
+					{ChannelType: model.ChannelTelegram, ChannelUserID: "tg-1"},
+				},
+			}, nil
+		},
+	}
+
+	start, end := 0, 0
+	prefs := &mockPrefsRepo{
+		getPrefsFn: func(_ context.Context, _ model.GlobalUserID) (*model.NotificationPrefs, error) {
+			return &model.NotificationPrefs{
+				GlobalUserID:    1,
+				ChannelPriority: []model.ChannelType{model.ChannelTelegram},
+				WorkHoursStart:  &start,
+				WorkHoursEnd:    &end,
+				Timezone:        "UTC",
+			}, nil
+		},
+	}
+
+	store := NewMemoryScheduledStore()
+	api := NewNotifyAPI(newRegistryWithAdapters(adapter), users, prefs, nil, store)
+
+	err := api.NotifyUser(context.Background(), 1, model.NewTextMessage("test"), model.PriorityNormal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sends != 0 {
+		t.Fatalf("expected no immediate send outside work hours, got %d", sends)
+	}
+	if store.Len() != 1 {
+		t.Fatalf("expected one scheduled message, got %d", store.Len())
+	}
+	scheduled := store.Snapshot()[0]
+	if scheduled.Priority != model.PriorityNormal {
+		t.Fatalf("scheduled priority = %d, want %d", scheduled.Priority, model.PriorityNormal)
+	}
+}
+
+func TestProcessScheduled_AddsCreatedAtNoticeAndCompletes(t *testing.T) {
+	t.Parallel()
+
+	var captured model.Message
+	adapter := &mockAdapter{
+		channelType: model.ChannelTelegram,
+		sendToUserFn: func(_ context.Context, _ model.PlatformUserID, msg model.Message) error {
+			captured = msg
+			return nil
+		},
+	}
+
+	users := &mockUserService{
+		getUserFn: func(_ context.Context, _ model.GlobalUserID) (*model.GlobalUser, error) {
+			return &model.GlobalUser{
+				ID:             1,
+				PrimaryChannel: model.ChannelTelegram,
+				Accounts: []model.ChannelAccount{
+					{ChannelType: model.ChannelTelegram, ChannelUserID: "tg-1"},
+				},
+			}, nil
+		},
+	}
+
+	prefs := &mockPrefsRepo{
+		getPrefsFn: func(_ context.Context, userID model.GlobalUserID) (*model.NotificationPrefs, error) {
+			return defaultPrefs(userID, model.ChannelTelegram), nil
+		},
+	}
+
+	createdAt := time.Date(2026, 5, 6, 9, 15, 0, 0, time.UTC)
+	store := NewMemoryScheduledStore()
+	if err := store.Enqueue(context.Background(), ScheduledMessage{
+		UserID:    1,
+		Msg:       model.NewTextMessage("test"),
+		Priority:  model.PriorityNormal,
+		SendAt:    time.Now().Add(-time.Minute),
+		CreatedAt: createdAt,
+	}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	api := &NotifyAPI{
+		adapters:   newRegistryWithAdapters(adapter),
+		users:      users,
+		prefs:      prefs,
+		scheduled:  store,
+		claimLimit: 10,
+		claimLease: time.Minute,
+	}
+
+	api.process(context.Background())
+
+	if store.Len() != 0 {
+		t.Fatalf("expected scheduled message to be completed, got %d rows", store.Len())
+	}
+	if len(captured.Blocks) < 2 {
+		t.Fatalf("expected scheduled notice plus original message, got %#v", captured.Blocks)
+	}
+	notice, ok := captured.Blocks[0].(model.TextBlock)
+	if !ok {
+		t.Fatalf("first block = %T, want model.TextBlock", captured.Blocks[0])
+	}
+	if !strings.Contains(notice.Text, "Отложенное сообщение") || !strings.Contains(notice.Text, "06.05.2026 09:15 UTC") {
+		t.Fatalf("unexpected notice text: %q", notice.Text)
+	}
+}
+
+func TestNotifyUsers_SendsToAll(t *testing.T) {
+	t.Parallel()
+
+	sent := map[model.PlatformUserID]bool{}
+	adapter := &mockAdapter{
+		channelType: model.ChannelTelegram,
+		sendToUserFn: func(_ context.Context, pid model.PlatformUserID, _ model.Message) error {
+			sent[pid] = true
+			return nil
+		},
+	}
+
+	users := &mockUserService{
+		getUserFn: func(_ context.Context, id model.GlobalUserID) (*model.GlobalUser, error) {
+			return &model.GlobalUser{
+				ID:             id,
+				PrimaryChannel: model.ChannelTelegram,
+				Accounts: []model.ChannelAccount{
+					{ChannelType: model.ChannelTelegram, ChannelUserID: model.PlatformUserID("tg-" + string(rune('0'+id)))},
+				},
+			}, nil
+		},
+	}
+
+	api := NewNotifyAPI(newRegistryWithAdapters(adapter), users, &mockPrefsRepo{
+		getPrefsFn: func(_ context.Context, userID model.GlobalUserID) (*model.NotificationPrefs, error) {
+			return defaultPrefs(userID, model.ChannelTelegram), nil
+		},
+	}, nil)
+
+	if err := api.NotifyUsers(context.Background(), []model.GlobalUserID{1, 2}, model.NewTextMessage("hello"), model.PriorityNormal); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !sent["tg-1"] || !sent["tg-2"] {
+		t.Fatalf("expected sends to tg-1 and tg-2, got %#v", sent)
 	}
 }

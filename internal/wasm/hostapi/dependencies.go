@@ -22,6 +22,7 @@ type PluginRegistry interface {
 
 type Notifier interface {
 	NotifyUser(ctx context.Context, userID int64, text string, priority int) error
+	NotifyUsers(ctx context.Context, userIDs []int64, msg model.Message, priority int) error
 	NotifyChat(ctx context.Context, channelType string, chatID string, text string, priority int) error
 	NotifyStudents(ctx context.Context, scope string, targetID int64, msg model.Message, priority int) error
 }

@@ -7,6 +7,9 @@ import "fmt"
 //go:wasmimport env notify_user
 func _notify_user(offset, length uint32) uint64
 
+//go:wasmimport env notify_users
+func _notify_users(offset, length uint32) uint64
+
 //go:wasmimport env notify_chat
 func _notify_chat(offset, length uint32) uint64
 
@@ -14,10 +17,10 @@ func _notify_chat(offset, length uint32) uint64
 func _notify_students(offset, length uint32) uint64
 
 const (
-	PriorityLow      = 0 // Informational, silent outside work hours
+	PriorityLow      = 0 // Informational, delayed outside work hours
 	PriorityNormal   = 1 // Standard notification with sound
 	PriorityHigh     = 2 // Important — auto-mention user
-	PriorityCritical = 3 // Urgent — mention, all channels, never silent
+	PriorityCritical = 3 // Urgent — mention, all channels, never delayed
 )
 
 type notifyUserReq struct {
@@ -31,6 +34,12 @@ type notifyChatReq struct {
 	ChatID      string `msgpack:"chat_id"`
 	Text        string `msgpack:"text"`
 	Priority    int    `msgpack:"priority"`
+}
+
+type notifyUsersReq struct {
+	UserIDs  []int64    `msgpack:"user_ids"`
+	Blocks   []msgBlock `msgpack:"blocks"`
+	Priority int        `msgpack:"priority"`
 }
 
 type notifyStudentsReq struct {
@@ -75,6 +84,29 @@ func (ctx *EventContext) NotifyChat(channelType, chatID, text string, priority i
 	}
 	if resp.Error != "" {
 		return fmt.Errorf("notify_chat: %s", resp.Error)
+	}
+	return nil
+}
+
+// NotifyUsers sends one rich notification to each listed user.
+func (ctx *EventContext) NotifyUsers(userIDs []int64, msg Message, priority int) error {
+	if len(userIDs) == 0 {
+		return fmt.Errorf("notify_users: no user IDs provided")
+	}
+	if msg.IsEmpty() {
+		return fmt.Errorf("notify_users: message not set")
+	}
+
+	var resp notifyResp
+	if err := callHostWithResult(_notify_users, notifyUsersReq{
+		UserIDs:  userIDs,
+		Blocks:   msg.blocks,
+		Priority: priority,
+	}, &resp); err != nil {
+		return err
+	}
+	if resp.Error != "" {
+		return fmt.Errorf("notify_users: %s", resp.Error)
 	}
 	return nil
 }
