@@ -10,6 +10,9 @@ func _notify_user(offset, length uint32) uint64
 //go:wasmimport env notify_users
 func _notify_users(offset, length uint32) uint64
 
+//go:wasmimport env notify_teacher
+func _notify_teacher(offset, length uint32) uint64
+
 //go:wasmimport env notify_chat
 func _notify_chat(offset, length uint32) uint64
 
@@ -40,6 +43,14 @@ type notifyUsersReq struct {
 	UserIDs  []int64    `msgpack:"user_ids"`
 	Blocks   []msgBlock `msgpack:"blocks"`
 	Priority int        `msgpack:"priority"`
+}
+
+type notifyTeacherReq struct {
+	TeacherPositionID int64      `msgpack:"teacher_position_id,omitempty"`
+	PersonID          int64      `msgpack:"person_id,omitempty"`
+	ExternalID        string     `msgpack:"external_id,omitempty"`
+	Blocks            []msgBlock `msgpack:"blocks"`
+	Priority          int        `msgpack:"priority"`
 }
 
 type notifyStudentsReq struct {
@@ -74,6 +85,39 @@ func (ctx *EventContext) NotifyUser(userID int64, text string, priority int) err
 // NotifyRecipient sends one rich notification to a single user.
 func (ctx *EventContext) NotifyRecipient(userID int64, msg Message, priority int) error {
 	return ctx.NotifyUsers([]int64{userID}, msg, priority)
+}
+
+// NotifyTeacher sends one rich notification to a teacher by teacher_position.id.
+func (ctx *EventContext) NotifyTeacher(teacherPositionID int64, msg Message, priority int) error {
+	return ctx.notifyTeacher(notifyTeacherReq{TeacherPositionID: teacherPositionID, Blocks: msg.blocks, Priority: priority})
+}
+
+// NotifyTeacherPerson sends one rich notification to a teacher by persons.id.
+func (ctx *EventContext) NotifyTeacherPerson(personID int64, msg Message, priority int) error {
+	return ctx.notifyTeacher(notifyTeacherReq{PersonID: personID, Blocks: msg.blocks, Priority: priority})
+}
+
+// NotifyTeacherExternalID sends one rich notification to a teacher by persons.external_id.
+func (ctx *EventContext) NotifyTeacherExternalID(externalID string, msg Message, priority int) error {
+	return ctx.notifyTeacher(notifyTeacherReq{ExternalID: externalID, Blocks: msg.blocks, Priority: priority})
+}
+
+func (ctx *EventContext) notifyTeacher(req notifyTeacherReq) error {
+	if req.TeacherPositionID <= 0 && req.PersonID <= 0 && req.ExternalID == "" {
+		return fmt.Errorf("notify_teacher: teacher reference not set")
+	}
+	if len(req.Blocks) == 0 {
+		return fmt.Errorf("notify_teacher: message not set")
+	}
+
+	var resp notifyResp
+	if err := callHostWithResult(_notify_teacher, req, &resp); err != nil {
+		return err
+	}
+	if resp.Error != "" {
+		return fmt.Errorf("notify_teacher: %s", resp.Error)
+	}
+	return nil
 }
 
 // NotifyChat sends a priority-aware notification to a specific chat.
@@ -137,6 +181,7 @@ func (ctx *EventContext) NotifyRecipients() *RecipientNotifyBuilder {
 type RecipientNotifyBuilder struct {
 	ctx      *EventContext
 	userIDs  []int64
+	teachers []notifyTeacherReq
 	msg      Message
 	priority int
 	seen     map[int64]struct{}
@@ -155,10 +200,31 @@ func (b *RecipientNotifyBuilder) User(userID int64) *RecipientNotifyBuilder {
 	return b
 }
 
-// Teacher adds a teacher by global user ID. It is an alias for User that makes
-// teacher-targeted notifications read naturally in plugin code.
-func (b *RecipientNotifyBuilder) Teacher(userID int64) *RecipientNotifyBuilder {
-	return b.User(userID)
+// Teacher adds a teacher by teacher_position.id.
+func (b *RecipientNotifyBuilder) Teacher(teacherPositionID int64) *RecipientNotifyBuilder {
+	if teacherPositionID <= 0 {
+		return b
+	}
+	b.teachers = append(b.teachers, notifyTeacherReq{TeacherPositionID: teacherPositionID})
+	return b
+}
+
+// TeacherPerson adds a teacher by persons.id.
+func (b *RecipientNotifyBuilder) TeacherPerson(personID int64) *RecipientNotifyBuilder {
+	if personID <= 0 {
+		return b
+	}
+	b.teachers = append(b.teachers, notifyTeacherReq{PersonID: personID})
+	return b
+}
+
+// TeacherExternalID adds a teacher by persons.external_id.
+func (b *RecipientNotifyBuilder) TeacherExternalID(externalID string) *RecipientNotifyBuilder {
+	if externalID == "" {
+		return b
+	}
+	b.teachers = append(b.teachers, notifyTeacherReq{ExternalID: externalID})
+	return b
 }
 
 // Users adds multiple global user IDs as recipients.
@@ -183,13 +249,26 @@ func (b *RecipientNotifyBuilder) Priority(p int) *RecipientNotifyBuilder {
 
 // Send executes the notification. Returns an error if recipients or message are not set.
 func (b *RecipientNotifyBuilder) Send() error {
-	if len(b.userIDs) == 0 {
-		return fmt.Errorf("notify_recipients: no user IDs provided")
+	if len(b.userIDs) == 0 && len(b.teachers) == 0 {
+		return fmt.Errorf("notify_recipients: no recipients provided")
 	}
 	if b.msg.IsEmpty() {
 		return fmt.Errorf("notify_recipients: message not set")
 	}
-	return b.ctx.NotifyUsers(b.userIDs, b.msg, b.priority)
+
+	if len(b.userIDs) > 0 {
+		if err := b.ctx.NotifyUsers(b.userIDs, b.msg, b.priority); err != nil {
+			return err
+		}
+	}
+	for _, teacher := range b.teachers {
+		teacher.Blocks = b.msg.blocks
+		teacher.Priority = b.priority
+		if err := b.ctx.notifyTeacher(teacher); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // NotifyStudents returns a builder for sending a priority-aware notification

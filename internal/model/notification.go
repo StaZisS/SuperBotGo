@@ -20,6 +20,13 @@ type NotificationPrefs struct {
 	Timezone        string        `json:"timezone"`
 }
 
+// TeacherRef identifies a teacher recipient by one of the university identity keys.
+type TeacherRef struct {
+	TeacherPositionID int64  `json:"teacher_position_id,omitempty"`
+	PersonID          int64  `json:"person_id,omitempty"`
+	ExternalID        string `json:"external_id,omitempty"`
+}
+
 // SendOptions controls delivery-level behavior (silent mode, mention stripping).
 type SendOptions struct {
 	Silent        bool

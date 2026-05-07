@@ -172,6 +172,67 @@ func (h *HostAPI) notifyUsersFunc() api.GoModuleFunc {
 	}
 }
 
+type notifyTeacherRequest struct {
+	TeacherPositionID int64       `msgpack:"teacher_position_id,omitempty"`
+	PersonID          int64       `msgpack:"person_id,omitempty"`
+	ExternalID        string      `msgpack:"external_id,omitempty"`
+	Blocks            []wireBlock `msgpack:"blocks"`
+	Priority          int         `msgpack:"priority"`
+}
+
+func (h *HostAPI) notifyTeacherFunc() api.GoModuleFunc {
+	return func(ctx context.Context, mod api.Module, stack []uint64) {
+		pluginID := pluginIDFromContext(ctx)
+		offset := uint32(stack[0])
+		length := uint32(stack[1])
+
+		data, err := readPayload(mod, offset, length)
+		if err != nil {
+			returnError(ctx, mod, stack, err)
+			return
+		}
+
+		var req notifyTeacherRequest
+		if err := msgpack.Unmarshal(data, &req); err != nil {
+			returnError(ctx, mod, stack, err)
+			return
+		}
+
+		if err := h.perms.CheckPermission(pluginID, "notify"); err != nil {
+			returnError(ctx, mod, stack, err)
+			return
+		}
+
+		if h.deps.Notifier == nil {
+			returnError(ctx, mod, stack, errDepNotAvailable("Notifier"))
+			return
+		}
+
+		reqCtx, cancel := context.WithTimeout(ctx, contextAwareTimeout(ctx, wasmNotifyMaxTimeout))
+		defer cancel()
+
+		priority := clampPriority(req.Priority)
+		msg, err := wireBlocksToMessage(req.Blocks)
+		if err != nil {
+			returnError(ctx, mod, stack, err)
+			return
+		}
+
+		ref := model.TeacherRef{
+			TeacherPositionID: req.TeacherPositionID,
+			PersonID:          req.PersonID,
+			ExternalID:        req.ExternalID,
+		}
+		if err := h.deps.Notifier.NotifyTeacher(reqCtx, ref, msg, priority); err != nil {
+			SetHostCallStatus(ctx, "error")
+			writeResult(ctx, mod, stack, notifyResponse{OK: false, Error: err.Error()})
+			return
+		}
+
+		writeResult(ctx, mod, stack, notifyResponse{OK: true})
+	}
+}
+
 type wireBlock struct {
 	Type    string `msgpack:"type"`
 	Text    string `msgpack:"text,omitempty"`

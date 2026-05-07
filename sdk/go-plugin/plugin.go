@@ -200,7 +200,7 @@ func KV(desc string) *RequirementBuilder {
 }
 
 // NotifyReq declares a requirement for sending notifications
-// (NotifyUser, NotifyRecipient, NotifyRecipients, NotifyChat, NotifyStudents).
+// (NotifyUser, NotifyRecipient, NotifyRecipients, NotifyTeacher, NotifyChat, NotifyStudents).
 func NotifyReq(desc string) *RequirementBuilder {
 	return &RequirementBuilder{r: Requirement{Type: "notify", Description: desc}}
 }

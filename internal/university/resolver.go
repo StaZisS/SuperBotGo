@@ -3,9 +3,11 @@ package university
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"SuperBotGo/internal/model"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -42,6 +44,67 @@ func (r *PgStudentResolver) ResolveStudentUsers(ctx context.Context, scope strin
 		ids = append(ids, model.GlobalUserID(id))
 	}
 	return ids, rows.Err()
+}
+
+// ResolveTeacherUser returns the linked global_user_id for an active teacher.
+func (r *PgStudentResolver) ResolveTeacherUser(ctx context.Context, ref model.TeacherRef) (model.GlobalUserID, error) {
+	query, arg, label, err := teacherQuery(ref)
+	if err != nil {
+		return 0, err
+	}
+
+	var id int64
+	if err := r.pool.QueryRow(ctx, query, arg).Scan(&id); err != nil {
+		if err == pgx.ErrNoRows {
+			return 0, fmt.Errorf("teacher %s is not found, inactive, or not linked to a bot user", label)
+		}
+		return 0, fmt.Errorf("resolve teacher %s: %w", label, err)
+	}
+	return model.GlobalUserID(id), nil
+}
+
+func teacherQuery(ref model.TeacherRef) (query string, arg any, label string, err error) {
+	if ref.TeacherPositionID > 0 {
+		return `SELECT p.global_user_id
+			FROM teacher_positions tp
+			JOIN persons p ON p.id = tp.person_id
+			WHERE tp.id = $1
+			  AND tp.status = 'active'
+			  AND p.global_user_id IS NOT NULL`,
+			ref.TeacherPositionID,
+			fmt.Sprintf("position_id=%d", ref.TeacherPositionID),
+			nil
+	}
+
+	if ref.PersonID > 0 {
+		return `SELECT p.global_user_id
+			FROM persons p
+			WHERE p.id = $1
+			  AND p.global_user_id IS NOT NULL
+			  AND EXISTS (
+			      SELECT 1 FROM teacher_positions tp
+			      WHERE tp.person_id = p.id AND tp.status = 'active'
+			  )`,
+			ref.PersonID,
+			fmt.Sprintf("person_id=%d", ref.PersonID),
+			nil
+	}
+
+	if externalID := strings.TrimSpace(ref.ExternalID); externalID != "" {
+		return `SELECT p.global_user_id
+			FROM persons p
+			WHERE p.external_id = $1
+			  AND p.global_user_id IS NOT NULL
+			  AND EXISTS (
+			      SELECT 1 FROM teacher_positions tp
+			      WHERE tp.person_id = p.id AND tp.status = 'active'
+			  )`,
+			externalID,
+			fmt.Sprintf("external_id=%q", externalID),
+			nil
+	}
+
+	return "", nil, "", fmt.Errorf("teacher reference is empty")
 }
 
 func (r *PgStudentResolver) queryForScope(scope string) (string, error) {

@@ -19,11 +19,16 @@ type StudentResolver interface {
 	ResolveStudentUsers(ctx context.Context, scope string, targetID int64) ([]model.GlobalUserID, error)
 }
 
+type TeacherResolver interface {
+	ResolveTeacherUser(ctx context.Context, ref model.TeacherRef) (model.GlobalUserID, error)
+}
+
 type NotifyAPI struct {
 	adapters *channel.AdapterRegistry
 	users    UserService
 	prefs    PrefsRepository
 	students StudentResolver
+	teachers TeacherResolver
 
 	scheduled      ScheduledMessageStore
 	workerInterval time.Duration
@@ -57,6 +62,10 @@ func NewNotifyAPI(
 	go api.startWorker(context.Background())
 
 	return api
+}
+
+func (n *NotifyAPI) SetTeacherResolver(resolver TeacherResolver) {
+	n.teachers = resolver
 }
 
 func (n *NotifyAPI) NotifyUser(
@@ -166,6 +175,20 @@ func (n *NotifyAPI) NotifyStudents(ctx context.Context, scope string, targetID i
 		return fmt.Errorf("notify: students %s/%d broadcast failed: %w", scope, targetID, err)
 	}
 	return nil
+}
+
+// NotifyTeacher resolves a university teacher/person reference to a linked
+// global user and sends a priority-aware notification to that user.
+func (n *NotifyAPI) NotifyTeacher(ctx context.Context, ref model.TeacherRef, msg model.Message, priority model.NotifyPriority) error {
+	if n.teachers == nil {
+		return fmt.Errorf("notify: teacher resolver is not configured")
+	}
+
+	userID, err := n.teachers.ResolveTeacherUser(ctx, ref)
+	if err != nil {
+		return fmt.Errorf("notify: resolve teacher recipient: %w", err)
+	}
+	return n.NotifyUser(ctx, userID, msg, priority)
 }
 
 func (n *NotifyAPI) schedule(

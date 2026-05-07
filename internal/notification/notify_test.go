@@ -49,6 +49,14 @@ func (m *mockStudentResolver) ResolveStudentUsers(ctx context.Context, scope str
 	return m.resolveFn(ctx, scope, targetID)
 }
 
+type mockTeacherResolver struct {
+	resolveFn func(ctx context.Context, ref model.TeacherRef) (model.GlobalUserID, error)
+}
+
+func (m *mockTeacherResolver) ResolveTeacherUser(ctx context.Context, ref model.TeacherRef) (model.GlobalUserID, error) {
+	return m.resolveFn(ctx, ref)
+}
+
 // --- Mock ChannelAdapter ---
 
 type mockAdapter struct {
@@ -658,5 +666,57 @@ func TestNotifyUsers_SendsToAll(t *testing.T) {
 
 	if !sent["tg-1"] || !sent["tg-2"] {
 		t.Fatalf("expected sends to tg-1 and tg-2, got %#v", sent)
+	}
+}
+
+func TestNotifyTeacher_ResolvesTeacherAndSends(t *testing.T) {
+	t.Parallel()
+
+	var capturedPlatformID model.PlatformUserID
+	adapter := &mockAdapter{
+		channelType: model.ChannelTelegram,
+		sendToUserFn: func(_ context.Context, pid model.PlatformUserID, _ model.Message) error {
+			capturedPlatformID = pid
+			return nil
+		},
+	}
+
+	users := &mockUserService{
+		getUserFn: func(_ context.Context, id model.GlobalUserID) (*model.GlobalUser, error) {
+			if id != 42 {
+				t.Fatalf("resolved user id = %d, want 42", id)
+			}
+			return &model.GlobalUser{
+				ID:             id,
+				PrimaryChannel: model.ChannelTelegram,
+				Accounts: []model.ChannelAccount{
+					{ChannelType: model.ChannelTelegram, ChannelUserID: "tg-teacher"},
+				},
+			}, nil
+		},
+	}
+
+	prefs := &mockPrefsRepo{
+		getPrefsFn: func(_ context.Context, userID model.GlobalUserID) (*model.NotificationPrefs, error) {
+			return defaultPrefs(userID, model.ChannelTelegram), nil
+		},
+	}
+
+	api := NewNotifyAPI(newRegistryWithAdapters(adapter), users, prefs, nil)
+	api.SetTeacherResolver(&mockTeacherResolver{
+		resolveFn: func(_ context.Context, ref model.TeacherRef) (model.GlobalUserID, error) {
+			if ref.TeacherPositionID != 7 {
+				t.Fatalf("teacher position id = %d, want 7", ref.TeacherPositionID)
+			}
+			return 42, nil
+		},
+	})
+
+	err := api.NotifyTeacher(context.Background(), model.TeacherRef{TeacherPositionID: 7}, model.NewTextMessage("hello"), model.PriorityNormal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if capturedPlatformID != "tg-teacher" {
+		t.Fatalf("platform id = %q, want tg-teacher", capturedPlatformID)
 	}
 }

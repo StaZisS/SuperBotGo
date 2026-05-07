@@ -28,6 +28,10 @@ func (w *WasmNotifier) NotifyUsers(ctx context.Context, userIDs []int64, msg mod
 	return w.api.NotifyUsers(ctx, ids, msg, model.NotifyPriority(priority))
 }
 
+func (w *WasmNotifier) NotifyTeacher(ctx context.Context, ref model.TeacherRef, msg model.Message, priority int) error {
+	return w.api.NotifyTeacher(ctx, ref, msg, model.NotifyPriority(priority))
+}
+
 func (w *WasmNotifier) NotifyChat(ctx context.Context, channelType string, chatID string, text string, priority int) error {
 	return w.api.NotifyChat(ctx, model.ChannelType(channelType), chatID, model.NewTextMessage(text), model.NotifyPriority(priority))
 }

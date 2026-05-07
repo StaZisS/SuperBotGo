@@ -82,6 +82,7 @@ func main() {
 	userService := user.NewService(stores.userRepo, stores.accountRepo)
 	studentResolver := university.NewPgStudentResolver(stores.pool)
 	notifyAPI := notification.NewNotifyAPI(runtime.adapterRegistry, userService, stores.notifPrefsRepo, studentResolver, stores.notifScheduleStore)
+	notifyAPI.SetTeacherResolver(studentResolver)
 	runtime.hostAPI.SetNotifier(notification.NewWasmNotifier(notifyAPI))
 
 	spiceClient, err := configureSpiceDB(bootstrapCtx, cfg, stores, runtime.metrics, logger)
