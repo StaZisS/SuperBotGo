@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
-const DOCS_BASE = 'https://staziss.github.io/SuperBotGo'
+const DOCS_BASE = 'https://superbotforge.github.io/docs'
 
 export function docsHref(path: string) {
   return `${DOCS_BASE}${path}`
