@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"SuperBotGo/internal/model"
 	"SuperBotGo/internal/plugin"
+	"SuperBotGo/internal/plugin/contract"
 	"SuperBotGo/internal/state"
 	"SuperBotGo/internal/wasm/adapter"
 	wasmrt "SuperBotGo/internal/wasm/runtime"
@@ -122,7 +122,7 @@ func (p *testLifecyclePlugin) Version() string { return p.version }
 func (p *testLifecyclePlugin) Commands() []*state.CommandDefinition {
 	return p.commands
 }
-func (p *testLifecyclePlugin) HandleEvent(context.Context, model.Event) (*model.EventResponse, error) {
+func (p *testLifecyclePlugin) HandleEvent(context.Context, contract.Event) (*contract.EventResponse, error) {
 	return nil, nil
 }
 

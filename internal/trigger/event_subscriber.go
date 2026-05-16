@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"SuperBotGo/internal/model"
+	"SuperBotGo/internal/plugin/contract"
 	"SuperBotGo/internal/wasm/eventbus"
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 )
@@ -36,7 +36,7 @@ func (s *EventSubscriber) Handle(ctx context.Context, topic string, payload []by
 
 	var firstErr error
 	for _, subscription := range subscriptions {
-		data, err := json.Marshal(model.EventTriggerData{
+		data, err := json.Marshal(contract.EventTriggerData{
 			Topic:   topic,
 			Payload: json.RawMessage(payload),
 			Source:  source,
@@ -51,9 +51,9 @@ func (s *EventSubscriber) Handle(ctx context.Context, topic string, payload []by
 		eventCtx, cancel := context.WithTimeout(ctx, eventTriggerTimeout)
 		eventCtx = context.WithValue(eventCtx, wasmrt.PluginTimeoutOverrideKey{}, int(eventTriggerTimeout.Seconds()))
 
-		resp, err := s.router.RouteEvent(eventCtx, model.Event{
+		resp, err := s.router.RouteEvent(eventCtx, contract.Event{
 			ID:          generateID(),
-			TriggerType: model.TriggerEvent,
+			TriggerType: contract.TriggerEvent,
 			TriggerName: subscription.TriggerName,
 			PluginID:    subscription.PluginID,
 			Timestamp:   now.UnixMilli(),

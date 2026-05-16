@@ -16,6 +16,7 @@ import (
 
 	"SuperBotGo/internal/metrics"
 	"SuperBotGo/internal/model"
+	"SuperBotGo/internal/plugin/contract"
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 )
 
@@ -41,7 +42,7 @@ type ServiceKeyPrincipal struct {
 }
 
 type resolvedHTTPPrincipal struct {
-	authData *model.HTTPAuthData
+	authData *contract.HTTPAuthData
 }
 
 type pluginHTTPError struct {
@@ -190,16 +191,16 @@ func (h *HTTPTriggerHandler) resolveRoute(path string) (pluginID, triggerPath st
 	return pluginID, triggerPath, nil
 }
 
-func (h *HTTPTriggerHandler) buildHTTPEvent(r *http.Request, pluginID, triggerName, triggerPath string, principal resolvedHTTPPrincipal) (model.Event, error) {
+func (h *HTTPTriggerHandler) buildHTTPEvent(r *http.Request, pluginID, triggerName, triggerPath string, principal resolvedHTTPPrincipal) (contract.Event, error) {
 	triggerData, err := buildHTTPRequestData(r, triggerPath, principal)
 	if err != nil {
-		return model.Event{}, err
+		return contract.Event{}, err
 	}
 
 	dataJSON, _ := json.Marshal(triggerData)
-	return model.Event{
+	return contract.Event{
 		ID:          generateID(),
-		TriggerType: model.TriggerHTTP,
+		TriggerType: contract.TriggerHTTP,
 		TriggerName: triggerName,
 		PluginID:    pluginID,
 		Timestamp:   time.Now().UnixMilli(),
@@ -207,10 +208,10 @@ func (h *HTTPTriggerHandler) buildHTTPEvent(r *http.Request, pluginID, triggerNa
 	}, nil
 }
 
-func buildHTTPRequestData(r *http.Request, triggerPath string, principal resolvedHTTPPrincipal) (model.HTTPTriggerData, error) {
+func buildHTTPRequestData(r *http.Request, triggerPath string, principal resolvedHTTPPrincipal) (contract.HTTPTriggerData, error) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, 10<<20))
 	if err != nil {
-		return model.HTTPTriggerData{}, fmt.Errorf("failed to read request body")
+		return contract.HTTPTriggerData{}, fmt.Errorf("failed to read request body")
 	}
 
 	query := make(map[string]string, len(r.URL.Query()))
@@ -227,7 +228,7 @@ func buildHTTPRequestData(r *http.Request, triggerPath string, principal resolve
 		}
 	}
 
-	return model.HTTPTriggerData{
+	return contract.HTTPTriggerData{
 		Method:     r.Method,
 		Path:       "/" + triggerPath,
 		Query:      query,
@@ -238,32 +239,32 @@ func buildHTTPRequestData(r *http.Request, triggerPath string, principal resolve
 	}, nil
 }
 
-func (h *HTTPTriggerHandler) dispatchHTTPEvent(ctx context.Context, event model.Event) (model.HTTPResponseData, error) {
+func (h *HTTPTriggerHandler) dispatchHTTPEvent(ctx context.Context, event contract.Event) (contract.HTTPResponseData, error) {
 	if httpData, err := event.HTTP(); err == nil && httpData != nil && httpData.Auth != nil {
 		ctx = context.WithValue(ctx, wasmrt.HTTPAuthDataKey{}, *httpData.Auth)
 	}
 	resp, err := h.router.RouteEvent(ctx, event)
 	if err != nil {
-		return model.HTTPResponseData{}, err
+		return contract.HTTPResponseData{}, err
 	}
 	if resp == nil {
-		return model.HTTPResponseData{}, nil
+		return contract.HTTPResponseData{}, nil
 	}
 	if resp.Error != "" {
-		return model.HTTPResponseData{}, pluginHTTPError{message: resp.Error}
+		return contract.HTTPResponseData{}, pluginHTTPError{message: resp.Error}
 	}
 	if len(resp.Data) == 0 {
-		return model.HTTPResponseData{}, nil
+		return contract.HTTPResponseData{}, nil
 	}
 
-	var httpResp model.HTTPResponseData
+	var httpResp contract.HTTPResponseData
 	if err := json.Unmarshal(resp.Data, &httpResp); err != nil {
-		return model.HTTPResponseData{}, fmt.Errorf("parse plugin HTTP response: %w", err)
+		return contract.HTTPResponseData{}, fmt.Errorf("parse plugin HTTP response: %w", err)
 	}
 	return httpResp, nil
 }
 
-func writeHTTPResponse(w http.ResponseWriter, httpResp model.HTTPResponseData) {
+func writeHTTPResponse(w http.ResponseWriter, httpResp contract.HTTPResponseData) {
 	for k, v := range httpResp.Headers {
 		w.Header().Set(k, v)
 	}
@@ -356,8 +357,8 @@ func (h *HTTPTriggerHandler) resolveBearerPrincipal(ctx context.Context, rawToke
 		return resolvedHTTPPrincipal{}, http.StatusForbidden, fmt.Errorf("forbidden")
 	}
 	return resolvedHTTPPrincipal{
-		authData: &model.HTTPAuthData{
-			Kind:         model.HTTPAuthService,
+		authData: &contract.HTTPAuthData{
+			Kind:         contract.HTTPAuthService,
 			ServiceKeyID: principal.ID,
 		},
 	}, 0, nil
@@ -384,8 +385,8 @@ func (h *HTTPTriggerHandler) authorizeUserPrincipal(ctx context.Context, pluginI
 		}
 	}
 	return resolvedHTTPPrincipal{
-		authData: &model.HTTPAuthData{
-			Kind:   model.HTTPAuthUser,
+		authData: &contract.HTTPAuthData{
+			Kind:   contract.HTTPAuthUser,
 			UserID: userID,
 		},
 	}, 0, nil

@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"SuperBotGo/internal/model"
 	"SuperBotGo/internal/plugin"
+	"SuperBotGo/internal/plugin/contract"
 	"SuperBotGo/internal/state"
 )
 
@@ -20,7 +20,7 @@ func (p *fakePlugin) ID() string                           { return p.id }
 func (p *fakePlugin) Name() string                         { return p.id }
 func (p *fakePlugin) Version() string                      { return "test" }
 func (p *fakePlugin) Commands() []*state.CommandDefinition { return p.cmds }
-func (p *fakePlugin) HandleEvent(_ context.Context, _ model.Event) (*model.EventResponse, error) {
+func (p *fakePlugin) HandleEvent(_ context.Context, _ contract.Event) (*contract.EventResponse, error) {
 	return nil, nil
 }
 

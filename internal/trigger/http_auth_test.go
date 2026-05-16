@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"SuperBotGo/internal/model"
+	"SuperBotGo/internal/plugin/contract"
 )
 
 func TestHTTPTriggerResolveSetting_Defaults(t *testing.T) {
@@ -55,7 +56,7 @@ func TestHTTPTriggerResolvePrincipal_UserSession(t *testing.T) {
 	if status != 0 {
 		t.Fatalf("resolvePrincipal() status = %d, want 0", status)
 	}
-	if principal.authData == nil || principal.authData.Kind != model.HTTPAuthUser || principal.authData.UserID != 42 {
+	if principal.authData == nil || principal.authData.Kind != contract.HTTPAuthUser || principal.authData.UserID != 42 {
 		t.Fatalf("unexpected principal auth data: %#v", principal.authData)
 	}
 }
@@ -83,7 +84,7 @@ func TestHTTPTriggerResolvePrincipal_ServiceKey(t *testing.T) {
 	if status != 0 {
 		t.Fatalf("resolvePrincipal() status = %d, want 0", status)
 	}
-	if principal.authData == nil || principal.authData.Kind != model.HTTPAuthService || principal.authData.ServiceKeyID != 7 {
+	if principal.authData == nil || principal.authData.Kind != contract.HTTPAuthService || principal.authData.ServiceKeyID != 7 {
 		t.Fatalf("unexpected principal auth data: %#v", principal.authData)
 	}
 }
@@ -121,7 +122,7 @@ func TestHTTPTriggerResolvePrincipal_UserBearerToken(t *testing.T) {
 	if status != 0 {
 		t.Fatalf("resolvePrincipal() status = %d, want 0", status)
 	}
-	if principal.authData == nil || principal.authData.Kind != model.HTTPAuthUser || principal.authData.UserID != 55 {
+	if principal.authData == nil || principal.authData.Kind != contract.HTTPAuthUser || principal.authData.UserID != 55 {
 		t.Fatalf("unexpected principal auth data: %#v", principal.authData)
 	}
 }

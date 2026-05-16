@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"SuperBotGo/internal/metrics"
-	"SuperBotGo/internal/model"
+	"SuperBotGo/internal/plugin/contract"
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 
 	"github.com/redis/go-redis/v9"
@@ -156,7 +156,7 @@ func (cs *CronScheduler) fire(pluginID, triggerName string) {
 		return
 	}
 
-	data, err := json.Marshal(model.CronTriggerData{
+	data, err := json.Marshal(contract.CronTriggerData{
 		ScheduleName: triggerName,
 		FireTime:     now.UnixMilli(),
 	})
@@ -170,9 +170,9 @@ func (cs *CronScheduler) fire(pluginID, triggerName string) {
 		return
 	}
 
-	event := model.Event{
+	event := contract.Event{
 		ID:          generateID(),
-		TriggerType: model.TriggerCron,
+		TriggerType: contract.TriggerCron,
 		TriggerName: triggerName,
 		PluginID:    pluginID,
 		Timestamp:   now.UnixMilli(),

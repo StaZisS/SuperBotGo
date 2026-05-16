@@ -4,7 +4,7 @@ import (
 	"embed"
 	"fmt"
 
-	"github.com/superbot/wasmplugin"
+	wasmplugin "github.com/SuperBotForge/sdk/go-sdk"
 )
 
 type scheduleEntry struct {

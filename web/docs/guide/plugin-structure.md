@@ -5,7 +5,7 @@
 ## Структура Plugin
 
 ```go
-import wasmplugin "github.com/StaZisS/SuperBotGo/sdk/go-plugin"
+import wasmplugin "github.com/SuperBotForge/sdk/go-sdk"
 
 wasmplugin.Plugin{
     ID:           "my-plugin",              // уникальный идентификатор

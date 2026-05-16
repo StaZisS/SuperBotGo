@@ -5,6 +5,7 @@ import (
 
 	"SuperBotGo/internal/i18n"
 	"SuperBotGo/internal/model"
+	"SuperBotGo/internal/plugin/contract"
 	"SuperBotGo/internal/state"
 )
 
@@ -47,7 +48,7 @@ func LinkCommand() *state.CommandDefinition {
 		Build()
 }
 
-func (p *Plugin) handleLink(ctx context.Context, m *model.MessengerTriggerData) error {
+func (p *Plugin) handleLink(ctx context.Context, m *contract.MessengerTriggerData) error {
 	locale := m.Locale
 	if p.tsuLinker == nil {
 		return p.api.Reply(ctx, m, model.NewTextMessage(i18n.Get("link.tsu_unavailable", locale)))

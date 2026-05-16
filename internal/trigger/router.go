@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"SuperBotGo/internal/metrics"
-	"SuperBotGo/internal/model"
 	"SuperBotGo/internal/plugin"
+	"SuperBotGo/internal/plugin/contract"
 )
 
 type Router struct {
@@ -27,7 +27,7 @@ func (r *Router) SetMetrics(m *metrics.Metrics) {
 	r.metrics = m
 }
 
-func (r *Router) RouteEvent(ctx context.Context, event model.Event) (*model.EventResponse, error) {
+func (r *Router) RouteEvent(ctx context.Context, event contract.Event) (*contract.EventResponse, error) {
 	start := time.Now()
 	result := "ok"
 	defer func() {

@@ -375,7 +375,7 @@ wasmplugin.NewStep("premium_feature").
 ```go
 package main
 
-import wasmplugin "github.com/StaZisS/SuperBotGo/sdk/go-plugin"
+import wasmplugin "github.com/SuperBotForge/sdk/go-sdk"
 
 func searchCommand() wasmplugin.Trigger {
     return wasmplugin.Trigger{

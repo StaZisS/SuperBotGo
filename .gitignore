@@ -34,6 +34,9 @@ web/admin/node_modules/
 # Go
 vendor/
 
+# Local GitHub Actions checkouts
+.superbot-sdk/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -10,6 +10,7 @@ import (
 	"SuperBotGo/internal/i18n"
 	"SuperBotGo/internal/model"
 	"SuperBotGo/internal/notification"
+	"SuperBotGo/internal/plugin/contract"
 	"SuperBotGo/internal/state"
 )
 
@@ -148,7 +149,7 @@ func validateHoursRange(s string) bool {
 	return err1 == nil && err2 == nil && start >= 0 && start <= 23 && end >= 0 && end <= 23 && start != end
 }
 
-func (p *Plugin) handleSettings(ctx context.Context, m *model.MessengerTriggerData) error {
+func (p *Plugin) handleSettings(ctx context.Context, m *contract.MessengerTriggerData) error {
 	switch m.Params.Get("action") {
 	case "view_current":
 		return p.viewSettings(ctx, m)
@@ -166,7 +167,7 @@ func (p *Plugin) handleSettings(ctx context.Context, m *model.MessengerTriggerDa
 	}
 }
 
-func (p *Plugin) viewSettings(ctx context.Context, m *model.MessengerTriggerData) error {
+func (p *Plugin) viewSettings(ctx context.Context, m *contract.MessengerTriggerData) error {
 	prefs, err := p.getOrCreatePrefs(ctx, m.UserID)
 	if err != nil {
 		return err
@@ -220,7 +221,7 @@ func channelTypesToStrings(types []model.ChannelType) []string {
 	return result
 }
 
-func (p *Plugin) changeLanguage(ctx context.Context, m *model.MessengerTriggerData) error {
+func (p *Plugin) changeLanguage(ctx context.Context, m *contract.MessengerTriggerData) error {
 	newLocale := m.Params.Get("language")
 	if newLocale == "" {
 		return nil
@@ -245,7 +246,7 @@ func (p *Plugin) changeLanguage(ctx context.Context, m *model.MessengerTriggerDa
 	})
 }
 
-func (p *Plugin) changeNotificationChannel(ctx context.Context, m *model.MessengerTriggerData) error {
+func (p *Plugin) changeNotificationChannel(ctx context.Context, m *contract.MessengerTriggerData) error {
 	value := m.Params.Get("preferred_channel")
 	if value == "" {
 		return nil
@@ -288,7 +289,7 @@ func formatChannelDisplay(raw string) string {
 	return strings.Join(parts, " → ")
 }
 
-func (p *Plugin) toggleMuteMentions(ctx context.Context, m *model.MessengerTriggerData) error {
+func (p *Plugin) toggleMuteMentions(ctx context.Context, m *contract.MessengerTriggerData) error {
 	value := m.Params.Get("mute_value")
 	if value == "" {
 		return nil
@@ -319,7 +320,7 @@ func (p *Plugin) toggleMuteMentions(ctx context.Context, m *model.MessengerTrigg
 	})
 }
 
-func (p *Plugin) setWorkHours(ctx context.Context, m *model.MessengerTriggerData) error {
+func (p *Plugin) setWorkHours(ctx context.Context, m *contract.MessengerTriggerData) error {
 	hoursValue := m.Params.Get("work_hours_value")
 	if hoursValue == "" {
 		return nil

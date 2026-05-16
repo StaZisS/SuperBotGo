@@ -8,6 +8,7 @@ import (
 	"SuperBotGo/internal/channel"
 	"SuperBotGo/internal/model"
 	"SuperBotGo/internal/plugin"
+	"SuperBotGo/internal/plugin/contract"
 )
 
 // ---------------------------------------------------------------------------
@@ -65,8 +66,8 @@ func newTestPlugin(lister *stubLister, authChecker CommandAuthChecker) (*Plugin,
 	}, adapter
 }
 
-func triggerData(pluginID string) *model.MessengerTriggerData {
-	return &model.MessengerTriggerData{
+func triggerData(pluginID string) *contract.MessengerTriggerData {
+	return &contract.MessengerTriggerData{
 		UserID:      1,
 		ChannelType: "test",
 		ChatID:      "chat1",
@@ -372,7 +373,7 @@ func TestHandlePlugins_EmptyPluginParam(t *testing.T) {
 	lister := &stubLister{plugins: []plugin.PluginInfo{}}
 	p, adapter := newTestPlugin(lister, nil)
 
-	m := &model.MessengerTriggerData{
+	m := &contract.MessengerTriggerData{
 		UserID:      1,
 		ChannelType: "test",
 		ChatID:      "chat1",

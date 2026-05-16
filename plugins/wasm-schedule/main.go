@@ -3,7 +3,7 @@ package main
 import (
 	"embed"
 
-	"github.com/superbot/wasmplugin"
+	wasmplugin "github.com/SuperBotForge/sdk/go-sdk"
 )
 
 //go:embed migrations/*.sql

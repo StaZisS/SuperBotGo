@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"SuperBotGo/internal/model"
 	"SuperBotGo/internal/notification"
 	"SuperBotGo/internal/plugin"
+	"SuperBotGo/internal/plugin/contract"
 	"SuperBotGo/internal/state"
 )
 
@@ -54,7 +54,7 @@ func (p *Plugin) Name() string                         { return "Core Commands" 
 func (p *Plugin) Version() string                      { return "1.0.0" }
 func (p *Plugin) Commands() []*state.CommandDefinition { return p.cmdDefs }
 
-func (p *Plugin) HandleEvent(ctx context.Context, event model.Event) (*model.EventResponse, error) {
+func (p *Plugin) HandleEvent(ctx context.Context, event contract.Event) (*contract.EventResponse, error) {
 	m, err := event.Messenger()
 	if err != nil {
 		return nil, fmt.Errorf("core: parse messenger data: %w", err)

@@ -2,9 +2,9 @@ import { defineConfig } from 'vitepress'
 import { withMermaid } from 'vitepress-plugin-mermaid'
 
 export default withMermaid(defineConfig({
-  base: '/SuperBotGo/',
-  title: 'SuperBotGo SDK',
-  description: 'Документация по SDK для WASM-плагинов SuperBotGo',
+  base: '/SuperBotCore/',
+  title: 'SuperBotGo Plugin SDK',
+  description: 'Документация по WASM-плагинам SuperBotGo',
   lang: 'ru-RU',
 
   themeConfig: {
@@ -15,6 +15,7 @@ export default withMermaid(defineConfig({
       { text: 'API', link: '/api/context' },
       { text: 'Деплой', link: '/deploy/build' },
       { text: 'Архитектура', link: '/architecture/components' },
+      { text: 'SDK repo', link: 'https://github.com/SuperBotForge/sdk' },
     ],
 
     sidebar: {
@@ -103,7 +104,7 @@ export default withMermaid(defineConfig({
     },
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/StaZisS/SuperBotGo' },
+      { icon: 'github', link: 'https://github.com/SuperBotForge/SuperBotCore' },
     ],
 
     search: {

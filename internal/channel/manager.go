@@ -14,6 +14,7 @@ import (
 	"SuperBotGo/internal/locale"
 	"SuperBotGo/internal/metrics"
 	"SuperBotGo/internal/model"
+	"SuperBotGo/internal/plugin/contract"
 	"SuperBotGo/internal/state"
 )
 
@@ -46,7 +47,7 @@ type PluginRegistry interface {
 }
 
 type EventRouter interface {
-	RouteEvent(ctx context.Context, event model.Event) (*model.EventResponse, error)
+	RouteEvent(ctx context.Context, event contract.Event) (*contract.EventResponse, error)
 }
 
 type Authorizer interface {
@@ -476,7 +477,7 @@ func (m *ChannelManager) recordFocus(userID model.GlobalUserID, pluginID string)
 }
 
 func (m *ChannelManager) routeCommand(ctx context.Context, pluginID string, req model.CommandRequest) error {
-	event, err := model.NewMessengerEvent(req, pluginID)
+	event, err := contract.NewMessengerEvent(req, pluginID)
 	if err != nil {
 		return fmt.Errorf("build messenger event: %w", err)
 	}

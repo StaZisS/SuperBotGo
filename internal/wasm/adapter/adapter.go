@@ -11,7 +11,9 @@ import (
 
 	"SuperBotGo/internal/model"
 	"SuperBotGo/internal/plugin"
+	"SuperBotGo/internal/plugin/contract"
 	"SuperBotGo/internal/state"
+	wasmprotocol "SuperBotGo/internal/wasm/protocol"
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 )
 
@@ -426,7 +428,7 @@ func resolveLocalized(fallback string, texts map[string]string, locale string) s
 
 // replyBlocksToMessage converts reply blocks from the plugin response
 // into a model.Message, resolving localized text per the given locale.
-func replyBlocksToMessage(blocks []model.ReplyBlock, loc string) model.Message {
+func replyBlocksToMessage(blocks []contract.ReplyBlock, loc string) model.Message {
 	content := make([]model.ContentBlock, 0, len(blocks))
 	for _, b := range blocks {
 		switch b.Type {
@@ -464,8 +466,191 @@ func parseTextStyle(s string) model.TextStyle {
 	}
 }
 
-func (wp *WasmPlugin) HandleEvent(ctx context.Context, event model.Event) (*model.EventResponse, error) {
-	eventJSON, err := json.Marshal(event)
+func wasmEventRequestFromContract(event contract.Event) (wasmprotocol.EventRequest, error) {
+	req := wasmprotocol.EventRequest{
+		ID:          event.ID,
+		TriggerType: string(event.TriggerType),
+		TriggerName: event.TriggerName,
+		PluginID:    event.PluginID,
+		Timestamp:   event.Timestamp,
+		Data:        cloneRawMessage(event.Data),
+	}
+
+	switch event.TriggerType {
+	case contract.TriggerMessenger:
+		data, err := event.Messenger()
+		if err != nil {
+			return wasmprotocol.EventRequest{}, fmt.Errorf("decode messenger trigger data: %w", err)
+		}
+		req.Data, err = json.Marshal(wasmMessengerTriggerDataFromContract(*data))
+		if err != nil {
+			return wasmprotocol.EventRequest{}, fmt.Errorf("encode messenger trigger data: %w", err)
+		}
+	case contract.TriggerHTTP:
+		data, err := event.HTTP()
+		if err != nil {
+			return wasmprotocol.EventRequest{}, fmt.Errorf("decode http trigger data: %w", err)
+		}
+		req.Data, err = json.Marshal(wasmHTTPTriggerDataFromContract(*data))
+		if err != nil {
+			return wasmprotocol.EventRequest{}, fmt.Errorf("encode http trigger data: %w", err)
+		}
+	case contract.TriggerCron:
+		data, err := event.Cron()
+		if err != nil {
+			return wasmprotocol.EventRequest{}, fmt.Errorf("decode cron trigger data: %w", err)
+		}
+		req.Data, err = json.Marshal(wasmprotocol.CronTriggerData{
+			ScheduleName: data.ScheduleName,
+			FireTime:     data.FireTime,
+		})
+		if err != nil {
+			return wasmprotocol.EventRequest{}, fmt.Errorf("encode cron trigger data: %w", err)
+		}
+	case contract.TriggerEvent:
+		data, err := event.EventTrigger()
+		if err != nil {
+			return wasmprotocol.EventRequest{}, fmt.Errorf("decode event trigger data: %w", err)
+		}
+		req.Data, err = json.Marshal(wasmprotocol.EventTriggerData{
+			Topic:   data.Topic,
+			Payload: cloneRawMessage(data.Payload),
+			Source:  data.Source,
+		})
+		if err != nil {
+			return wasmprotocol.EventRequest{}, fmt.Errorf("encode event trigger data: %w", err)
+		}
+	}
+
+	return req, nil
+}
+
+func wasmMessengerTriggerDataFromContract(data contract.MessengerTriggerData) wasmprotocol.MessengerTriggerData {
+	return wasmprotocol.MessengerTriggerData{
+		UserID:      int64(data.UserID),
+		ChannelType: string(data.ChannelType),
+		ChatID:      data.ChatID,
+		CommandName: data.CommandName,
+		Params:      mapStringFromOptionMap(data.Params),
+		Locale:      data.Locale,
+		Files:       wasmFileRefsFromModel(data.Files),
+	}
+}
+
+func wasmHTTPTriggerDataFromContract(data contract.HTTPTriggerData) wasmprotocol.HTTPTriggerData {
+	return wasmprotocol.HTTPTriggerData{
+		Method:     data.Method,
+		Path:       data.Path,
+		Query:      cloneStringMap(data.Query),
+		Headers:    cloneStringMap(data.Headers),
+		Body:       data.Body,
+		RemoteAddr: data.RemoteAddr,
+		Auth:       wasmHTTPAuthDataFromContract(data.Auth),
+	}
+}
+
+func wasmHTTPAuthDataFromContract(data *contract.HTTPAuthData) *wasmprotocol.HTTPAuthData {
+	if data == nil {
+		return nil
+	}
+	return &wasmprotocol.HTTPAuthData{
+		Kind:         string(data.Kind),
+		UserID:       int64(data.UserID),
+		ServiceKeyID: data.ServiceKeyID,
+	}
+}
+
+func mapStringFromOptionMap(src model.OptionMap) map[string]string {
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make(map[string]string, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+func wasmFileRefsFromModel(files []model.FileRef) []wasmprotocol.FileRef {
+	if len(files) == 0 {
+		return nil
+	}
+	out := make([]wasmprotocol.FileRef, len(files))
+	for i, file := range files {
+		out[i] = wasmprotocol.FileRef{
+			ID:       file.ID,
+			Name:     file.Name,
+			MIMEType: file.MIMEType,
+			Size:     file.Size,
+			FileType: string(file.FileType),
+		}
+	}
+	return out
+}
+
+func contractResponseFromWASM(resp wasmprotocol.EventResponse) contract.EventResponse {
+	return contract.EventResponse{
+		Status:      resp.Status,
+		Error:       resp.Error,
+		ReplyBlocks: contractReplyBlocksFromWASM(resp.ReplyBlocks),
+		Data:        cloneRawMessage(resp.Data),
+		Logs:        contractLogsFromWASM(resp.Logs),
+	}
+}
+
+func contractReplyBlocksFromWASM(blocks []wasmprotocol.ReplyBlock) []contract.ReplyBlock {
+	if len(blocks) == 0 {
+		return nil
+	}
+	out := make([]contract.ReplyBlock, len(blocks))
+	for i, block := range blocks {
+		out[i] = contract.ReplyBlock{
+			Type:    block.Type,
+			Text:    block.Text,
+			Texts:   cloneStringMap(block.Texts),
+			Style:   block.Style,
+			UserID:  block.UserID,
+			FileID:  block.FileID,
+			Caption: block.Caption,
+			URL:     block.URL,
+			Label:   block.Label,
+		}
+	}
+	return out
+}
+
+func contractLogsFromWASM(logs []wasmprotocol.LogEntry) []contract.LogEntry {
+	if len(logs) == 0 {
+		return nil
+	}
+	out := make([]contract.LogEntry, len(logs))
+	for i, log := range logs {
+		out[i] = contract.LogEntry{
+			Level: log.Level,
+			Msg:   log.Msg,
+		}
+	}
+	return out
+}
+
+func cloneStringMap(src map[string]string) map[string]string {
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make(map[string]string, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+func (wp *WasmPlugin) HandleEvent(ctx context.Context, event contract.Event) (*contract.EventResponse, error) {
+	wasmEvent, err := wasmEventRequestFromContract(event)
+	if err != nil {
+		return nil, fmt.Errorf("wasm plugin %q: prepare event: %w", wp.meta.ID, err)
+	}
+
+	eventJSON, err := json.Marshal(wasmEvent)
 	if err != nil {
 		return nil, fmt.Errorf("wasm plugin %q: marshal event: %w", wp.meta.ID, err)
 	}
@@ -475,11 +660,13 @@ func (wp *WasmPlugin) HandleEvent(ctx context.Context, event model.Event) (*mode
 		return nil, fmt.Errorf("wasm plugin %q handle_event: %w", wp.meta.ID, err)
 	}
 
-	var resp model.EventResponse
+	resp := contract.EventResponse{}
 	if len(result) > 0 {
-		if err := json.Unmarshal(result, &resp); err != nil {
+		var wasmResp wasmprotocol.EventResponse
+		if err := json.Unmarshal(result, &wasmResp); err != nil {
 			return nil, fmt.Errorf("wasm plugin %q handle_event: unmarshal response: %w", wp.meta.ID, err)
 		}
+		resp = contractResponseFromWASM(wasmResp)
 
 		for _, l := range resp.Logs {
 			if l.Level == "error" {
@@ -489,7 +676,7 @@ func (wp *WasmPlugin) HandleEvent(ctx context.Context, event model.Event) (*mode
 			}
 		}
 
-		if len(resp.ReplyBlocks) > 0 && wp.messageSend != nil && event.TriggerType == model.TriggerMessenger {
+		if len(resp.ReplyBlocks) > 0 && wp.messageSend != nil && event.TriggerType == contract.TriggerMessenger {
 			if m, mErr := event.Messenger(); mErr == nil {
 				msg := replyBlocksToMessage(resp.ReplyBlocks, string(m.Locale))
 				if sendErr := wp.messageSend(ctx, m.ChannelType, m.ChatID, msg); sendErr != nil {

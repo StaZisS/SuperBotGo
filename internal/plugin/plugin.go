@@ -3,7 +3,7 @@ package plugin
 import (
 	"context"
 
-	"SuperBotGo/internal/model"
+	"SuperBotGo/internal/plugin/contract"
 	"SuperBotGo/internal/state"
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 )
@@ -13,7 +13,7 @@ type Plugin interface {
 	Name() string
 	Version() string
 	Commands() []*state.CommandDefinition
-	HandleEvent(ctx context.Context, event model.Event) (*model.EventResponse, error)
+	HandleEvent(ctx context.Context, event contract.Event) (*contract.EventResponse, error)
 }
 
 type TriggerProvider interface {

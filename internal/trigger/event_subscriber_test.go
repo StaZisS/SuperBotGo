@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"SuperBotGo/internal/model"
 	"SuperBotGo/internal/plugin"
+	"SuperBotGo/internal/plugin/contract"
 	"SuperBotGo/internal/state"
 	"SuperBotGo/internal/wasm/eventbus"
 	wasmrt "SuperBotGo/internal/wasm/runtime"
@@ -14,16 +14,16 @@ import (
 
 type eventTestPlugin struct {
 	id     string
-	events []model.Event
+	events []contract.Event
 }
 
 func (p *eventTestPlugin) ID() string                           { return p.id }
 func (p *eventTestPlugin) Name() string                         { return p.id }
 func (p *eventTestPlugin) Version() string                      { return "test" }
 func (p *eventTestPlugin) Commands() []*state.CommandDefinition { return nil }
-func (p *eventTestPlugin) HandleEvent(_ context.Context, event model.Event) (*model.EventResponse, error) {
+func (p *eventTestPlugin) HandleEvent(_ context.Context, event contract.Event) (*contract.EventResponse, error) {
 	p.events = append(p.events, event)
-	return &model.EventResponse{Status: "ok"}, nil
+	return &contract.EventResponse{Status: "ok"}, nil
 }
 
 func TestRegistryLookupEventSubscribers(t *testing.T) {

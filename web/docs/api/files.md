@@ -177,7 +177,7 @@ for {
 
 Публичный API для плагинов не меняется: для чтения файлов используйте `ctx.FileRead(...)` и `ctx.FileReadAll(...)`.
 
-Начиная с SDK protocol v3 метод `ctx.FileRead(...)` внутри использует host ABI `file_read_into`:
+Начиная с protocol v4 метод `ctx.FileRead(...)` внутри использует host ABI `file_read_into`:
 
 1. Плагин сам выделяет буфер в памяти WASM-модуля.
 2. Передаёт в host `fileID`, `offset`, указатель на буфер и его длину.

@@ -5,6 +5,7 @@ import (
 
 	"SuperBotGo/internal/i18n"
 	"SuperBotGo/internal/model"
+	"SuperBotGo/internal/plugin/contract"
 	"SuperBotGo/internal/state"
 )
 
@@ -18,7 +19,7 @@ func StartCommand() *state.CommandDefinition {
 		Build()
 }
 
-func (p *Plugin) handleStart(ctx context.Context, m *model.MessengerTriggerData) error {
+func (p *Plugin) handleStart(ctx context.Context, m *contract.MessengerTriggerData) error {
 	return p.api.Reply(ctx, m, model.Message{
 		Blocks: []model.ContentBlock{
 			model.TextBlock{

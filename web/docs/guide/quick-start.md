@@ -22,28 +22,28 @@ go mod init my-plugin
 
 ## 2. Добавьте SDK
 
-SDK распространяется как Go-модуль из основного репозитория SuperBotGo. Установите последнюю версию:
+SDK распространяется как Go-модуль из отдельного репозитория SuperBotForge. Установите последнюю версию:
 
 ```bash
-go get github.com/StaZisS/SuperBotGo/sdk/go-plugin@latest
+go get github.com/SuperBotForge/sdk/go-sdk@latest
 ```
 
 Или конкретную версию:
 
 ```bash
-go get github.com/StaZisS/SuperBotGo/sdk/go-plugin@v0.1.3
+go get github.com/SuperBotForge/sdk/go-sdk@v0.4.0
 ```
 
 В коде SDK импортируется с алиасом `wasmplugin`:
 
 ```go
-import wasmplugin "github.com/StaZisS/SuperBotGo/sdk/go-plugin"
+import wasmplugin "github.com/SuperBotForge/sdk/go-sdk"
 ```
 
 ::: tip Локальная разработка
 Для разработки с локальной копией SDK используйте `replace` в `go.mod`:
 ```
-replace github.com/StaZisS/SuperBotGo/sdk/go-plugin => ../../sdk/go-plugin
+replace github.com/SuperBotForge/sdk/go-sdk => /path/to/sdk/go-sdk
 ```
 :::
 
@@ -54,7 +54,7 @@ replace github.com/StaZisS/SuperBotGo/sdk/go-plugin => ../../sdk/go-plugin
 ```go
 package main
 
-import wasmplugin "github.com/StaZisS/SuperBotGo/sdk/go-plugin"
+import wasmplugin "github.com/SuperBotForge/sdk/go-sdk"
 
 func main() {
     wasmplugin.Run(wasmplugin.Plugin{

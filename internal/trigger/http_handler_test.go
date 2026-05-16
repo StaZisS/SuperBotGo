@@ -10,13 +10,14 @@ import (
 
 	"SuperBotGo/internal/model"
 	"SuperBotGo/internal/plugin"
+	"SuperBotGo/internal/plugin/contract"
 	"SuperBotGo/internal/state"
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 )
 
 type httpTestPlugin struct {
 	id            string
-	handleEventFn func(ctx context.Context, event model.Event) (*model.EventResponse, error)
+	handleEventFn func(ctx context.Context, event contract.Event) (*contract.EventResponse, error)
 }
 
 func (p *httpTestPlugin) ID() string      { return p.id }
@@ -25,7 +26,7 @@ func (p *httpTestPlugin) Version() string { return "1.0.0" }
 func (p *httpTestPlugin) Commands() []*state.CommandDefinition {
 	return nil
 }
-func (p *httpTestPlugin) HandleEvent(ctx context.Context, event model.Event) (*model.EventResponse, error) {
+func (p *httpTestPlugin) HandleEvent(ctx context.Context, event contract.Event) (*contract.EventResponse, error) {
 	return p.handleEventFn(ctx, event)
 }
 
@@ -43,7 +44,7 @@ func TestHTTPTriggerServeHTTP_Success(t *testing.T) {
 	manager := plugin.NewManager()
 	manager.Register(&httpTestPlugin{
 		id: "demo",
-		handleEventFn: func(_ context.Context, event model.Event) (*model.EventResponse, error) {
+		handleEventFn: func(_ context.Context, event contract.Event) (*contract.EventResponse, error) {
 			data, err := event.HTTP()
 			if err != nil {
 				t.Fatalf("event.HTTP() error = %v", err)
@@ -60,11 +61,11 @@ func TestHTTPTriggerServeHTTP_Success(t *testing.T) {
 			if got := data.Headers["X-Test"]; got != "123" {
 				t.Fatalf("data.Headers[X-Test] = %q, want %q", got, "123")
 			}
-			if data.Auth == nil || data.Auth.Kind != model.HTTPAuthUser || data.Auth.UserID != 42 {
+			if data.Auth == nil || data.Auth.Kind != contract.HTTPAuthUser || data.Auth.UserID != 42 {
 				t.Fatalf("unexpected auth data: %#v", data.Auth)
 			}
 
-			payload, _ := json.Marshal(model.HTTPResponseData{
+			payload, _ := json.Marshal(contract.HTTPResponseData{
 				StatusCode: http.StatusCreated,
 				Headers: map[string]string{
 					"Content-Type": "text/plain",
@@ -72,7 +73,7 @@ func TestHTTPTriggerServeHTTP_Success(t *testing.T) {
 				},
 				Body: "created",
 			})
-			return &model.EventResponse{Data: payload}, nil
+			return &contract.EventResponse{Data: payload}, nil
 		},
 	})
 
@@ -115,8 +116,8 @@ func TestHTTPTriggerServeHTTP_InvalidPluginResponse(t *testing.T) {
 	manager := plugin.NewManager()
 	manager.Register(&httpTestPlugin{
 		id: "demo",
-		handleEventFn: func(_ context.Context, event model.Event) (*model.EventResponse, error) {
-			return &model.EventResponse{Data: []byte("not-json")}, nil
+		handleEventFn: func(_ context.Context, event contract.Event) (*contract.EventResponse, error) {
+			return &contract.EventResponse{Data: []byte("not-json")}, nil
 		},
 	})
 
@@ -152,7 +153,7 @@ func TestHTTPTriggerServeHTTP_PublicEndpointUsesAnonymousPrincipal(t *testing.T)
 	manager := plugin.NewManager()
 	manager.Register(&httpTestPlugin{
 		id: "demo",
-		handleEventFn: func(_ context.Context, event model.Event) (*model.EventResponse, error) {
+		handleEventFn: func(_ context.Context, event contract.Event) (*contract.EventResponse, error) {
 			data, err := event.HTTP()
 			if err != nil {
 				t.Fatalf("event.HTTP() error = %v", err)
@@ -161,11 +162,11 @@ func TestHTTPTriggerServeHTTP_PublicEndpointUsesAnonymousPrincipal(t *testing.T)
 				t.Fatalf("expected anonymous auth data, got %#v", data.Auth)
 			}
 
-			payload, _ := json.Marshal(model.HTTPResponseData{
+			payload, _ := json.Marshal(contract.HTTPResponseData{
 				StatusCode: http.StatusOK,
 				Body:       `{"ok":true}`,
 			})
-			return &model.EventResponse{Data: payload}, nil
+			return &contract.EventResponse{Data: payload}, nil
 		},
 	})
 

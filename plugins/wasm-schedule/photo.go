@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/superbot/wasmplugin"
+	wasmplugin "github.com/SuperBotForge/sdk/go-sdk"
 )
 
 // KV key: "photos:<userID>" → comma-separated file IDs.

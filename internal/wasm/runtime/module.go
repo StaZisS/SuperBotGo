@@ -259,10 +259,7 @@ func (cm *CompiledModule) CallRPC(ctx context.Context, caller, method string, pa
 }
 
 func (cm *CompiledModule) CallMigrate(ctx context.Context, oldVersion, newVersion string) error {
-	input, err := json.Marshal(struct {
-		OldVersion string `json:"old_version"`
-		NewVersion string `json:"new_version"`
-	}{
+	input, err := json.Marshal(MigrateRequest{
 		OldVersion: oldVersion,
 		NewVersion: newVersion,
 	})
@@ -279,10 +276,7 @@ func (cm *CompiledModule) CallMigrate(ctx context.Context, oldVersion, newVersio
 		return nil
 	}
 
-	var resp struct {
-		Status  string `json:"status"`
-		Message string `json:"message"`
-	}
+	var resp MigrateResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return nil
 	}

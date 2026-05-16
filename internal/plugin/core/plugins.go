@@ -8,6 +8,7 @@ import (
 	"SuperBotGo/internal/locale"
 	"SuperBotGo/internal/model"
 	"SuperBotGo/internal/plugin"
+	"SuperBotGo/internal/plugin/contract"
 	"SuperBotGo/internal/state"
 )
 
@@ -69,7 +70,7 @@ func countVisibleCommands(p plugin.PluginInfo) int {
 	return n
 }
 
-func (p *Plugin) handlePlugins(ctx context.Context, m *model.MessengerTriggerData) error {
+func (p *Plugin) handlePlugins(ctx context.Context, m *contract.MessengerTriggerData) error {
 	pluginID := m.Params.Get("plugin")
 	if pluginID == "" {
 		return p.api.Reply(ctx, m, model.NewTextMessage(i18n.Get("plugins.not_found", m.Locale)))

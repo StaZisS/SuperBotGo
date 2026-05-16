@@ -9,6 +9,7 @@ import (
 
 	"SuperBotGo/internal/filestore"
 	"SuperBotGo/internal/model"
+	"SuperBotGo/internal/plugin/contract"
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 )
 
@@ -104,8 +105,8 @@ func TestHostAPISetMaxFileStoreSize(t *testing.T) {
 }
 
 func TestAuthorizeFileAccessRequiresMatchingHTTPUser(t *testing.T) {
-	ctx := context.WithValue(context.Background(), wasmrt.HTTPAuthDataKey{}, model.HTTPAuthData{
-		Kind:   model.HTTPAuthUser,
+	ctx := context.WithValue(context.Background(), wasmrt.HTTPAuthDataKey{}, contract.HTTPAuthData{
+		Kind:   contract.HTTPAuthUser,
 		UserID: 42,
 	})
 	meta := &filestore.FileMeta{
@@ -127,8 +128,8 @@ func TestAuthorizeFileAccessRequiresMatchingHTTPUser(t *testing.T) {
 }
 
 func TestAuthorizeFileAccessRejectsPendingUploads(t *testing.T) {
-	ctx := context.WithValue(context.Background(), wasmrt.HTTPAuthDataKey{}, model.HTTPAuthData{
-		Kind:   model.HTTPAuthUser,
+	ctx := context.WithValue(context.Background(), wasmrt.HTTPAuthDataKey{}, contract.HTTPAuthData{
+		Kind:   contract.HTTPAuthUser,
 		UserID: 42,
 	})
 	meta := &filestore.FileMeta{

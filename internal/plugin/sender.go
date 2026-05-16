@@ -8,6 +8,7 @@ import (
 
 	"SuperBotGo/internal/channel"
 	"SuperBotGo/internal/model"
+	"SuperBotGo/internal/plugin/contract"
 )
 
 type SenderUserService interface {
@@ -26,7 +27,7 @@ func NewSenderAPI(adapters *channel.AdapterRegistry, userService SenderUserServi
 	}
 }
 
-func (s *SenderAPI) Reply(ctx context.Context, m *model.MessengerTriggerData, msg model.Message) error {
+func (s *SenderAPI) Reply(ctx context.Context, m *contract.MessengerTriggerData, msg model.Message) error {
 	return s.adapters.SendToChat(ctx, m.ChannelType, m.ChatID, msg)
 }
 

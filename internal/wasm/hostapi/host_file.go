@@ -9,6 +9,7 @@ import (
 
 	"SuperBotGo/internal/filestore"
 	"SuperBotGo/internal/model"
+	"SuperBotGo/internal/plugin/contract"
 
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 
@@ -31,8 +32,8 @@ type fileMetaResponse struct {
 	Error    string `msgpack:"error,omitempty"`
 }
 
-func currentHTTPAuth(ctx context.Context) *model.HTTPAuthData {
-	auth, ok := ctx.Value(wasmrt.HTTPAuthDataKey{}).(model.HTTPAuthData)
+func currentHTTPAuth(ctx context.Context) *contract.HTTPAuthData {
+	auth, ok := ctx.Value(wasmrt.HTTPAuthDataKey{}).(contract.HTTPAuthData)
 	if !ok {
 		return nil
 	}
@@ -60,11 +61,11 @@ func authorizeFileAccess(ctx context.Context, pluginID string, meta *filestore.F
 
 	switch meta.OwnerKind {
 	case filestore.FileOwnerUser:
-		if auth.Kind != model.HTTPAuthUser || auth.UserID != meta.OwnerUserID {
+		if auth.Kind != contract.HTTPAuthUser || auth.UserID != meta.OwnerUserID {
 			return fmt.Errorf("file %q is not available to the current user", meta.ID)
 		}
 	case filestore.FileOwnerService:
-		if auth.Kind != model.HTTPAuthService || auth.ServiceKeyID != meta.OwnerServiceKeyID {
+		if auth.Kind != contract.HTTPAuthService || auth.ServiceKeyID != meta.OwnerServiceKeyID {
 			return fmt.Errorf("file %q is not available to the current service key", meta.ID)
 		}
 	default:

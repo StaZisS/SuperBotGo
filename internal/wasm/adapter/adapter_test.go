@@ -6,7 +6,9 @@ import (
 	"testing"
 
 	"SuperBotGo/internal/model"
+	"SuperBotGo/internal/plugin/contract"
 	"SuperBotGo/internal/state"
+	wasmprotocol "SuperBotGo/internal/wasm/protocol"
 	wasmrt "SuperBotGo/internal/wasm/runtime"
 )
 
@@ -142,6 +144,95 @@ func TestCommandsCarriesLocalizedDescriptions(t *testing.T) {
 	want := map[string]string{"en": "Say hello", "ru": "Поздороваться"}
 	if !reflect.DeepEqual(commands[0].Descriptions, want) {
 		t.Errorf("Descriptions = %#v, want %#v", commands[0].Descriptions, want)
+	}
+}
+
+func TestWASMEventRequestFromContractConvertsMessengerEvent(t *testing.T) {
+	data, err := json.Marshal(contract.MessengerTriggerData{
+		UserID:      model.GlobalUserID(42),
+		ChannelType: model.ChannelTelegram,
+		ChatID:      "chat-1",
+		CommandName: "hello",
+		Params:      model.OptionMap{"choice": "yes"},
+		Locale:      "en",
+		Files: []model.FileRef{
+			{
+				ID:       "file-1",
+				Name:     "demo.pdf",
+				MIMEType: "application/pdf",
+				Size:     123,
+				FileType: model.FileTypeDocument,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal event data: %v", err)
+	}
+
+	req, err := wasmEventRequestFromContract(contract.Event{
+		ID:          "evt-1",
+		TriggerType: contract.TriggerMessenger,
+		TriggerName: "hello",
+		PluginID:    "demo",
+		Timestamp:   1710000000,
+		Data:        data,
+	})
+	if err != nil {
+		t.Fatalf("wasmEventRequestFromContract() error = %v", err)
+	}
+
+	if req.TriggerType != wasmprotocol.TriggerMessenger {
+		t.Fatalf("TriggerType = %q, want %q", req.TriggerType, wasmprotocol.TriggerMessenger)
+	}
+
+	var wireData wasmprotocol.MessengerTriggerData
+	if err := json.Unmarshal(req.Data, &wireData); err != nil {
+		t.Fatalf("unmarshal wire data: %v", err)
+	}
+
+	if wireData.UserID != 42 {
+		t.Fatalf("UserID = %d, want 42", wireData.UserID)
+	}
+	if wireData.ChannelType != string(model.ChannelTelegram) {
+		t.Fatalf("ChannelType = %q, want %q", wireData.ChannelType, model.ChannelTelegram)
+	}
+	if !reflect.DeepEqual(wireData.Params, map[string]string{"choice": "yes"}) {
+		t.Fatalf("Params = %#v, want choice=yes", wireData.Params)
+	}
+	if len(wireData.Files) != 1 || wireData.Files[0].FileType != string(model.FileTypeDocument) {
+		t.Fatalf("Files = %#v, want one document file", wireData.Files)
+	}
+}
+
+func TestContractResponseFromWASMConvertsReplyBlocks(t *testing.T) {
+	wasmResp := wasmprotocol.EventResponse{
+		Status: "ok",
+		ReplyBlocks: []wasmprotocol.ReplyBlock{
+			{
+				Type:  "text",
+				Texts: map[string]string{"en": "Done"},
+				Style: "plain",
+			},
+		},
+		Data: json.RawMessage(`{"status_code":200,"body":"ok"}`),
+		Logs: []wasmprotocol.LogEntry{{Level: "info", Msg: "handled"}},
+	}
+
+	resp := contractResponseFromWASM(wasmResp)
+
+	if resp.Status != "ok" {
+		t.Fatalf("Status = %q, want ok", resp.Status)
+	}
+	if len(resp.ReplyBlocks) != 1 || resp.ReplyBlocks[0].Texts["en"] != "Done" {
+		t.Fatalf("ReplyBlocks = %#v, want localized text block", resp.ReplyBlocks)
+	}
+	if len(resp.Logs) != 1 || resp.Logs[0].Msg != "handled" {
+		t.Fatalf("Logs = %#v, want handled log", resp.Logs)
+	}
+
+	wasmResp.ReplyBlocks[0].Texts["en"] = "changed"
+	if resp.ReplyBlocks[0].Texts["en"] != "Done" {
+		t.Fatalf("ReplyBlocks map was not cloned")
 	}
 }
 

@@ -1,7 +1,7 @@
 # SuperBotGo
 
-[![Build](https://github.com/StaZisS/SuperBotGo/actions/workflows/build.yml/badge.svg)](https://github.com/StaZisS/SuperBotGo/actions/workflows/build.yml)
-[![Docs](https://github.com/StaZisS/SuperBotGo/actions/workflows/docs.yml/badge.svg)](https://github.com/StaZisS/SuperBotGo/actions/workflows/docs.yml)
+[![Build](https://github.com/SuperBotForge/SuperBotCore/actions/workflows/build.yml/badge.svg)](https://github.com/SuperBotForge/SuperBotCore/actions/workflows/build.yml)
+[![Docs](https://github.com/SuperBotForge/SuperBotCore/actions/workflows/docs.yml/badge.svg)](https://github.com/SuperBotForge/SuperBotCore/actions/workflows/docs.yml)
 ![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)
 ![WASM](https://img.shields.io/badge/WASM-wazero-654FF0)
 
@@ -59,7 +59,7 @@ BOT_MATTERMOST_TOKEN=...
 | `internal/trigger` | Обработка Messenger, HTTP, Cron и Event-триггеров     |
 | `internal/authz` | Авторизация, политики доступа и интеграция со SpiceDB |
 | `internal/notification` | Уведомления и выбор канала доставки                   |
-| `sdk/go-plugin` | Go SDK для WASM-плагинов                              |
+| `github.com/SuperBotForge/sdk/go-sdk` | Внешний Go SDK для WASM-плагинов                      |
 | `plugins` | Примеры плагинов                                      |
 | `web/admin` | Встроенная React-админка                              |
 | `web/docs` | Документация проекта                                  |
@@ -75,7 +75,7 @@ BOT_MATTERMOST_TOKEN=...
 Установка Go SDK:
 
 ```bash
-go get github.com/StaZisS/SuperBotGo/sdk/go-plugin@latest
+go get github.com/SuperBotForge/sdk/go-sdk@latest
 ```
 
 Минимальная сборка WASM-плагина:
@@ -149,7 +149,7 @@ http://localhost:8080/admin
 
 Основная документация доступна на сайте:
 
-<https://staziss.github.io/SuperBotGo/>
+<https://superbotforge.github.io/SuperBotCore/>
 
 ## Разработка и сборка
 
@@ -194,22 +194,18 @@ git push origin v0.1.0
 
 ### Go SDK
 
-SDK находится в [sdk/go-plugin](sdk/go-plugin) и релизится отдельным workflow [Release SDK go-plugin](.github/workflows/sdk-release.yml).
+Go SDK и протокол плагинов вынесены в отдельный репозиторий:
 
-Запуск через GitHub CLI:
+<https://github.com/SuperBotForge/sdk>
+
+Релизы SDK создаются тегами в этом репозитории:
 
 ```bash
-gh workflow run sdk-release.yml -f version=0.2.0
+git tag go-sdk/v0.4.0
+git push origin go-sdk/v0.4.0
 ```
 
-Workflow:
-
-- запускает тесты SDK;
-- создаёт тег `sdk/go-plugin/vX.Y.Z`;
-- создаёт GitHub Release;
-- обновляет версию SDK в документации.
-
-Тег SDK не нужно создавать вручную: его создаёт workflow.
+Релизы протокола создаются тегами вида `protocol/v4.0.0`.
 
 ## Docker
 

@@ -5,6 +5,7 @@ import (
 
 	"SuperBotGo/internal/i18n"
 	"SuperBotGo/internal/model"
+	"SuperBotGo/internal/plugin/contract"
 	"SuperBotGo/internal/state"
 )
 
@@ -24,7 +25,7 @@ func ResumeCommand() *state.CommandDefinition {
 		Build()
 }
 
-func (p *Plugin) handleResume(ctx context.Context, m *model.MessengerTriggerData) error {
+func (p *Plugin) handleResume(ctx context.Context, m *contract.MessengerTriggerData) error {
 	msg, commandName, err := p.dialog.GetCurrentStepMessage(ctx, m.UserID, m.Locale)
 	if err != nil {
 		return err

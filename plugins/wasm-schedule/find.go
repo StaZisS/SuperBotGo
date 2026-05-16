@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/superbot/wasmplugin"
+	wasmplugin "github.com/SuperBotForge/sdk/go-sdk"
 )
 
 // seedTeachers is used only as fallback data for dynamic options.

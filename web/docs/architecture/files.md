@@ -104,7 +104,7 @@ type FileMeta struct {
 
 ## Чтение файла из WASM
 
-Начиная с SDK protocol v3 метод `ctx.FileRead(...)` использует низкоуровневый host ABI `file_read_into`. Буфер для чтения выделяется самим плагином, а host заполняет его напрямую.
+Начиная с protocol v4 метод `ctx.FileRead(...)` использует низкоуровневый host ABI `file_read_into`. Буфер для чтения выделяется самим плагином, а host заполняет его напрямую.
 
 ```mermaid
 sequenceDiagram

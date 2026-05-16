@@ -1,6 +1,12 @@
-package model
+// Package contract contains the Go-facing plugin event contract used by native
+// plugins and internal trigger routing.
+package contract
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"SuperBotGo/internal/model"
+)
 
 type TriggerType string
 
@@ -28,7 +34,7 @@ func (e Event) Messenger() (*MessengerTriggerData, error) {
 	return &data, nil
 }
 
-func NewMessengerEvent(req CommandRequest, pluginID string) (Event, error) {
+func NewMessengerEvent(req model.CommandRequest, pluginID string) (Event, error) {
 	data, err := json.Marshal(MessengerTriggerData{
 		UserID:      req.UserID,
 		ChannelType: req.ChannelType,
@@ -73,7 +79,6 @@ func (e Event) EventTrigger() (*EventTriggerData, error) {
 	return &data, nil
 }
 
-// ReplyBlock is a single content block in a plugin reply message.
 type ReplyBlock struct {
 	Type    string            `json:"type"`
 	Text    string            `json:"text,omitempty"`
@@ -99,22 +104,14 @@ type LogEntry struct {
 	Msg   string `json:"msg"`
 }
 
-type MessageEntry struct {
-	ChannelType ChannelType       `json:"channel_type,omitempty"`
-	ChatID      string            `json:"chat_id,omitempty"`
-	UserID      GlobalUserID      `json:"user_id,omitempty"`
-	Text        string            `json:"text,omitempty"`
-	Texts       map[string]string `json:"texts,omitempty"`
-}
-
 type MessengerTriggerData struct {
-	UserID      GlobalUserID `json:"user_id"`
-	ChannelType ChannelType  `json:"channel_type"`
-	ChatID      string       `json:"chat_id"`
-	CommandName string       `json:"command_name"`
-	Params      OptionMap    `json:"params,omitempty"`
-	Locale      string       `json:"locale"`
-	Files       []FileRef    `json:"files,omitempty"`
+	UserID      model.GlobalUserID `json:"user_id"`
+	ChannelType model.ChannelType  `json:"channel_type"`
+	ChatID      string             `json:"chat_id"`
+	CommandName string             `json:"command_name"`
+	Params      model.OptionMap    `json:"params,omitempty"`
+	Locale      string             `json:"locale"`
+	Files       []model.FileRef    `json:"files,omitempty"`
 }
 
 type HTTPTriggerData struct {
@@ -135,9 +132,9 @@ const (
 )
 
 type HTTPAuthData struct {
-	Kind         HTTPAuthKind `json:"kind"`
-	UserID       GlobalUserID `json:"user_id,omitempty"`
-	ServiceKeyID int64        `json:"service_key_id,omitempty"`
+	Kind         HTTPAuthKind       `json:"kind"`
+	UserID       model.GlobalUserID `json:"user_id,omitempty"`
+	ServiceKeyID int64              `json:"service_key_id,omitempty"`
 }
 
 type HTTPResponseData struct {

@@ -19,6 +19,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Checkout SDK protocol schemas
+        uses: actions/checkout@v4
+        with:
+          repository: SuperBotForge/sdk
+          path: .superbot-sdk
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -50,6 +56,8 @@ jobs:
         run: go vet ./...
 
       - name: go test
+        env:
+          SUPERBOTGO_PROTOCOL_SCHEMAS: .superbot-sdk/protocol/v4/schemas
         run: go test -race -timeout 5m ./...
 
   build:

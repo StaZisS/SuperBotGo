@@ -8,6 +8,7 @@ import (
 
 	"SuperBotGo/internal/errs"
 	"SuperBotGo/internal/model"
+	"SuperBotGo/internal/plugin/contract"
 	"SuperBotGo/internal/state"
 )
 
@@ -112,14 +113,14 @@ func (m *mockPluginRegistry) ResolveCommand(input string) (pluginID string, def 
 }
 
 type mockEventRouter struct {
-	RouteEventFn func(ctx context.Context, event model.Event) (*model.EventResponse, error)
+	RouteEventFn func(ctx context.Context, event contract.Event) (*contract.EventResponse, error)
 }
 
-func (m *mockEventRouter) RouteEvent(ctx context.Context, event model.Event) (*model.EventResponse, error) {
+func (m *mockEventRouter) RouteEvent(ctx context.Context, event contract.Event) (*contract.EventResponse, error) {
 	if m.RouteEventFn != nil {
 		return m.RouteEventFn(ctx, event)
 	}
-	return &model.EventResponse{}, nil
+	return &contract.EventResponse{}, nil
 }
 
 type mockAuthorizer struct {
@@ -273,13 +274,13 @@ func TestOnUpdate_TextCommand_ResolvesAndRoutes(t *testing.T) {
 		return "", nil, nil
 	}
 
-	var routed []model.Event
-	deps.router.RouteEventFn = func(_ context.Context, event model.Event) (*model.EventResponse, error) {
+	var routed []contract.Event
+	deps.router.RouteEventFn = func(_ context.Context, event contract.Event) (*contract.EventResponse, error) {
 		routed = append(routed, event)
 		if len(routed) == 1 && event.PluginID != "pluginA" {
 			t.Errorf("expected first pluginID %q, got %q", "pluginA", event.PluginID)
 		}
-		return &model.EventResponse{}, nil
+		return &contract.EventResponse{}, nil
 	}
 
 	// StartCommand returns immediately complete (no steps).
@@ -553,9 +554,9 @@ func TestHandleCommand_ImmediateCommand_RoutesEvent(t *testing.T) {
 	}
 
 	routed := false
-	deps.router.RouteEventFn = func(_ context.Context, event model.Event) (*model.EventResponse, error) {
+	deps.router.RouteEventFn = func(_ context.Context, event contract.Event) (*contract.EventResponse, error) {
 		routed = true
-		return &model.EventResponse{}, nil
+		return &contract.EventResponse{}, nil
 	}
 
 	deps.state.StartCommandFn = func(_ context.Context, _ model.GlobalUserID, _ string, _ string, _ string, _ string) (*StateResult, error) {
@@ -624,13 +625,13 @@ func TestHandleInput_ActiveDialog_Completes_RoutesCommand(t *testing.T) {
 		}, nil
 	}
 
-	var routed []model.Event
-	deps.router.RouteEventFn = func(_ context.Context, event model.Event) (*model.EventResponse, error) {
+	var routed []contract.Event
+	deps.router.RouteEventFn = func(_ context.Context, event contract.Event) (*contract.EventResponse, error) {
 		routed = append(routed, event)
 		if len(routed) == 1 && event.PluginID != "pluginA" {
 			t.Errorf("expected first pluginID %q, got %q", "pluginA", event.PluginID)
 		}
-		return &model.EventResponse{}, nil
+		return &contract.EventResponse{}, nil
 	}
 
 	err := mgr.OnUpdate(context.Background(), makeUpdate("prod"))
@@ -890,9 +891,9 @@ func TestHandleCommand_Direct_ImmediateRoutes(t *testing.T) {
 	}
 
 	routed := false
-	deps.router.RouteEventFn = func(_ context.Context, e model.Event) (*model.EventResponse, error) {
+	deps.router.RouteEventFn = func(_ context.Context, e contract.Event) (*contract.EventResponse, error) {
 		routed = true
-		return &model.EventResponse{}, nil
+		return &contract.EventResponse{}, nil
 	}
 
 	err := mgr.handleCommand(context.Background(), 1, model.ChannelTelegram, model.TextInput{Text: "/hello"}, "chat1", "en")
@@ -952,9 +953,9 @@ func TestHandleInput_Direct_Completes_Routes(t *testing.T) {
 	}
 
 	routed := false
-	deps.router.RouteEventFn = func(_ context.Context, e model.Event) (*model.EventResponse, error) {
+	deps.router.RouteEventFn = func(_ context.Context, e contract.Event) (*contract.EventResponse, error) {
 		routed = true
-		return &model.EventResponse{}, nil
+		return &contract.EventResponse{}, nil
 	}
 
 	err := mgr.handleInput(context.Background(), 1, model.ChannelTelegram, model.TextInput{Text: "Alice"}, "chat1", "en")
@@ -1033,10 +1034,10 @@ func TestHandleInput_Direct_EmptyPluginID_FallsBackToRegistry(t *testing.T) {
 		return ""
 	}
 
-	var routed []model.Event
-	deps.router.RouteEventFn = func(_ context.Context, e model.Event) (*model.EventResponse, error) {
+	var routed []contract.Event
+	deps.router.RouteEventFn = func(_ context.Context, e contract.Event) (*contract.EventResponse, error) {
 		routed = append(routed, e)
-		return &model.EventResponse{}, nil
+		return &contract.EventResponse{}, nil
 	}
 
 	err := mgr.handleInput(context.Background(), 1, model.ChannelTelegram, model.TextInput{Text: "yes"}, "chat1", "en")
@@ -1054,10 +1055,10 @@ func TestHandleInput_Direct_EmptyPluginID_FallsBackToRegistry(t *testing.T) {
 func TestDispatchCompletedCommand_AutoReturnsPluginMenu(t *testing.T) {
 	mgr, deps := newTestManager()
 
-	var routed []model.Event
-	deps.router.RouteEventFn = func(_ context.Context, event model.Event) (*model.EventResponse, error) {
+	var routed []contract.Event
+	deps.router.RouteEventFn = func(_ context.Context, event contract.Event) (*contract.EventResponse, error) {
 		routed = append(routed, event)
-		return &model.EventResponse{}, nil
+		return &contract.EventResponse{}, nil
 	}
 
 	err := mgr.dispatchCompletedCommand(context.Background(), completedCommand{
@@ -1101,10 +1102,10 @@ func TestDispatchCompletedCommand_SkipsPluginMenuForPreservedDialogCommand(t *te
 		return pluginID == "core" && commandName == "resume"
 	}
 
-	var routed []model.Event
-	deps.router.RouteEventFn = func(_ context.Context, event model.Event) (*model.EventResponse, error) {
+	var routed []contract.Event
+	deps.router.RouteEventFn = func(_ context.Context, event contract.Event) (*contract.EventResponse, error) {
 		routed = append(routed, event)
-		return &model.EventResponse{}, nil
+		return &contract.EventResponse{}, nil
 	}
 
 	err := mgr.dispatchCompletedCommand(context.Background(), completedCommand{
@@ -1127,12 +1128,12 @@ func TestDispatchCompletedCommand_IgnoresPluginMenuFailure(t *testing.T) {
 	mgr, deps := newTestManager()
 
 	callCount := 0
-	deps.router.RouteEventFn = func(_ context.Context, event model.Event) (*model.EventResponse, error) {
+	deps.router.RouteEventFn = func(_ context.Context, event contract.Event) (*contract.EventResponse, error) {
 		callCount++
 		if callCount == 2 && event.PluginID == "core" {
 			return nil, errors.New("menu send failed")
 		}
-		return &model.EventResponse{}, nil
+		return &contract.EventResponse{}, nil
 	}
 
 	err := mgr.dispatchCompletedCommand(context.Background(), completedCommand{
@@ -1166,13 +1167,13 @@ func TestOnUpdate_PluginError_ReturnsPluginMenu(t *testing.T) {
 		}, nil
 	}
 
-	var routed []model.Event
-	deps.router.RouteEventFn = func(_ context.Context, event model.Event) (*model.EventResponse, error) {
+	var routed []contract.Event
+	deps.router.RouteEventFn = func(_ context.Context, event contract.Event) (*contract.EventResponse, error) {
 		routed = append(routed, event)
 		if event.PluginID == "pluginA" {
-			return &model.EventResponse{Error: "plugin crashed"}, nil
+			return &contract.EventResponse{Error: "plugin crashed"}, nil
 		}
-		return &model.EventResponse{}, nil
+		return &contract.EventResponse{}, nil
 	}
 
 	err := mgr.OnUpdate(context.Background(), makeUpdate("/fail"))
@@ -1276,8 +1277,8 @@ func TestFocusTracker_RecordedOnImmediateCommand(t *testing.T) {
 			IsComplete:  true,
 		}, nil
 	}
-	deps.router.RouteEventFn = func(_ context.Context, _ model.Event) (*model.EventResponse, error) {
-		return &model.EventResponse{}, nil
+	deps.router.RouteEventFn = func(_ context.Context, _ contract.Event) (*contract.EventResponse, error) {
+		return &contract.EventResponse{}, nil
 	}
 
 	_ = mgr.OnUpdate(context.Background(), makeUpdate("/quick"))
@@ -1303,8 +1304,8 @@ func TestFocusTracker_RecordedOnDialogComplete(t *testing.T) {
 			Params:      model.OptionMap{},
 		}, nil
 	}
-	deps.router.RouteEventFn = func(_ context.Context, _ model.Event) (*model.EventResponse, error) {
-		return &model.EventResponse{}, nil
+	deps.router.RouteEventFn = func(_ context.Context, _ contract.Event) (*contract.EventResponse, error) {
+		return &contract.EventResponse{}, nil
 	}
 
 	_ = mgr.OnUpdate(context.Background(), makeUpdate("done"))
@@ -1425,9 +1426,9 @@ func TestHandleInput_CompletionWithMessage_SendsAndRoutes(t *testing.T) {
 	}
 
 	routed := false
-	deps.router.RouteEventFn = func(_ context.Context, _ model.Event) (*model.EventResponse, error) {
+	deps.router.RouteEventFn = func(_ context.Context, _ contract.Event) (*contract.EventResponse, error) {
 		routed = true
-		return &model.EventResponse{}, nil
+		return &contract.EventResponse{}, nil
 	}
 
 	err := mgr.handleInput(context.Background(), 1, model.ChannelTelegram, model.TextInput{Text: "go"}, "chat1", "en")
@@ -1465,8 +1466,8 @@ func TestHandleCommand_PluginReturnsError(t *testing.T) {
 			IsComplete:  true,
 		}, nil
 	}
-	deps.router.RouteEventFn = func(_ context.Context, _ model.Event) (*model.EventResponse, error) {
-		return &model.EventResponse{Error: "plugin crashed"}, nil
+	deps.router.RouteEventFn = func(_ context.Context, _ contract.Event) (*contract.EventResponse, error) {
+		return &contract.EventResponse{Error: "plugin crashed"}, nil
 	}
 
 	err := mgr.handleCommand(context.Background(), 1, model.ChannelTelegram, model.TextInput{Text: "/fail"}, "chat1", "en")

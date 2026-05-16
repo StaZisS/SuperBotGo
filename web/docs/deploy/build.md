@@ -65,7 +65,7 @@ curl -X POST http://host/api/admin/plugins/{id}/install \
 Плагин декларирует необходимые ресурсы через builder-паттерн. Хост показывает эти требования администратору при установке.
 
 ```go
-import wasmplugin "github.com/StaZisS/SuperBotGo/sdk/go-plugin"
+import wasmplugin "github.com/SuperBotForge/sdk/go-sdk"
 
 wasmplugin.Plugin{
     ID:      "analytics",
