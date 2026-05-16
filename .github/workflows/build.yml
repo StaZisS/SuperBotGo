@@ -17,16 +17,16 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Checkout SDK protocol schemas
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: SuperBotForge/sdk
           path: .superbot-sdk
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '20'
           cache: npm
@@ -39,7 +39,7 @@ jobs:
           npm run build
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -57,7 +57,7 @@ jobs:
 
       - name: go test
         env:
-          SUPERBOTGO_PROTOCOL_SCHEMAS: .superbot-sdk/protocol/v4/schemas
+          SUPERBOTGO_PROTOCOL_SCHEMAS: ${{ github.workspace }}/.superbot-sdk/protocol/v4/schemas
         run: go test -race -timeout 5m ./...
 
   build:
@@ -68,7 +68,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
