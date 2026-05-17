@@ -176,7 +176,37 @@ npm run build
 
 ### Приложение
 
-Релиз приложения создаётся через version tag в формате `vX.Y.Z`.
+Рекомендуемый путь — запуск workflow `Release` из GitHub Actions.
+
+Testing-релиз собирает и публикует образ:
+
+```bash
+gh workflow run release.yml \
+  --repo SuperBotForge/SuperBotCore \
+  -f environment=testing \
+  -f version=1.3.2
+```
+
+Образ получает теги:
+
+- `X.Y.Z`
+- `vX.Y.Z`
+- `latest`
+
+Flux на testing-стенде отслеживает `vX.Y.Z` и автоматически обновляет overlay.
+
+Production-релиз продвигает уже опубликованный testing-образ в отдельный тег `prod-vX.Y.Z`:
+
+```bash
+gh workflow run release.yml \
+  --repo SuperBotForge/SuperBotCore \
+  -f environment=prod \
+  -f version=1.3.2
+```
+
+Flux на production-стенде отслеживает только `prod-vX.Y.Z`, поэтому обычные testing-релизы не затрагивают prod. Для GitHub Environment `prod` стоит включить required reviewers.
+
+Старый tag-based путь остаётся рабочим для testing-релиза:
 
 ```bash
 git tag v0.1.0
@@ -184,12 +214,6 @@ git push origin v0.1.0
 ```
 
 После публикации тега запускается workflow [Build & Push](.github/workflows/build.yml): он собирает Admin UI, проверяет Go-код, запускает тесты и публикует Docker-образ.
-
-Образ получает теги:
-
-- `X.Y.Z`
-- `vX.Y.Z`
-- `latest`
 
 ### Go SDK
 

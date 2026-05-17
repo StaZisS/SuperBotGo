@@ -1,0 +1,199 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: testing
+        type: choice
+        options:
+          - testing
+          - prod
+      version:
+        description: Semver version without prefix, for example 1.3.2
+        required: true
+        type: string
+
+run-name: Release ${{ inputs.environment }} ${{ inputs.version }}
+
+concurrency:
+  group: release-${{ inputs.environment }}-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: registry.staziss-tech.ru
+  IMAGE_NAME: superbot
+  GO_VERSION: '1.25'
+
+jobs:
+  prepare:
+    name: Prepare release metadata
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      testing_tag: ${{ steps.version.outputs.testing_tag }}
+      prod_tag: ${{ steps.version.outputs.prod_tag }}
+      image: ${{ steps.version.outputs.image }}
+    steps:
+      - name: Ensure main branch
+        env:
+          RELEASE_REF: ${{ github.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "$RELEASE_REF" != "refs/heads/main" ]]; then
+            echo "::error::Release workflow must be run from main"
+            exit 1
+          fi
+
+      - name: Normalize version
+        id: version
+        env:
+          RAW_VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          raw="${RAW_VERSION#prod-}"
+          version="${raw#v}"
+
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version must be X.Y.Z, vX.Y.Z, or prod-vX.Y.Z"
+            exit 1
+          fi
+
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "testing_tag=v${version}" >> "$GITHUB_OUTPUT"
+          echo "prod_tag=prod-v${version}" >> "$GITHUB_OUTPUT"
+          echo "image=${REGISTRY}/${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Test
+    needs: prepare
+    if: ${{ inputs.environment == 'testing' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Checkout SDK protocol schemas
+        uses: actions/checkout@v6
+        with:
+          repository: SuperBotForge/sdk
+          path: .superbot-sdk
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/admin/package-lock.json
+
+      - name: Build admin frontend
+        working-directory: web/admin
+        run: |
+          npm ci
+          npm run build
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Verify go.mod tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        env:
+          SUPERBOTGO_PROTOCOL_SCHEMAS: ${{ github.workspace }}/.superbot-sdk/protocol/v4/schemas
+        run: go test -race -timeout 5m ./...
+
+  release-testing:
+    name: Release testing
+    needs:
+      - prepare
+      - test
+    if: ${{ inputs.environment == 'testing' }}
+    runs-on: ubuntu-latest
+    environment: testing
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to self-hosted registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ needs.prepare.outputs.image }}
+          tags: |
+            type=raw,value=${{ needs.prepare.outputs.version }}
+            type=raw,value=${{ needs.prepare.outputs.testing_tag }}
+            type=raw,value=latest
+
+      - name: Build and push testing image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+  release-prod:
+    name: Release prod
+    needs: prepare
+    if: ${{ inputs.environment == 'prod' }}
+    runs-on: ubuntu-latest
+    environment: prod
+    permissions:
+      contents: read
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to self-hosted registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Promote testing image to prod tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          source_image="${{ needs.prepare.outputs.image }}:${{ needs.prepare.outputs.testing_tag }}"
+          prod_image="${{ needs.prepare.outputs.image }}:${{ needs.prepare.outputs.prod_tag }}"
+
+          docker buildx imagetools inspect "$source_image" > /dev/null
+          docker buildx imagetools create -t "$prod_image" "$source_image"
+          docker buildx imagetools inspect "$prod_image" > /dev/null
